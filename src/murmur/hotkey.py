@@ -99,6 +99,11 @@ class HotkeyMachine:
         if self.state is State.PTT and keycode == self.ptt_key and not is_down:
             self.state = State.BUSY
             return Decision(Action.STOP)
+        if self.state is State.TOGGLE and keycode == self.ptt_key and is_down:
+            # Tapping the PTT key again is the most discoverable way out of
+            # hands-free mode (Esc and the toggle combo also work).
+            self.state = State.BUSY
+            return Decision(Action.STOP)
         return PASS
 
     def on_key_down(self, keycode: int) -> Decision:
@@ -113,6 +118,12 @@ class HotkeyMachine:
             ):
                 self.state = State.BUSY
                 return Decision(Action.STOP, swallow=True)
+            return PASS
+        if self.state is State.BUSY:
+            # The PTT key already stopped the recording on its way down; eat
+            # the trailing toggle key of a fn+space stop so it isn't typed.
+            if keycode == self.toggle_key and self.toggle_mod in self._mods_down:
+                return Decision(swallow=True)
             return PASS
         return PASS
 

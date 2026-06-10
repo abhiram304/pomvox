@@ -49,14 +49,27 @@ def test_esc_stops_toggle_and_swallows(m):
     assert m.state is State.BUSY
 
 
-def test_second_fn_space_stops_toggle(m):
+def test_fn_tap_stops_toggle(m):
     m.on_modifier(FN, True)
     m.on_key_down(SPACE)
     m.on_modifier(FN, False)
 
+    d = m.on_modifier(FN, True)
+    assert d.action is Action.STOP
+    assert m.state is State.BUSY
+
+
+def test_second_fn_space_stops_toggle_without_typing_a_space(m):
     m.on_modifier(FN, True)
+    m.on_key_down(SPACE)
+    m.on_modifier(FN, False)
+
+    # Fn going down already stops; the trailing space must be swallowed so
+    # it isn't typed into the document.
+    d = m.on_modifier(FN, True)
+    assert d.action is Action.STOP
     d = m.on_key_down(SPACE)
-    assert d.action is Action.STOP and d.swallow
+    assert d.action is Action.NONE and d.swallow
 
 
 def test_unrelated_keys_pass_through(m):
