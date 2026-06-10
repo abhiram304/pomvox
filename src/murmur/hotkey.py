@@ -166,6 +166,7 @@ class EventTap:
             Quartz.kCGEventTapOptionDefault,
             mask,
             self._callback,
+            None,
         )
         if self._tap is None:
             raise RuntimeError(
