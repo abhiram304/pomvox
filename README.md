@@ -1,0 +1,71 @@
+# Murmur
+
+Fully local, privacy-first voice dictation for macOS on Apple Silicon. Hold a
+hotkey, speak, and the transcript is inserted into whatever text field is
+focused — in any app. No audio or text ever leaves your machine (the only
+network operation is the one-time model download from Hugging Face).
+
+See [SPEC.md](SPEC.md) for the full product spec.
+
+## Requirements
+
+- Apple Silicon Mac (reference hardware: M1, 16 GB), macOS 14+
+- [`uv`](https://docs.astral.sh/uv/)
+
+## Quick start
+
+```sh
+uv sync
+uv run python scripts/preflight.py   # downloads parakeet-tdt-0.6b-v3 (~1.2 GB), transcribes a test WAV
+uv run murmur --check                # permission report
+uv run murmur                        # menu bar app
+```
+
+## First run checklist
+
+1. **Permissions** — `uv run murmur --check` reports what's missing. Grant in
+   System Settings → Privacy & Security:
+   - **Microphone** (recording)
+   - **Accessibility** (synthesizing ⌘V to paste the transcript)
+   - **Input Monitoring** (the global hotkey event tap)
+2. **Globe key** — System Settings → Keyboard → "Press 🌐 key to" →
+   **Do Nothing**, otherwise macOS intercepts the Fn key before Murmur sees it.
+   `murmur --check` warns if this is set wrong.
+
+> **Dev note:** while running via `uv run` from a terminal, the TCC permission
+> grants attach to the *terminal app* (Terminal.app, iTerm2, …), not to
+> Murmur. If hotkeys or pasting silently do nothing, re-check the grants for
+> the terminal you're launching from. After changing grants, restart the
+> terminal.
+
+## Usage
+
+- **Push-to-talk:** hold `Fn`, speak, release → text appears at the cursor.
+- **Hands-free:** press `Fn+Space` to start, `Esc` (or `Fn+Space` again) to
+  stop and insert. (Auto-stop on silence arrives in Phase 2.)
+
+Menu bar icon: 🎤 idle · 🔴 recording · ✍️ transcribing.
+
+## Configuration
+
+Copy [`config.example.toml`](config.example.toml) to `~/.murmur/config.toml`.
+Every key is optional. Highlights:
+
+- `[hotkey] ptt` — set to `"right_option"` if Fn interception is unreliable on
+  your machine.
+- `[log] file` — set `false` to disable `~/.murmur/murmur.log`.
+
+Logs include one line per utterance with stage timings
+(`stt_finalize=82ms insert=14ms total=96ms`).
+
+## Development
+
+Pure-logic modules (`config`, `hotkey` state machine, `bench`) have no macOS
+dependencies, so the test suite runs anywhere:
+
+```sh
+uv run pytest
+```
+
+Known build quirk: `webrtcvad` (used from Phase 2) ships source-only; if the
+clang build fails, swap the dependency to `webrtcvad-wheels` (drop-in fork).
