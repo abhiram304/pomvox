@@ -9,12 +9,48 @@ sentinel ends a session; the final text goes to the controller callback.
 from __future__ import annotations
 
 import logging
+import math
 import queue
 import resource
 import threading
 import time
 
 log = logging.getLogger(__name__)
+
+SAMPLERATE = 16000
+# Each transcribe_stream.add_audio() call costs ~0.5 s regardless of chunk
+# size (measured on M1), so feeding the raw 100 ms capture blocks runs ~5x
+# slower than realtime and degrades accuracy. ~2 s chunks run ~3x faster
+# than realtime with full accuracy.
+CHUNK_SECONDS = 2.0
+SILENCE_DBFS = -50.0
+
+
+class Chunker:
+    """Aggregates small PCM blocks into ~CHUNK_SECONDS arrays."""
+
+    def __init__(self, samplerate: int = SAMPLERATE, chunk_seconds: float = CHUNK_SECONDS):
+        self._target = int(samplerate * chunk_seconds)
+        self._blocks: list = []
+        self._n = 0
+
+    def add(self, block):
+        """Buffer *block*; return an aggregated chunk once enough is held."""
+        self._blocks.append(block)
+        self._n += len(block)
+        if self._n >= self._target:
+            return self.flush()
+        return None
+
+    def flush(self):
+        if not self._blocks:
+            return None
+        import numpy as np
+
+        out = np.concatenate(self._blocks)
+        self._blocks = []
+        self._n = 0
+        return out
 
 
 class Transcriber:
@@ -47,6 +83,7 @@ class SttWorker(threading.Thread):
 
     def run(self) -> None:
         self._transcriber.load()
+        self._warmup()
         if self._on_ready:
             self._on_ready()
         while True:
@@ -62,21 +99,50 @@ class SttWorker(threading.Thread):
                 text = ""
             self._emit(text)
 
+    def _warmup(self) -> None:
+        """Run a short silent clip through the streaming path.
+
+        The first MLX inference compiles kernels (~7x slower than warm);
+        doing it at startup keeps the first real utterance fast.
+        """
+        try:
+            import mlx.core as mx
+
+            t0 = time.perf_counter()
+            with self._transcriber.stream() as ctx:
+                ctx.add_audio(mx.zeros(SAMPLERATE // 2))
+            log.info("stt: warmup %.1fs", time.perf_counter() - t0)
+        except Exception:
+            log.exception("stt: warmup failed")
+
     def _session(self, first_block) -> str:
         import mlx.core as mx
 
+        chunker = Chunker()
+        sumsq = 0.0
+        samples = 0
         with self._transcriber.stream() as ctx:
-            ctx.add_audio(mx.array(first_block))
-            while True:
+            block = first_block
+            while block is not None:
+                sumsq += float((block**2).sum())
+                samples += len(block)
+                chunk = chunker.add(block)
+                if chunk is not None:
+                    ctx.add_audio(mx.array(chunk))
+                    # Draft tokens are just logged in Phase 1; the Phase 2
+                    # HUD will consume them live.
+                    if log.isEnabledFor(logging.DEBUG) and ctx.result is not None:
+                        log.debug("stt: draft %r", ctx.result.text)
                 block = self._q.get()
-                if block is None:
-                    break
-                ctx.add_audio(mx.array(block))
-                # Draft tokens are just logged in Phase 1; the Phase 2 HUD
-                # will consume them live.
-                if log.isEnabledFor(logging.DEBUG) and ctx.result is not None:
-                    log.debug("stt: draft %r", ctx.result.text)
+            tail = chunker.flush()
+            if tail is not None:
+                ctx.add_audio(mx.array(tail))
             result = ctx.result
+        if samples:
+            rms_db = 10 * math.log10(sumsq / samples + 1e-12)
+            log.info("stt: %.1fs of audio, level %.0f dBFS", samples / SAMPLERATE, rms_db)
+            if rms_db < SILENCE_DBFS:
+                log.warning("stt: audio nearly silent — check the input device / mic volume")
         return (result.text if result else "").strip()
 
     def _emit(self, text: str) -> None:

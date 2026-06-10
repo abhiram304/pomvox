@@ -6,7 +6,8 @@ dist/
 build/
 
 # Environments
-.venv/
+.venv
+.venv.nosync/
 .python-version.local
 
 # Tooling

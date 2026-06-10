@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-import time
+import threading
 
 log = logging.getLogger(__name__)
 
@@ -33,7 +33,10 @@ def insert_text(text: str) -> None:
         Quartz.CGEventSetFlags(event, Quartz.kCGEventFlagMaskCommand)
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
 
-    time.sleep(RESTORE_DELAY_S)
-    if saved is not None and pb.changeCount() == our_change:
-        pb.clearContents()
-        pb.setString_forType_(saved, NSPasteboardTypeString)
+    def restore() -> None:
+        if saved is not None and pb.changeCount() == our_change:
+            pb.clearContents()
+            pb.setString_forType_(saved, NSPasteboardTypeString)
+
+    # Restore off-thread so insert_text returns as soon as the paste is posted.
+    threading.Timer(RESTORE_DELAY_S, restore).start()
