@@ -1,0 +1,21 @@
+# Murmur configuration.
+# Copy to ~/.murmur/config.toml — every key is optional and defaults to the
+# values shown here.
+
+[hotkey]
+ptt = "fn"           # hold to talk; use "right_option" if Fn proves flaky
+toggle = "fn+space"  # hands-free: start recording
+stop = "esc"         # hands-free: stop recording (toggle key also stops)
+
+[stt]
+model = "mlx-community/parakeet-tdt-0.6b-v3"
+
+[cleanup]  # Phase 3 — not used yet
+enabled = false
+model = "mlx-community/Qwen3-4B-4bit"
+
+[insert]
+method = "paste"
+
+[log]
+file = true  # also write ~/.murmur/murmur.log
