@@ -14,7 +14,8 @@ def test_defaults_when_file_absent(tmp_path):
     assert cfg == config.Config()
     assert cfg.hotkey.ptt == "fn"
     assert cfg.hotkey.toggle == "fn+space"
-    assert cfg.hotkey.stop == "esc"
+    assert cfg.hotkey.stop == ""  # fn tap / fn+space stop hands-free
+    assert cfg.hotkey.cancel == "esc"
     assert cfg.stt.model == "mlx-community/parakeet-tdt-0.6b-v3"
     assert cfg.cleanup.enabled is True
     assert cfg.cleanup.model == "mlx-community/Qwen3-4B-4bit"

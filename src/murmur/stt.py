@@ -94,11 +94,17 @@ class SttWorker(threading.Thread):
         self._warmup()
         if self._on_ready:
             self._on_ready()
+        from .audio import CANCEL
+
         while True:
             block = self._q.get()
             if block is None:
                 # Sentinel with no audio: utterance too short to capture.
                 self._emit("")
+                continue
+            if block is CANCEL:
+                # Cancelled before any audio was queued.
+                self._emit(None)
                 continue
             try:
                 text = self._session(block)
@@ -123,8 +129,11 @@ class SttWorker(threading.Thread):
         except Exception:
             log.exception("stt: warmup failed")
 
-    def _session(self, first_block) -> str:
+    def _session(self, first_block) -> str | None:
+        """Transcribe one utterance; ``None`` means it was cancelled."""
         import mlx.core as mx
+
+        from .audio import CANCEL
 
         chunker = Chunker()
         sumsq = 0.0
@@ -132,6 +141,9 @@ class SttWorker(threading.Thread):
         with self._transcriber.stream() as ctx:
             block = first_block
             while block is not None:
+                if block is CANCEL:
+                    log.info("stt: session cancelled, discarding %.1fs", samples / SAMPLERATE)
+                    return None
                 sumsq += float((block**2).sum())
                 samples += len(block)
                 chunk = chunker.add(block)
@@ -157,7 +169,8 @@ class SttWorker(threading.Thread):
                 log.warning("stt: audio nearly silent — check the input device / mic volume")
         return (result.text if result else "").strip()
 
-    def _emit(self, text: str) -> None:
+    def _emit(self, text: str | None) -> None:
+        """Forward the result; ``None`` means the utterance was cancelled."""
         try:
             self._on_text(text)
         except Exception:

@@ -140,6 +140,14 @@ class TestHudStateMachine:
         # The stale scheduled tick from the first utterance must be a no-op.
         assert m.tick(now=5.0).state == "recording"
 
+    def test_cancelled_result_flashes_briefly(self):
+        m = self.make()
+        m.apply({UiEvent.STATE: ("recording", "")}, now=0.0)
+        vm = m.apply({UiEvent.RESULT: ("cancelled", "")}, now=1.0)
+        assert vm.state == "cancelled"
+        assert "cancelled" in vm.status
+        assert vm.hide_at is not None and vm.hide_at < 1.0 + 1.4  # shorter than done
+
     def test_idle_while_recording_hides(self):
         # e.g. recording failed to start and the controller reset to idle
         m = self.make()

@@ -54,7 +54,9 @@ class Controller:
             else None
         )
         self.bus = MainThreadBus(self._render_ui)
-        self.machine = HotkeyMachine(cfg.hotkey.ptt, cfg.hotkey.toggle, cfg.hotkey.stop)
+        self.machine = HotkeyMachine(
+            cfg.hotkey.ptt, cfg.hotkey.toggle, cfg.hotkey.stop, cfg.hotkey.cancel
+        )
         self.recorder = Recorder(on_block=self._on_block if self.hud else None)
         self.worker = SttWorker(
             Transcriber(cfg.stt.model),
@@ -120,6 +122,10 @@ class Controller:
             self._post_state("recording", "recording (hands-free)")
         elif action is Action.STOP:
             self._stop_recording()
+        elif action is Action.CANCEL:
+            log.info("cancelled by user")
+            self.recorder.cancel()
+            self.bus.post(self._ev.RESULT, ("cancelled", ""))
 
     def _start_recording(self, mode: str) -> None:
         try:
@@ -136,11 +142,15 @@ class Controller:
         self.recorder.stop()
         self._post_state("transcribing")
 
-    def _on_text(self, text: str) -> None:
-        # Runs on the STT worker thread.
+    def _on_text(self, text: str | None) -> None:
+        # Runs on the STT worker thread. ``None`` = utterance cancelled.
         from .cleanup import run_cleanup
         from .insert import insert_text
 
+        if text is None:
+            self.machine.done()
+            self._post_state("idle", "ready")
+            return
         self.timings.stamp("stt_finalize")
         if text:
             log.info("transcript: %r (%d chars)", preview(text), len(text))

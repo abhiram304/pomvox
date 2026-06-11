@@ -5,7 +5,8 @@
 [hotkey]
 ptt = "fn"           # hold to talk; use "right_option" if Fn proves flaky
 toggle = "fn+space"  # hands-free: start recording
-stop = "esc"         # hands-free: stop recording (toggle key also stops)
+stop = ""            # optional extra stop key; fn tap / fn+space always stop
+cancel = "esc"       # discard the utterance (nothing inserts); "" disables
 
 [stt]
 model = "mlx-community/parakeet-tdt-0.6b-v3"

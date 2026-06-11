@@ -43,8 +43,14 @@ uv run murmur                        # menu bar app
 ## Usage
 
 - **Push-to-talk:** hold `Fn`, speak, release → text appears at the cursor.
-- **Hands-free:** press `Fn+Space` to start, `Esc` (or `Fn+Space` again) to
-  stop and insert. (Auto-stop on silence arrives in Phase 2.)
+- **Hands-free:** press `Fn+Space` to start; `Fn+Space` again (or a tap of
+  `Fn`) to stop and insert. (Auto-stop on silence arrives in Phase 2.)
+- **Cancel:** `Esc` while recording (either mode) discards the utterance —
+  nothing is inserted.
+
+> **Breaking change:** `Esc` used to *stop and insert* in hands-free mode;
+> it now *cancels*. Set `[hotkey] cancel = ""` and `stop = "esc"` in
+> `~/.murmur/config.toml` to restore the old behavior.
 
 Menu bar icon: 🎤 idle · 🔴 recording · ✍️ transcribing.
 

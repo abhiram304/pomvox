@@ -19,6 +19,13 @@ BLOCKSIZE = 1600  # 100 ms
 SENTINEL = None
 
 
+class _Cancel:
+    """Queue marker: discard the in-flight utterance instead of finalizing."""
+
+
+CANCEL = _Cancel()
+
+
 def block_dbfs(block) -> float:
     """RMS level of a float32 block in dBFS (pure numpy; feeds the HUD)."""
     import math
@@ -65,6 +72,13 @@ class Recorder:
         self._stream.stop()
         self.q.put(SENTINEL)
         log.debug("audio: recording stopped")
+
+    def cancel(self) -> None:
+        """Stop capture and tell the STT worker to discard the utterance."""
+        self._recording = False
+        self._stream.stop()
+        self.q.put(CANCEL)
+        log.debug("audio: recording cancelled")
 
     def close(self) -> None:
         self._stream.close()

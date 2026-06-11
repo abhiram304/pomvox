@@ -25,7 +25,8 @@ _SECTIONS = ("hotkey", "stt", "cleanup", "insert", "log", "hud")
 class HotkeyConfig:
     ptt: str = "fn"
     toggle: str = "fn+space"
-    stop: str = "esc"
+    stop: str = ""  # optional extra stop key; fn tap / fn+space always stop
+    cancel: str = "esc"  # discard the utterance; "" disables
 
 
 @dataclass(frozen=True)

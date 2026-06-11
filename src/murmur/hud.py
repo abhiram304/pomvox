@@ -24,6 +24,7 @@ log = logging.getLogger(__name__)
 
 DONE_FLASH_S = 1.4
 ERROR_FLASH_S = 2.5
+CANCEL_FLASH_S = 0.8
 PILL_SIZE = (420.0, 64.0)
 MARGIN = 24.0
 
@@ -70,7 +71,7 @@ def level01(dbfs: float) -> float:
 
 @dataclass(frozen=True)
 class HudViewModel:
-    state: str = "hidden"  # hidden|recording|transcribing|polishing|done|error
+    state: str = "hidden"  # hidden|recording|transcribing|polishing|done|error|cancelled
     status: str = ""
     draft: str = ""
     final: str = ""
@@ -138,6 +139,10 @@ class HudStateMachine:
             elif status == "error":
                 self.vm = HudViewModel(
                     state="error", status=f"⚠️ {text}", hide_at=now + ERROR_FLASH_S
+                )
+            elif status == "cancelled":
+                self.vm = HudViewModel(
+                    state="cancelled", status="cancelled", hide_at=now + CANCEL_FLASH_S
                 )
             else:  # empty utterance — nothing to show
                 self.vm = _HIDDEN
@@ -265,7 +270,7 @@ class HudPanel:
 
     def _update_labels(self, vm: HudViewModel) -> None:
         glyph = {"recording": "●", "transcribing": "✍️", "polishing": "✍️",
-                 "done": "✓", "error": ""}.get(vm.state, "")
+                 "done": "✓", "error": "", "cancelled": "✕"}.get(vm.state, "")
         bars = self._bars(vm) if vm.state == "recording" else ""
         head = " ".join(p for p in (glyph, bars, vm.status) if p)
         self._status_label.setStringValue_(head)

@@ -6,9 +6,11 @@ without pyobjc installed.
 
 Scheme (config-driven, defaults shown):
 - push-to-talk: hold ``fn`` → record while held; release → stop.
-- toggle: ``fn+space`` while recording switches to hands-free; ``esc`` or a
-  second ``fn+space`` stops. Toggle/stop keypresses are swallowed; everything
-  else passes through.
+- toggle: ``fn+space`` while recording switches to hands-free; a second
+  ``fn+space``, a tap of the PTT key, or the optional ``stop`` key stops.
+- cancel: ``esc`` while recording (either mode) discards the utterance —
+  nothing is transcribed or inserted (Wispr Flow muscle memory).
+Toggle/stop/cancel keypresses are swallowed; everything else passes through.
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ class Action(enum.Enum):
     START_PTT = "start_ptt"
     ENTER_TOGGLE = "enter_toggle"  # ptt → hands-free; recording continues
     STOP = "stop"  # finalize: transcribe + insert
+    CANCEL = "cancel"  # discard: nothing transcribed, nothing inserted
 
 
 @dataclass(frozen=True)
@@ -66,14 +69,23 @@ class HotkeyMachine:
     machine stays BUSY until :meth:`done` is called post-insertion.
     """
 
-    def __init__(self, ptt: str = "fn", toggle: str = "fn+space", stop: str = "esc"):
+    def __init__(
+        self,
+        ptt: str = "fn",
+        toggle: str = "fn+space",
+        stop: str = "",
+        cancel: str = "esc",
+    ):
         self.ptt_key = self._keycode(ptt)
         mod, sep, key = toggle.partition("+")
         if not sep:
             raise ValueError(f"toggle hotkey must be 'modifier+key', got {toggle!r}")
         self.toggle_mod = self._keycode(mod)
         self.toggle_key = self._keycode(key)
-        self.stop_key = self._keycode(stop)
+        # Both optional: fn tap / fn+space already stop hands-free, and
+        # cancel="" disables the discard gesture entirely.
+        self.stop_key = self._keycode(stop) if stop else None
+        self.cancel_key = self._keycode(cancel) if cancel else None
         self.state = State.IDLE
         self._mods_down: set[int] = set()
 
@@ -111,9 +123,15 @@ class HotkeyMachine:
             if keycode == self.toggle_key and self.toggle_mod in self._mods_down:
                 self.state = State.TOGGLE
                 return Decision(Action.ENTER_TOGGLE, swallow=True)
+            if self.cancel_key is not None and keycode == self.cancel_key:
+                self.state = State.BUSY
+                return Decision(Action.CANCEL, swallow=True)
             return PASS
         if self.state is State.TOGGLE:
-            if keycode == self.stop_key or (
+            if self.cancel_key is not None and keycode == self.cancel_key:
+                self.state = State.BUSY
+                return Decision(Action.CANCEL, swallow=True)
+            if (self.stop_key is not None and keycode == self.stop_key) or (
                 keycode == self.toggle_key and self.toggle_mod in self._mods_down
             ):
                 self.state = State.BUSY
