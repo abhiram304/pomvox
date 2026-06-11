@@ -1,7 +1,9 @@
 """App controller: wires hotkeys, audio, STT, cleanup, insertion, and the menu bar.
 
 Threading (SPEC §5):
-- main thread: rumps run loop + CGEventTap source (tap installed before run)
+- main thread: rumps run loop + CGEventTap source (tap installed from a
+  callAfter once the run loop is live, so a missing Input Monitoring grant
+  degrades to the Setup Assistant instead of exiting)
 - audio thread: sounddevice callback → queue of PCM blocks
 - STT worker: owns Parakeet, streams blocks, emits final text on stop;
   the LLM cleanup pass also runs here, synchronously, so insert ordering
@@ -106,9 +108,14 @@ class Controller:
             on_hud_toggle=self._set_hud_enabled,
             vad_enabled=cfg.vad.enabled if self._endpointer else None,
             on_vad_toggle=self._set_vad_enabled,
+            on_setup=self._open_onboarding,
         )
         self.bench = BenchLog()
         self.timings = Timings()
+        self._tap_installed = False
+        self._onboarding = None
+        self._ob_flow = None
+        self._poll_timer = None
 
     def _post_state(self, state: str, detail: str = "") -> None:
         self.bus.post(self._ev.STATE, (state, detail))
@@ -252,7 +259,71 @@ class Controller:
             if self._pending_models or self._models_ready:
                 return
             self._models_ready = True
-        self._post_state("idle", "ready")
+        if self._tap_installed:
+            self._post_state("idle", "ready")
+        else:
+            # Models loaded but hotkeys are dead — don't claim "ready".
+            self._post_state("setup", "setup needed — see Setup Assistant")
+
+    # -- onboarding (main thread; driven by the 1 Hz permission poll) ------
+
+    def _open_onboarding(self) -> None:
+        from .hotkey import State
+
+        if self.machine.state is not State.IDLE:
+            return  # never steal focus while dictation is in flight
+        if self._onboarding is None:
+            from .onboarding import OnboardingFlow, OnboardingWindow
+
+            self._ob_flow = OnboardingFlow()
+            self._onboarding = OnboardingWindow(
+                on_request=self._ob_request,
+                on_self_test=self._ob_self_test,
+                on_done=self._ob_done,
+            )
+        self._onboarding.show()
+        self._refresh_onboarding()
+        if self._poll_timer is None:
+            import rumps
+
+            self._poll_timer = rumps.Timer(self._poll_tick, 1)
+        self._poll_timer.start()
+
+    def _poll_tick(self, _timer) -> None:
+        self._refresh_onboarding()
+
+    def _refresh_onboarding(self) -> None:
+        from . import permissions
+
+        statuses = permissions.statuses()
+        if statuses.get("input_monitoring") is True and not self._tap_installed:
+            # Usually requires a relaunch; retrying costs nothing and works
+            # on the macOS versions that do propagate the grant.
+            if self._try_install_tap():
+                log.info("hotkey: tap installed after grant")
+                self._post_state("idle", "ready")
+        rows = self._ob_flow.rows(statuses, self._tap_installed)
+        complete = self._ob_flow.complete(statuses, self._tap_installed)
+        self._onboarding.refresh(rows, complete)
+
+    def _ob_request(self, key: str) -> None:
+        from . import permissions
+
+        permissions.request(key)
+
+    def _ob_self_test(self) -> None:
+        from .insert import insert_text
+        from .onboarding import SELF_TEST_TEXT
+
+        self._onboarding.focus_test_field_and(lambda: insert_text(SELF_TEST_TEXT))
+
+    def _ob_done(self) -> None:
+        from .onboarding import mark_onboarded
+
+        mark_onboarded()
+        if self._poll_timer is not None:
+            self._poll_timer.stop()
+        self._onboarding.close()
 
     def _set_cleanup_enabled(self, enabled: bool) -> None:
         # rumps menu callback (main thread); the STT worker reads the flag.
@@ -283,6 +354,8 @@ class Controller:
         self._model_ready("cleanup")
 
     def run(self) -> int:
+        from PyObjCTools import AppHelper
+
         from . import permissions
 
         for line in permissions.report().splitlines():
@@ -293,21 +366,39 @@ class Controller:
         self.worker.start()
         if self.cleanup_enabled:
             self._start_cleanup_loader()
+        # rumps runs first; the tap is installed from inside the run loop
+        # (the main thread owns it either way). A failed install degrades
+        # to the Setup Assistant instead of exiting — there has to be a
+        # live run loop for onboarding to exist at all.
+        AppHelper.callAfter(self._startup)
+        self.app.run()
+        return 0
+
+    def _startup(self) -> None:
+        # Main thread, run loop live: build the HUD panel here — never
+        # lazily inside a dictation (panel construction in the tap callback
+        # path would delay event delivery system-wide).
+        from . import onboarding, permissions
+
+        if self.hud is not None:
+            self.hud.prepare()
+        self._try_install_tap()
+        if not self._tap_installed or (
+            permissions.missing() and not onboarding.is_onboarded()
+        ):
+            self._open_onboarding()
+
+    def _try_install_tap(self) -> bool:
+        if self._tap_installed:
+            return True
         try:
             self.tap.start()
         except RuntimeError as exc:
             log.error("%s", exc)
-            permissions.request_input_monitoring()
-            return 1
-        if self.hud is not None:
-            # Build the panel once the run loop is up — never lazily inside
-            # a dictation (panel construction in the tap callback path would
-            # delay event delivery system-wide).
-            from PyObjCTools import AppHelper
-
-            AppHelper.callAfter(self.hud.prepare)
-        self.app.run()
-        return 0
+            self._post_state("setup", "setup needed — see Setup Assistant")
+            return False
+        self._tap_installed = True
+        return True
 
 
 def run_app(cfg: Config) -> int:

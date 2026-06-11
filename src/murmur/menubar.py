@@ -14,6 +14,7 @@ GLYPHS = {
     "recording": "🔴",
     "transcribing": "✍️",
     "polishing": "✍️",
+    "setup": "⚠️",
 }
 
 
@@ -28,6 +29,7 @@ class MenuBarApp(rumps.App):
         on_hud_toggle=None,
         vad_enabled: bool | None = None,
         on_vad_toggle=None,
+        on_setup=None,
     ) -> None:
         super().__init__(GLYPHS["loading"], quit_button="Quit Murmur")
         self._status = rumps.MenuItem("Status: loading models…")
@@ -35,6 +37,7 @@ class MenuBarApp(rumps.App):
         self._on_style_change = on_style_change
         self._on_hud_toggle = on_hud_toggle
         self._on_vad_toggle = on_vad_toggle
+        self._on_setup = on_setup
         self._style = style
         self._cleanup_item = rumps.MenuItem("Cleanup", callback=self._toggle_cleanup)
         self._cleanup_item.state = 1 if cleanup_enabled else 0
@@ -52,7 +55,7 @@ class MenuBarApp(rumps.App):
             )
             self._vad_item.state = 1 if vad_enabled else 0
             items.append(self._vad_item)
-        items.append(rumps.MenuItem("Check permissions", callback=self._check_permissions))
+        items.append(rumps.MenuItem("Setup Assistant…", callback=self._setup))
         self.menu = items
 
     def set_state(self, state: str, detail: str = "") -> None:
@@ -80,7 +83,6 @@ class MenuBarApp(rumps.App):
         if self._on_style_change:
             self._on_style_change(self._style)
 
-    def _check_permissions(self, _sender) -> None:
-        from . import permissions
-
-        rumps.alert(title="Murmur permissions", message=permissions.report())
+    def _setup(self, _sender) -> None:
+        if self._on_setup:
+            self._on_setup()
