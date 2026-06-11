@@ -223,7 +223,9 @@ class CleanupEngine:
                 prompt = prompt[len(prefix) :]
                 kwargs["prompt_cache"] = copy.deepcopy(cache)
         max_tokens = max(64, min(2 * len(self._tokenizer.encode(text)), 1024))
+        t_gen = time.perf_counter()
         parts: list[str] = []
+        resp = None
         for resp in stream_generate(
             self._model, self._tokenizer, prompt, max_tokens=max_tokens, **kwargs
         ):
@@ -231,4 +233,14 @@ class CleanupEngine:
             if time.perf_counter() > deadline:
                 log.warning("cleanup: deadline %.1fs hit, falling back to raw", timeout_s)
                 return None
+        if resp is not None:
+            log.info(
+                "cleanup: gen %.2fs prefill=%dtok@%.0ftps decode=%dtok@%.1ftps cached=%s",
+                time.perf_counter() - t_gen,
+                resp.prompt_tokens,
+                resp.prompt_tps,
+                resp.generation_tokens,
+                resp.generation_tps,
+                "prompt_cache" in kwargs,
+            )
         return "".join(parts)
