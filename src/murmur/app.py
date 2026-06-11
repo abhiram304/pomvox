@@ -37,16 +37,31 @@ class Controller:
         from .bench import BenchLog, Timings
         from .cleanup import CleanupEngine
         from .hotkey import EventTap, HotkeyMachine
+        from .hud import Hud
         from .menubar import MenuBarApp
         from .stt import SttWorker, Transcriber
+        from .uibus import MainThreadBus, UiEvent
 
+        self._ev = UiEvent
+        self.hud = (
+            Hud(
+                position=cfg.hud.position,
+                show_draft=cfg.hud.show_draft,
+                sounds=cfg.hud.sounds,
+                max_chars=cfg.hud.max_chars,
+            )
+            if cfg.hud.enabled
+            else None
+        )
+        self.bus = MainThreadBus(self._render_ui)
         self.machine = HotkeyMachine(cfg.hotkey.ptt, cfg.hotkey.toggle, cfg.hotkey.stop)
-        self.recorder = Recorder()
+        self.recorder = Recorder(on_block=self._on_block if self.hud else None)
         self.worker = SttWorker(
             Transcriber(cfg.stt.model),
             self.recorder.q,
             on_text=self._on_text,
             on_ready=lambda: self._model_ready("stt"),
+            on_draft=(lambda text: self.bus.post(UiEvent.DRAFT, text)) if self.hud else None,
         )
         self.cleanup_enabled = cfg.cleanup.enabled
         self.cleanup_style = cfg.cleanup.style
@@ -62,9 +77,37 @@ class Controller:
             style=self.cleanup_style,
             on_cleanup_toggle=self._set_cleanup_enabled,
             on_style_change=self._set_cleanup_style,
+            hud_enabled=cfg.hud.enabled if self.hud else None,
+            on_hud_toggle=self._set_hud_enabled,
         )
         self.bench = BenchLog()
         self.timings = Timings()
+
+    def _post_state(self, state: str, detail: str = "") -> None:
+        self.bus.post(self._ev.STATE, (state, detail))
+
+    def _render_ui(self, payloads: dict) -> None:
+        # MainThreadBus render callback — the only place AppKit-facing UI
+        # (menu bar title, HUD panel) is touched, always on the main thread.
+        state = payloads.get(self._ev.STATE)
+        if state is not None:
+            self.app.set_state(*state)
+        if self.hud is not None:
+            self.hud.render(payloads)
+
+    def _on_block(self, block) -> None:
+        # Audio callback thread: one numpy reduction + a coalesced post.
+        from .audio import block_dbfs
+        from .hud import level01
+
+        self.bus.post(self._ev.LEVEL, level01(block_dbfs(block)))
+
+    def _set_hud_enabled(self, enabled: bool) -> None:
+        # rumps menu callback (main thread).
+        if self.hud is not None:
+            self.hud.enabled = enabled
+            self.hud.render({})  # apply immediately (hides the panel if shown)
+        log.info("hud: %s (menu)", "enabled" if enabled else "disabled")
 
     def _on_action(self, action) -> None:
         # Runs in the event tap callback — keep it short.
@@ -74,7 +117,7 @@ class Controller:
             self._start_recording("push-to-talk")
         elif action is Action.ENTER_TOGGLE:
             log.info("hands-free mode (stop with Esc or the toggle hotkey)")
-            self.app.set_state("recording", "recording (hands-free)")
+            self._post_state("recording", "recording (hands-free)")
         elif action is Action.STOP:
             self._stop_recording()
 
@@ -86,12 +129,12 @@ class Controller:
             self.machine.reset()
             return
         log.info("recording (%s)", mode)
-        self.app.set_state("recording", f"recording ({mode})")
+        self._post_state("recording", f"recording ({mode})")
 
     def _stop_recording(self) -> None:
         self.timings.start()  # t0 = recording stop
         self.recorder.stop()
-        self.app.set_state("transcribing")
+        self._post_state("transcribing")
 
     def _on_text(self, text: str) -> None:
         # Runs on the STT worker thread.
@@ -103,6 +146,7 @@ class Controller:
             log.info("transcript: %r (%d chars)", preview(text), len(text))
             log.debug("transcript full: %r", text)
             if self.cleanup_enabled:
+                self._post_state("polishing")
                 text, status = run_cleanup(
                     self.cleanup, text, self.cleanup_style, self._cleanup_timeout
                 )
@@ -115,13 +159,16 @@ class Controller:
             try:
                 insert_text(text)
                 self.timings.stamp("insert")
+                self.bus.post(self._ev.RESULT, ("ok", text))
             except Exception:
-                log.exception("insert failed — transcript is on the clipboard")
+                log.exception("insert failed — check Accessibility permission")
+                self.bus.post(self._ev.RESULT, ("error", "insert failed"))
             self.bench.add(self.timings)
         else:
             log.info("empty utterance, nothing to insert")
+            self.bus.post(self._ev.RESULT, ("empty", ""))
         self.machine.done()
-        self.app.set_state("idle", "ready")
+        self._post_state("idle", "ready")
 
     def _model_ready(self, name: str) -> None:
         with self._ready_lock:
@@ -129,7 +176,7 @@ class Controller:
             if self._pending_models or self._models_ready:
                 return
             self._models_ready = True
-        self.app.set_state("idle", "ready")
+        self._post_state("idle", "ready")
 
     def _set_cleanup_enabled(self, enabled: bool) -> None:
         # rumps menu callback (main thread); the STT worker reads the flag.
@@ -176,6 +223,13 @@ class Controller:
             log.error("%s", exc)
             permissions.request_input_monitoring()
             return 1
+        if self.hud is not None:
+            # Build the panel once the run loop is up — never lazily inside
+            # a dictation (panel construction in the tap callback path would
+            # delay event delivery system-wide).
+            from PyObjCTools import AppHelper
+
+            AppHelper.callAfter(self.hud.prepare)
         self.app.run()
         return 0
 

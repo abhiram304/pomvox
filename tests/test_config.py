@@ -87,6 +87,22 @@ def test_bad_cleanup_timeout_falls_back(tmp_path, caplog):
     assert any("bad [cleanup]" in r.message for r in caplog.records)
 
 
+def test_hud_section(tmp_path):
+    cfg = config.load(
+        write(tmp_path, '[hud]\nenabled = false\nposition = "top-center"\nsounds = false\n')
+    )
+    assert cfg.hud.enabled is False
+    assert cfg.hud.position == "top-center"
+    assert cfg.hud.sounds is False
+    assert cfg.hud.show_draft is True
+
+
+def test_bad_hud_position_falls_back(tmp_path, caplog):
+    cfg = config.load(write(tmp_path, '[hud]\nposition = "under-the-dock"\n'))
+    assert cfg.hud == config.HudConfig()
+    assert any("bad [hud]" in r.message for r in caplog.records)
+
+
 def test_malformed_file_falls_back_to_defaults(tmp_path, caplog):
     cfg = config.load(write(tmp_path, "not [valid toml ===="))
     assert cfg == config.Config()

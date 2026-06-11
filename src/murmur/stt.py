@@ -74,12 +74,20 @@ class Transcriber:
 class SttWorker(threading.Thread):
     """Owns the model; turns queued PCM blocks into final transcripts."""
 
-    def __init__(self, transcriber: Transcriber, audio_q: queue.Queue, on_text, on_ready=None):
+    def __init__(
+        self,
+        transcriber: Transcriber,
+        audio_q: queue.Queue,
+        on_text,
+        on_ready=None,
+        on_draft=None,
+    ):
         super().__init__(name="stt-worker", daemon=True)
         self._transcriber = transcriber
         self._q = audio_q
         self._on_text = on_text
         self._on_ready = on_ready
+        self._on_draft = on_draft
 
     def run(self) -> None:
         self._transcriber.load()
@@ -129,9 +137,13 @@ class SttWorker(threading.Thread):
                 chunk = chunker.add(block)
                 if chunk is not None:
                     ctx.add_audio(mx.array(chunk))
-                    # Draft tokens are just logged in Phase 1; the Phase 2
-                    # HUD will consume them live.
-                    if log.isEnabledFor(logging.DEBUG) and ctx.result is not None:
+                    if ctx.result is not None:
+                        if self._on_draft is not None:
+                            try:
+                                self._on_draft(ctx.result.text)
+                            except Exception:
+                                log.exception("stt: draft callback failed — disabling it")
+                                self._on_draft = None
                         log.debug("stt: draft %r", ctx.result.text)
                 block = self._q.get()
             tail = chunker.flush()

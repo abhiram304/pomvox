@@ -21,3 +21,10 @@ method = "paste"
 
 [log]
 file = true  # also write ~/.murmur/murmur.log
+
+[hud]
+enabled = true
+show_draft = true          # false keeps live text out of screen shares
+position = "bottom-center" # or "top-center"
+max_chars = 120
+sounds = true              # start/stop cues for eyes-off dictation

@@ -13,6 +13,7 @@ GLYPHS = {
     "idle": "🎤",
     "recording": "🔴",
     "transcribing": "✍️",
+    "polishing": "✍️",
 }
 
 
@@ -23,23 +24,27 @@ class MenuBarApp(rumps.App):
         style: str = "polish",
         on_cleanup_toggle=None,
         on_style_change=None,
+        hud_enabled: bool | None = None,
+        on_hud_toggle=None,
     ) -> None:
         super().__init__(GLYPHS["loading"], quit_button="Quit Murmur")
         self._status = rumps.MenuItem("Status: loading models…")
         self._on_cleanup_toggle = on_cleanup_toggle
         self._on_style_change = on_style_change
+        self._on_hud_toggle = on_hud_toggle
         self._style = style
         self._cleanup_item = rumps.MenuItem("Cleanup", callback=self._toggle_cleanup)
         self._cleanup_item.state = 1 if cleanup_enabled else 0
         self._style_item = rumps.MenuItem(
             f"Style: {style.capitalize()}", callback=self._cycle_style
         )
-        self.menu = [
-            self._status,
-            self._cleanup_item,
-            self._style_item,
-            rumps.MenuItem("Check permissions", callback=self._check_permissions),
-        ]
+        items = [self._status, self._cleanup_item, self._style_item]
+        if hud_enabled is not None:  # None = HUD off in config, no toggle
+            self._hud_item = rumps.MenuItem("Show HUD", callback=self._toggle_hud)
+            self._hud_item.state = 1 if hud_enabled else 0
+            items.append(self._hud_item)
+        items.append(rumps.MenuItem("Check permissions", callback=self._check_permissions))
+        self.menu = items
 
     def set_state(self, state: str, detail: str = "") -> None:
         self.title = GLYPHS.get(state, GLYPHS["idle"])
@@ -49,6 +54,11 @@ class MenuBarApp(rumps.App):
         sender.state = 0 if sender.state else 1
         if self._on_cleanup_toggle:
             self._on_cleanup_toggle(bool(sender.state))
+
+    def _toggle_hud(self, sender) -> None:
+        sender.state = 0 if sender.state else 1
+        if self._on_hud_toggle:
+            self._on_hud_toggle(bool(sender.state))
 
     def _cycle_style(self, sender) -> None:
         self._style = "light" if self._style == "polish" else "polish"
