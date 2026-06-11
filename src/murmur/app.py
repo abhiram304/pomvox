@@ -23,6 +23,14 @@ from .config import Config
 log = logging.getLogger(__name__)
 
 
+def preview(text: str, limit: int = 60) -> str:
+    """Truncate *text* for INFO logs — full transcripts stay out of
+    ~/.murmur/murmur.log (unbounded, on by default); DEBUG carries them."""
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1] + "…"
+
+
 class Controller:
     def __init__(self, cfg: Config) -> None:
         from .audio import Recorder
@@ -92,14 +100,16 @@ class Controller:
 
         self.timings.stamp("stt_finalize")
         if text:
-            log.info("transcript: %r", text)
+            log.info("transcript: %r (%d chars)", preview(text), len(text))
+            log.debug("transcript full: %r", text)
             if self.cleanup_enabled:
                 text, status = run_cleanup(
                     self.cleanup, text, self.cleanup_style, self._cleanup_timeout
                 )
                 self.timings.stamp("cleanup")
                 if status == "ok":
-                    log.info("cleanup: ok %r", text)
+                    log.info("cleanup: ok %r", preview(text))
+                    log.debug("cleanup full: %r", text)
                 else:
                     log.info("cleanup: %s, inserting raw", status)
             try:
