@@ -39,14 +39,49 @@ def test_fn_space_enters_toggle_and_swallows(m):
     assert m.state is State.TOGGLE
 
 
-def test_esc_stops_toggle_and_swallows(m):
+def test_esc_cancels_toggle_and_swallows(m):
     m.on_modifier(FN, True)
     m.on_key_down(SPACE)
     m.on_modifier(FN, False)
 
     d = m.on_key_down(ESC)
-    assert d.action is Action.STOP and d.swallow
+    assert d.action is Action.CANCEL and d.swallow
     assert m.state is State.BUSY
+
+
+def test_esc_cancels_ptt_and_swallows(m):
+    m.on_modifier(FN, True)
+    d = m.on_key_down(ESC)
+    assert d.action is Action.CANCEL and d.swallow
+    assert m.state is State.BUSY
+
+    # The trailing Fn release must not emit a second STOP.
+    d = m.on_modifier(FN, False)
+    assert d.action is Action.NONE
+
+
+def test_configured_stop_key_still_stops_toggle():
+    m = HotkeyMachine(stop="right_command")
+    m.on_modifier(FN, True)
+    m.on_key_down(SPACE)
+    m.on_modifier(FN, False)
+
+    d = m.on_key_down(KEYCODES["right_command"])
+    assert d.action is Action.STOP and d.swallow
+
+
+def test_cancel_disabled_when_unset():
+    m = HotkeyMachine(cancel="")
+    m.on_modifier(FN, True)
+    d = m.on_key_down(ESC)
+    assert d.action is Action.NONE and not d.swallow
+
+
+def test_esc_while_busy_passes_through(m):
+    m.on_modifier(FN, True)
+    m.on_modifier(FN, False)  # STOP → BUSY; a late Esc is too late to cancel
+    d = m.on_key_down(ESC)
+    assert d.action is Action.NONE and not d.swallow
 
 
 def test_fn_tap_stops_toggle(m):
@@ -103,13 +138,6 @@ def test_events_while_busy_are_ignored(m):
     assert m.on_modifier(FN, True).action is Action.START_PTT
 
 
-def test_esc_during_ptt_passes_through(m):
-    m.on_modifier(FN, True)
-    d = m.on_key_down(ESC)
-    assert d.action is Action.NONE and not d.swallow
-    assert m.state is State.PTT
-
-
 def test_remapped_ptt_key(m):
     m = HotkeyMachine(ptt="right_option")
     assert m.on_modifier(FN, True).action is Action.NONE
@@ -128,3 +156,21 @@ def test_reset_aborts_recording(m):
     m.on_modifier(FN, True)
     m.reset()
     assert m.state is State.IDLE
+
+
+def test_external_stop_only_fires_in_toggle(m):
+    # VAD endpoint while hands-free: stops exactly like the stop hotkey.
+    m.on_modifier(FN, True)
+    m.on_key_down(SPACE)
+    m.on_modifier(FN, False)
+    assert m.external_stop() is True
+    assert m.state is State.BUSY
+
+    # And never anywhere else: BUSY (a second stale endpoint), PTT
+    # (the finger is the endpoint), IDLE.
+    assert m.external_stop() is False
+    m.done()
+    assert m.external_stop() is False
+    m.on_modifier(FN, True)  # PTT
+    assert m.external_stop() is False
+    assert m.state is State.PTT

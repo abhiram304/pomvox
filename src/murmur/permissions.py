@@ -71,6 +71,46 @@ def request_input_monitoring() -> None:
         log.exception("permissions: input monitoring request failed")
 
 
+def request_accessibility() -> None:
+    """Trigger the system Accessibility prompt (no-op if already decided)."""
+    try:
+        from ApplicationServices import (
+            AXIsProcessTrustedWithOptions,
+            kAXTrustedCheckOptionPrompt,
+        )
+
+        AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: True})
+    except Exception:
+        log.exception("permissions: accessibility request failed")
+
+
+def statuses() -> dict[str, bool | None]:
+    """All probes at once — what the onboarding checklist polls."""
+    return {
+        "microphone": microphone_status(),
+        "accessibility": accessibility_status(),
+        "input_monitoring": input_monitoring_status(),
+    }
+
+
+def request(key: str) -> None:
+    """Fire the native prompt for *key* and open its System Settings pane.
+
+    Native prompts only appear the first time; the deep link is the path
+    for users who dismissed one (those prompts never reappear).
+    """
+    if key == "microphone":
+        request_microphone()
+    elif key == "input_monitoring":
+        request_input_monitoring()
+    elif key == "accessibility":
+        request_accessibility()
+    try:
+        subprocess.run(["open", SETTINGS_LINKS[key]], check=False, timeout=5)
+    except Exception:
+        log.exception("permissions: could not open System Settings for %s", key)
+
+
 def globe_key_is_do_nothing() -> bool | None:
     """True when "Press 🌐 key to" is set to Do Nothing (AppleFnUsageType=0)."""
     try:

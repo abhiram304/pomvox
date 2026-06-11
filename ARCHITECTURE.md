@@ -50,7 +50,7 @@ Four threads, one owner per resource (see `app.py` docstring):
 
 | thread | owns | notes |
 |---|---|---|
-| main | rumps run loop + CGEventTap | tap must be installed before `run()` |
+| main | rumps run loop + CGEventTap + all AppKit (HUD, windows) | tap installed from inside the run loop; install failure degrades to the Setup Assistant, never exits |
 | audio callback | sounddevice stream | pushes PCM blocks onto a queue |
 | STT worker | Parakeet model **and** the cleanup pass | single consumer of the queue |
 | cleanup loader | loads + warms the mlx-lm model at startup, then exits | failure disables cleanup, app stays usable |
@@ -130,9 +130,21 @@ cleanup style/deadline, insertion method are all config values
 (see [config.example.toml](config.example.toml)). Menu-bar toggles override
 config at runtime without persisting.
 
+## UI layer (`uibus.py`, `hud.py`, `vad.py`, `onboarding.py`)
+
+All UI flows through one spine: producers on any thread call
+`MainThreadBus.post` (a per-event latest-wins mailbox + at most one
+`callAfter` per burst); only the main thread touches AppKit. The first
+failure anywhere in the render path disables the bus — a broken HUD can
+never block or break dictation. Each module splits pure logic
+(`HudStateMachine`, `EndpointDetector`, `OnboardingFlow` — Linux-tested,
+and the spec for the future Swift rewrite) from a dumb AppKit renderer.
+VAD classification runs inline in the audio callback (~30 µs per 100 ms
+block measured); endpoints reach the pipeline only via the main thread
+through `HotkeyMachine.external_stop()` plus a session generation check.
+
 ## Stubs (planned phases)
 
-`vad.py` (auto-stop endpointing), `hud.py` (live draft overlay),
-`context.py` (per-app tone profiles), `dictionary.py` (custom words) are
-docstring-only placeholders for SPEC Phases 2/4 — the seams exist so the
+`context.py` (per-app tone profiles) and `dictionary.py` (custom words)
+are docstring-only placeholders for SPEC Phase 4 — the seams exist so the
 pipeline shape doesn't change when they land.

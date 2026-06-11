@@ -74,23 +74,37 @@ class Transcriber:
 class SttWorker(threading.Thread):
     """Owns the model; turns queued PCM blocks into final transcripts."""
 
-    def __init__(self, transcriber: Transcriber, audio_q: queue.Queue, on_text, on_ready=None):
+    def __init__(
+        self,
+        transcriber: Transcriber,
+        audio_q: queue.Queue,
+        on_text,
+        on_ready=None,
+        on_draft=None,
+    ):
         super().__init__(name="stt-worker", daemon=True)
         self._transcriber = transcriber
         self._q = audio_q
         self._on_text = on_text
         self._on_ready = on_ready
+        self._on_draft = on_draft
 
     def run(self) -> None:
         self._transcriber.load()
         self._warmup()
         if self._on_ready:
             self._on_ready()
+        from .audio import CANCEL
+
         while True:
             block = self._q.get()
             if block is None:
                 # Sentinel with no audio: utterance too short to capture.
                 self._emit("")
+                continue
+            if block is CANCEL:
+                # Cancelled before any audio was queued.
+                self._emit(None)
                 continue
             try:
                 text = self._session(block)
@@ -115,8 +129,11 @@ class SttWorker(threading.Thread):
         except Exception:
             log.exception("stt: warmup failed")
 
-    def _session(self, first_block) -> str:
+    def _session(self, first_block) -> str | None:
+        """Transcribe one utterance; ``None`` means it was cancelled."""
         import mlx.core as mx
+
+        from .audio import CANCEL
 
         chunker = Chunker()
         sumsq = 0.0
@@ -124,14 +141,21 @@ class SttWorker(threading.Thread):
         with self._transcriber.stream() as ctx:
             block = first_block
             while block is not None:
+                if block is CANCEL:
+                    log.info("stt: session cancelled, discarding %.1fs", samples / SAMPLERATE)
+                    return None
                 sumsq += float((block**2).sum())
                 samples += len(block)
                 chunk = chunker.add(block)
                 if chunk is not None:
                     ctx.add_audio(mx.array(chunk))
-                    # Draft tokens are just logged in Phase 1; the Phase 2
-                    # HUD will consume them live.
-                    if log.isEnabledFor(logging.DEBUG) and ctx.result is not None:
+                    if ctx.result is not None:
+                        if self._on_draft is not None:
+                            try:
+                                self._on_draft(ctx.result.text)
+                            except Exception:
+                                log.exception("stt: draft callback failed — disabling it")
+                                self._on_draft = None
                         log.debug("stt: draft %r", ctx.result.text)
                 block = self._q.get()
             tail = chunker.flush()
@@ -145,7 +169,8 @@ class SttWorker(threading.Thread):
                 log.warning("stt: audio nearly silent — check the input device / mic volume")
         return (result.text if result else "").strip()
 
-    def _emit(self, text: str) -> None:
+    def _emit(self, text: str | None) -> None:
+        """Forward the result; ``None`` means the utterance was cancelled."""
         try:
             self._on_text(text)
         except Exception:

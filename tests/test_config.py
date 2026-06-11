@@ -14,7 +14,8 @@ def test_defaults_when_file_absent(tmp_path):
     assert cfg == config.Config()
     assert cfg.hotkey.ptt == "fn"
     assert cfg.hotkey.toggle == "fn+space"
-    assert cfg.hotkey.stop == "esc"
+    assert cfg.hotkey.stop == ""  # fn tap / fn+space stop hands-free
+    assert cfg.hotkey.cancel == "esc"
     assert cfg.stt.model == "mlx-community/parakeet-tdt-0.6b-v3"
     assert cfg.cleanup.enabled is True
     assert cfg.cleanup.model == "mlx-community/Qwen3-4B-4bit"
@@ -87,10 +88,58 @@ def test_bad_cleanup_timeout_falls_back(tmp_path, caplog):
     assert any("bad [cleanup]" in r.message for r in caplog.records)
 
 
+def test_hud_section(tmp_path):
+    cfg = config.load(
+        write(tmp_path, '[hud]\nenabled = false\nposition = "top-center"\nsounds = false\n')
+    )
+    assert cfg.hud.enabled is False
+    assert cfg.hud.position == "top-center"
+    assert cfg.hud.sounds is False
+    assert cfg.hud.show_draft is True
+
+
+def test_vad_section(tmp_path):
+    cfg = config.load(write(tmp_path, "[vad]\nenabled = false\nsilence_ms = 800\n"))
+    assert cfg.vad.enabled is False
+    assert cfg.vad.silence_ms == 800
+    assert cfg.vad.aggressiveness == 2
+
+
+def test_bad_vad_values_fall_back(tmp_path, caplog):
+    cfg = config.load(write(tmp_path, "[vad]\naggressiveness = 9\n"))
+    assert cfg.vad == config.VadConfig()
+    assert any("bad [vad]" in r.message for r in caplog.records)
+
+
+def test_bad_hud_position_falls_back(tmp_path, caplog):
+    cfg = config.load(write(tmp_path, '[hud]\nposition = "under-the-dock"\n'))
+    assert cfg.hud == config.HudConfig()
+    assert any("bad [hud]" in r.message for r in caplog.records)
+
+
 def test_malformed_file_falls_back_to_defaults(tmp_path, caplog):
     cfg = config.load(write(tmp_path, "not [valid toml ===="))
     assert cfg == config.Config()
     assert any("failed to read" in r.message for r in caplog.records)
+
+
+def test_restart_required_flags_model_and_hotkey_changes():
+    old = config.Config()
+    new = config.Config(
+        stt=config.SttConfig(model="mlx-community/other"),
+        hotkey=config.HotkeyConfig(ptt="right_option"),
+    )
+    assert config.restart_required(old, new) == ["hotkey", "stt.model"]
+
+
+def test_restart_required_empty_for_hot_appliable_changes():
+    old = config.Config()
+    new = config.Config(
+        cleanup=config.CleanupConfig(style="light", timeout_s=3.0),
+        hud=config.HudConfig(position="top-center"),
+        vad=config.VadConfig(silence_ms=800),
+    )
+    assert config.restart_required(old, new) == []
 
 
 def test_example_config_matches_defaults():
