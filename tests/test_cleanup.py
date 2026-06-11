@@ -1,6 +1,11 @@
 """Pure-logic tests for the cleanup pass (no mlx required)."""
 
-from murmur.cleanup import accept_output, build_messages, run_cleanup
+from murmur.cleanup import (
+    accept_output,
+    build_messages,
+    common_prefix_len,
+    run_cleanup,
+)
 
 RAW = "um so I think we should uh ship it tomorrow maybe"
 
@@ -111,3 +116,26 @@ def test_run_cleanup_error_falls_back_to_raw():
 def test_run_cleanup_rejected_falls_back_to_raw():
     engine = FakeEngine(result="<think>let me reason</think>")
     assert run_cleanup(engine, RAW, "polish", 3.0) == (RAW, "rejected")
+
+
+# --- common_prefix_len -------------------------------------------------------
+
+
+def test_common_prefix_len_diverging():
+    assert common_prefix_len([1, 2, 3], [1, 2, 4]) == 2
+
+
+def test_common_prefix_len_identical():
+    assert common_prefix_len([1, 2, 3], [1, 2, 3]) == 3
+
+
+def test_common_prefix_len_one_is_prefix_of_other():
+    assert common_prefix_len([1, 2, 3], [1, 2]) == 2
+
+
+def test_common_prefix_len_empty():
+    assert common_prefix_len([], [1, 2]) == 0
+
+
+def test_common_prefix_len_no_overlap():
+    assert common_prefix_len([9], [1]) == 0

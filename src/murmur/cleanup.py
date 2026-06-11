@@ -9,6 +9,7 @@ improve the text, never lose it.
 
 from __future__ import annotations
 
+import copy
 import logging
 import resource
 import time
@@ -69,6 +70,15 @@ def build_messages(text: str, style: str) -> list[dict]:
     return messages
 
 
+def common_prefix_len(a: list[int], b: list[int]) -> int:
+    """Length of the longest common prefix of two token sequences."""
+    n = min(len(a), len(b))
+    for i in range(n):
+        if a[i] != b[i]:
+            return i
+    return n
+
+
 def accept_output(raw: str, cleaned: str) -> str | None:
     """Sanity-check the model output; ``None`` means use the raw transcript."""
     out = cleaned.strip()
@@ -120,6 +130,10 @@ class CleanupEngine:
         self.model_id = model_id
         self._model = None
         self._tokenizer = None
+        # style -> (prefix tokens, KV cache of that prefix), built at warmup;
+        # the static system+examples part of the prompt (~95% of its tokens)
+        # is prefilled once instead of on every utterance.
+        self._prefix_cache: dict[str, tuple[list[int], object]] = {}
 
     def load(self) -> None:
         from mlx_lm import load
@@ -133,13 +147,50 @@ class CleanupEngine:
         self._model = model
 
     def warmup(self) -> None:
-        """One tiny generation — the first MLX inference compiles kernels."""
+        """Prefill the static prompt prefix per style (doubles as the kernel
+        warmup) and run one tiny generation."""
         try:
             t0 = time.perf_counter()
+            self._build_prefix_caches()
             self.clean("um hello", "light", timeout_s=120.0)
             log.info("cleanup: warmup %.1fs", time.perf_counter() - t0)
         except Exception:
             log.exception("cleanup: warmup failed")
+
+    def _render(self, text: str, style: str) -> list[int]:
+        # Qwen3 is a hybrid-thinking model: without enable_thinking=False it
+        # emits <think> blocks and blows the latency budget.
+        return self._tokenizer.apply_chat_template(
+            build_messages(text, style),
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+
+    def _build_prefix_caches(self) -> None:
+        """Prefill a reusable KV cache of each style's static prompt prefix.
+
+        The prefix is found empirically — the longest common token prefix of
+        two renders with different texts — because the chat template renders
+        some messages position-dependently (e.g. Qwen3 injects an empty
+        <think> block into the final assistant turn only).
+        """
+        from mlx_lm import stream_generate
+        from mlx_lm.models.cache import make_prompt_cache, trim_prompt_cache
+
+        for style in STYLES:
+            a = self._render("placeholder one", style)
+            b = self._render("a different text entirely", style)
+            prefix = a[: common_prefix_len(a, b)]
+            cache = make_prompt_cache(self._model)
+            # stream_generate prefills the prompt and evaluates the first
+            # sampled token into the cache; trim that token back off.
+            for _ in stream_generate(
+                self._model, self._tokenizer, prefix, max_tokens=1, prompt_cache=cache
+            ):
+                pass
+            trim_prompt_cache(cache, 1)
+            self._prefix_cache[style] = (prefix, cache)
+            log.info("cleanup: cached %d-token prefix for style=%s", len(prefix), style)
 
     def clean(self, text: str, style: str, timeout_s: float) -> str | None:
         """Generate cleaned text, or ``None`` on deadline / model not ready."""
@@ -149,17 +200,18 @@ class CleanupEngine:
         from mlx_lm import stream_generate
 
         deadline = time.perf_counter() + timeout_s
-        # Qwen3 is a hybrid-thinking model: without enable_thinking=False it
-        # emits <think> blocks and blows the latency budget.
-        prompt = self._tokenizer.apply_chat_template(
-            build_messages(text, style),
-            add_generation_prompt=True,
-            enable_thinking=False,
-        )
+        prompt = self._render(text, style)
+        kwargs = {}
+        cached = self._prefix_cache.get(style)
+        if cached is not None:
+            prefix, cache = cached
+            if prompt[: len(prefix)] == prefix:
+                prompt = prompt[len(prefix) :]
+                kwargs["prompt_cache"] = copy.deepcopy(cache)
         max_tokens = max(64, min(2 * len(self._tokenizer.encode(text)), 1024))
         parts: list[str] = []
         for resp in stream_generate(
-            self._model, self._tokenizer, prompt, max_tokens=max_tokens
+            self._model, self._tokenizer, prompt, max_tokens=max_tokens, **kwargs
         ):
             parts.append(resp.text)
             if time.perf_counter() > deadline:
