@@ -36,9 +36,9 @@ class SttConfig:
 @dataclass(frozen=True)
 class CleanupConfig:
     enabled: bool = True
-    model: str = "mlx-community/Qwen3-1.7B-4bit"
+    model: str = "mlx-community/Qwen3-4B-4bit"
     style: str = "polish"  # "light" or "polish"
-    timeout_s: float = 3.0  # hard deadline; on timeout the raw transcript inserts
+    timeout_s: float = 5.0  # hard deadline; on timeout the raw transcript inserts
 
     def __post_init__(self) -> None:
         if self.style not in ("light", "polish"):

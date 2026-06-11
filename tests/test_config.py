@@ -17,9 +17,9 @@ def test_defaults_when_file_absent(tmp_path):
     assert cfg.hotkey.stop == "esc"
     assert cfg.stt.model == "mlx-community/parakeet-tdt-0.6b-v3"
     assert cfg.cleanup.enabled is True
-    assert cfg.cleanup.model == "mlx-community/Qwen3-1.7B-4bit"
+    assert cfg.cleanup.model == "mlx-community/Qwen3-4B-4bit"
     assert cfg.cleanup.style == "polish"
-    assert cfg.cleanup.timeout_s == 3.0
+    assert cfg.cleanup.timeout_s == 5.0
     assert cfg.insert.method == "paste"
     assert cfg.log.file is True
 
