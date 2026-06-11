@@ -4,11 +4,57 @@ from __future__ import annotations
 
 from murmur.hud import (
     HudStateMachine,
+    LevelHistory,
     level01,
     pill_frame,
+    split_stable_prefix,
     truncate_head,
 )
 from murmur.uibus import UiEvent
+
+
+def test_split_stable_prefix_marks_the_new_chunk():
+    stable, delta = split_stable_prefix("the quick", "the quick brown fox")
+    assert stable == "the quick"
+    assert delta == " brown fox"
+
+def test_split_stable_prefix_handles_revisions():
+    # Parakeet may revise earlier words between chunks: the changed part
+    # counts as new.
+    stable, delta = split_stable_prefix("the quik brown", "the quick brown fox")
+    assert stable == "the qui"
+    assert delta == "ck brown fox"
+
+def test_split_stable_prefix_first_draft_is_all_new():
+    assert split_stable_prefix("", "hello") == ("", "hello")
+
+
+class TestLevelHistory:
+    def test_keeps_a_fixed_window_newest_last(self):
+        h = LevelHistory(n=3)
+        for v in (0.1, 0.2, 0.3, 0.4):
+            h.push(v)
+        assert h.bars() == [0.2, 0.3, 0.4]
+
+    def test_pads_with_zeros_until_full(self):
+        h = LevelHistory(n=4)
+        h.push(0.5)
+        assert h.bars() == [0.0, 0.0, 0.0, 0.5]
+
+    def test_reset_flattens(self):
+        h = LevelHistory(n=2)
+        h.push(0.9)
+        h.reset()
+        assert h.bars() == [0.0, 0.0]
+
+
+def test_pill_frame_notch_hugs_the_top_edge():
+    # visibleFrame excludes the menu bar, so flush-top sits just under it,
+    # blending into the notch area on a MacBook.
+    x, y, w, h = pill_frame((0.0, 0.0, 1000.0, 600.0), (420.0, 64.0), 24.0,
+                            position="notch")
+    assert y == 600.0 - 64.0  # no margin
+    assert x == 290.0
 
 
 def test_truncate_head_keeps_the_newest_words():

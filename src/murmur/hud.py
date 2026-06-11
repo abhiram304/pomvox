@@ -47,6 +47,36 @@ _APPLY_ORDER = (
 )
 
 
+def split_stable_prefix(prev: str, cur: str) -> tuple[str, str]:
+    """Split *cur* into (stable, new) against the previous draft — the
+    two-tone treatment: settled words bright, the newest chunk dimmed.
+    Parakeet may revise earlier words between chunks; revisions count as
+    new."""
+    n = 0
+    for a, b in zip(prev, cur):
+        if a != b:
+            break
+        n += 1
+    return cur[:n], cur[n:]
+
+
+class LevelHistory:
+    """Ring buffer of recent mic levels for the waveform bars (pure)."""
+
+    def __init__(self, n: int = 24) -> None:
+        self._n = n
+        self._values: list[float] = [0.0] * n
+
+    def push(self, level: float) -> None:
+        self._values = self._values[1:] + [level]
+
+    def bars(self) -> list[float]:
+        return list(self._values)
+
+    def reset(self) -> None:
+        self._values = [0.0] * self._n
+
+
 def truncate_head(text: str, max_chars: int) -> str:
     """Keep the tail — the newest words must stay visible."""
     if len(text) <= max_chars:
@@ -65,7 +95,12 @@ def pill_frame(
     vx, vy, vw, vh = visible_frame
     pw, ph = pill_size
     x = vx + (vw - pw) / 2
-    y = vy + vh - ph - margin if position == "top-center" else vy + margin
+    if position == "notch":
+        y = vy + vh - ph  # flush under the menu bar, blending into the notch
+    elif position == "top-center":
+        y = vy + vh - ph - margin
+    else:
+        y = vy + margin
     return (x, y, pw, ph)
 
 
@@ -157,6 +192,58 @@ class HudStateMachine:
                 self.vm = _HIDDEN
 
 
+_WAVE_CLS = None
+
+
+def _waveform_class():
+    """NSView subclass drawing the level bars; registered once. Pull-model:
+    a 15 Hz timer (running only while recording) samples `current_level`
+    into the ring buffer — no extra cross-thread traffic beyond the LEVEL
+    posts the bus already coalesces."""
+    global _WAVE_CLS
+    if _WAVE_CLS is None:
+        import objc
+        from AppKit import NSBezierPath, NSColor, NSView
+        from Foundation import NSMakeRect
+
+        class _Waveform(NSView):
+            def initWithFrame_(self, frame):
+                # objc.super, not super(): plain super() breaks the ObjC
+                # designated-initializer chain under pyobjc.
+                self = objc.super(_Waveform, self).initWithFrame_(frame)
+                if self is not None:
+                    self.history = LevelHistory()
+                    self.current_level = 0.0
+                return self
+
+            def tick_(self, _timer):
+                self.history.push(self.current_level)
+                self.setNeedsDisplay_(True)
+
+            def isFlipped(self):
+                return False
+
+            def drawRect_(self, _rect):
+                bounds = self.bounds()
+                bars = self.history.bars()
+                bw = bounds.size.width / len(bars)
+                NSColor.whiteColor().colorWithAlphaComponent_(0.9).setFill()
+                for i, v in enumerate(bars):
+                    h = max(2.0, v * bounds.size.height)
+                    r = NSMakeRect(
+                        i * bw + bw * 0.2,
+                        (bounds.size.height - h) / 2,
+                        bw * 0.6,
+                        h,
+                    )
+                    NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                        r, bw * 0.3, bw * 0.3
+                    ).fill()
+
+        _WAVE_CLS = _Waveform
+    return _WAVE_CLS
+
+
 class HudPanel:
     """AppKit renderer: a dumb view over :class:`HudViewModel`.
 
@@ -175,6 +262,9 @@ class HudPanel:
         self._panel = None
         self._status_label = None
         self._draft_label = None
+        self._wave = None
+        self._wave_timer = None
+        self._displayed_draft = ""
         self._prev_state = "hidden"
 
     # -- main thread only ------------------------------------------------
@@ -196,6 +286,7 @@ class HudPanel:
         if vm.visible:
             self._play_sound_on_entry(vm.state)
             self._update_labels(vm)
+            self._update_waveform(vm)
             if self._prev_state == "hidden":
                 self._show()
         elif self._prev_state != "hidden":
@@ -261,9 +352,9 @@ class HudPanel:
         layer.setCornerRadius_(16.0)
         layer.setBackgroundColor_(CGColorCreateGenericRGB(0.0, 0.0, 0.0, 0.85))
 
-        def label(y: float, size: float, color):
+        def label(x: float, y: float, size: float, color):
             f = NSTextField.labelWithString_("")
-            f.setFrame_(NSMakeRect(20, y, w - 40, size + 8))
+            f.setFrame_(NSMakeRect(x, y, w - x - 20, size + 8))
             f.setFont_(NSFont.systemFontOfSize_(size))
             f.setTextColor_(color)
             f.setLineBreakMode_(5)  # NSLineBreakByTruncatingHead — newest words win
@@ -271,8 +362,11 @@ class HudPanel:
             content.addSubview_(f)
             return f
 
-        self._status_label = label(34.0, 14.0, NSColor.whiteColor())
-        self._draft_label = label(10.0, 13.0, NSColor.lightGrayColor())
+        wave = _waveform_class().alloc().initWithFrame_(NSMakeRect(20, 16, 84, 32))
+        content.addSubview_(wave)
+        self._wave = wave
+        self._status_label = label(116.0, 34.0, 14.0, NSColor.whiteColor())
+        self._draft_label = label(116.0, 10.0, 13.0, NSColor.lightGrayColor())
         self._screen_cls = NSScreen
         self._panel = panel
         log.info("hud: panel ready")
@@ -280,8 +374,7 @@ class HudPanel:
     def _update_labels(self, vm: HudViewModel) -> None:
         glyph = {"recording": "●", "transcribing": "✍️", "polishing": "✍️",
                  "done": "✓", "error": "", "cancelled": "✕"}.get(vm.state, "")
-        bars = self._bars(vm) if vm.state == "recording" else ""
-        head = " ".join(p for p in (glyph, bars, vm.status) if p)
+        head = " ".join(p for p in (glyph, vm.status) if p)
         if vm.state == "recording" and vm.endpoint_fraction > 0.4:
             # The auto-stop countdown: fills as silence accumulates, snaps
             # back the moment speech resumes — auto-stop is never a surprise.
@@ -289,15 +382,62 @@ class HudPanel:
             head += f" · finishing {'▮' * lit}{'▯' * (5 - lit)}"
         self._status_label.setStringValue_(head)
         if vm.state == "done":
-            body = vm.final
-        else:
-            body = vm.draft if self._show_draft else ""
-        self._draft_label.setStringValue_(body)
+            self._draft_label.setStringValue_(vm.final)
+        elif vm.state == "recording" and self._show_draft:
+            self._set_two_tone_draft(vm.draft)
+        elif not self._show_draft or vm.state in ("error", "cancelled"):
+            self._draft_label.setStringValue_("")
 
-    @staticmethod
-    def _bars(vm: HudViewModel) -> str:
-        lit = round(vm.level * 5)
-        return "▮" * lit + "▯" * (5 - lit)
+    def _set_two_tone_draft(self, draft: str) -> None:
+        # Settled words bright, the newest chunk dimmed — the visible cue
+        # that text is streaming, not stuck.
+        from AppKit import (
+            NSColor,
+            NSFont,
+            NSFontAttributeName,
+            NSForegroundColorAttributeName,
+            NSMutableAttributedString,
+        )
+
+        stable, delta = split_stable_prefix(self._displayed_draft, draft)
+        font = NSFont.systemFontOfSize_(13.0)
+        out = NSMutableAttributedString.alloc().initWithString_attributes_(
+            stable,
+            {
+                NSFontAttributeName: font,
+                NSForegroundColorAttributeName:
+                    NSColor.whiteColor().colorWithAlphaComponent_(0.92),
+            },
+        )
+        out.appendAttributedString_(
+            NSMutableAttributedString.alloc().initWithString_attributes_(
+                delta,
+                {
+                    NSFontAttributeName: font,
+                    NSForegroundColorAttributeName: NSColor.grayColor(),
+                },
+            )
+        )
+        self._draft_label.setAttributedStringValue_(out)
+        self._displayed_draft = draft
+
+    def _update_waveform(self, vm: HudViewModel) -> None:
+        from AppKit import NSTimer
+
+        recording = vm.state == "recording"
+        self._wave.setHidden_(not recording)
+        self._wave.current_level = vm.level
+        if recording and self._wave_timer is None:
+            self._wave.history.reset()
+            self._displayed_draft = ""
+            self._wave_timer = (
+                NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                    1.0 / 15.0, self._wave, "tick:", None, True
+                )
+            )
+        elif not recording and self._wave_timer is not None:
+            self._wave_timer.invalidate()
+            self._wave_timer = None
 
     def _play_sound_on_entry(self, state: str) -> None:
         if not self._sounds or state == self._prev_state:
