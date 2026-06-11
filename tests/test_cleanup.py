@@ -139,3 +139,15 @@ def test_common_prefix_len_empty():
 
 def test_common_prefix_len_no_overlap():
     assert common_prefix_len([9], [1]) == 0
+
+
+def test_correction_rule_covers_count_revisions():
+    rules = build_messages("x", "polish")[0]["content"].lower()
+    assert "wait no" in rules
+    assert "number, or count" in rules
+
+
+def test_few_shot_includes_count_revision_example():
+    msgs = build_messages("x", "polish")
+    pairs = [(msgs[i]["content"], msgs[i + 1]["content"]) for i in range(1, len(msgs) - 1, 2)]
+    assert any("four options wait no five" in raw for raw, _ in pairs)
