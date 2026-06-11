@@ -26,12 +26,15 @@ class MenuBarApp(rumps.App):
         on_style_change=None,
         hud_enabled: bool | None = None,
         on_hud_toggle=None,
+        vad_enabled: bool | None = None,
+        on_vad_toggle=None,
     ) -> None:
         super().__init__(GLYPHS["loading"], quit_button="Quit Murmur")
         self._status = rumps.MenuItem("Status: loading models…")
         self._on_cleanup_toggle = on_cleanup_toggle
         self._on_style_change = on_style_change
         self._on_hud_toggle = on_hud_toggle
+        self._on_vad_toggle = on_vad_toggle
         self._style = style
         self._cleanup_item = rumps.MenuItem("Cleanup", callback=self._toggle_cleanup)
         self._cleanup_item.state = 1 if cleanup_enabled else 0
@@ -43,6 +46,12 @@ class MenuBarApp(rumps.App):
             self._hud_item = rumps.MenuItem("Show HUD", callback=self._toggle_hud)
             self._hud_item.state = 1 if hud_enabled else 0
             items.append(self._hud_item)
+        if vad_enabled is not None:  # None = VAD off in config / failed to load
+            self._vad_item = rumps.MenuItem(
+                "Hands-free auto-stop", callback=self._toggle_vad
+            )
+            self._vad_item.state = 1 if vad_enabled else 0
+            items.append(self._vad_item)
         items.append(rumps.MenuItem("Check permissions", callback=self._check_permissions))
         self.menu = items
 
@@ -59,6 +68,11 @@ class MenuBarApp(rumps.App):
         sender.state = 0 if sender.state else 1
         if self._on_hud_toggle:
             self._on_hud_toggle(bool(sender.state))
+
+    def _toggle_vad(self, sender) -> None:
+        sender.state = 0 if sender.state else 1
+        if self._on_vad_toggle:
+            self._on_vad_toggle(bool(sender.state))
 
     def _cycle_style(self, sender) -> None:
         self._style = "light" if self._style == "polish" else "polish"

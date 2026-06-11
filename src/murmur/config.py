@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 CONFIG_DIR = Path.home() / ".murmur"
 CONFIG_PATH = CONFIG_DIR / "config.toml"
 
-_SECTIONS = ("hotkey", "stt", "cleanup", "insert", "log", "hud")
+_SECTIONS = ("hotkey", "stt", "cleanup", "insert", "log", "hud", "vad")
 
 
 @dataclass(frozen=True)
@@ -76,6 +76,24 @@ class HudConfig:
 
 
 @dataclass(frozen=True)
+class VadConfig:
+    enabled: bool = True  # hands-free auto-stop on a natural pause
+    aggressiveness: int = 2  # webrtcvad mode 0–3
+    silence_ms: int = 1200  # pause length that ends the utterance
+    min_speech_ms: int = 250  # debounce before "speech started"
+    energy_gate_dbfs: float = -45.0  # AND-gate: kills breath/keyboard votes
+    max_session_s: float = 600.0  # forgotten-open-mic hard stop
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.aggressiveness <= 3:
+            raise ValueError(f"aggressiveness must be 0–3, got {self.aggressiveness}")
+        if self.silence_ms <= 0 or self.min_speech_ms <= 0:
+            raise ValueError("silence_ms and min_speech_ms must be positive")
+        if self.max_session_s <= 0:
+            raise ValueError("max_session_s must be positive")
+
+
+@dataclass(frozen=True)
 class Config:
     hotkey: HotkeyConfig = field(default_factory=HotkeyConfig)
     stt: SttConfig = field(default_factory=SttConfig)
@@ -83,6 +101,7 @@ class Config:
     insert: InsertConfig = field(default_factory=InsertConfig)
     log: LogConfig = field(default_factory=LogConfig)
     hud: HudConfig = field(default_factory=HudConfig)
+    vad: VadConfig = field(default_factory=VadConfig)
 
 
 def _load_section(cls: type, data: dict, name: str):
@@ -126,4 +145,5 @@ def load(path: Path | None = None) -> Config:
         insert=_load_section(InsertConfig, data, "insert"),
         log=_load_section(LogConfig, data, "log"),
         hud=_load_section(HudConfig, data, "hud"),
+        vad=_load_section(VadConfig, data, "vad"),
     )

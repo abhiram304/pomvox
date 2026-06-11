@@ -98,6 +98,19 @@ def test_hud_section(tmp_path):
     assert cfg.hud.show_draft is True
 
 
+def test_vad_section(tmp_path):
+    cfg = config.load(write(tmp_path, "[vad]\nenabled = false\nsilence_ms = 800\n"))
+    assert cfg.vad.enabled is False
+    assert cfg.vad.silence_ms == 800
+    assert cfg.vad.aggressiveness == 2
+
+
+def test_bad_vad_values_fall_back(tmp_path, caplog):
+    cfg = config.load(write(tmp_path, "[vad]\naggressiveness = 9\n"))
+    assert cfg.vad == config.VadConfig()
+    assert any("bad [vad]" in r.message for r in caplog.records)
+
+
 def test_bad_hud_position_falls_back(tmp_path, caplog):
     cfg = config.load(write(tmp_path, '[hud]\nposition = "under-the-dock"\n'))
     assert cfg.hud == config.HudConfig()

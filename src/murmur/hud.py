@@ -38,7 +38,13 @@ LEVEL_CEIL_DBFS = -10.0
 # foveal vision.
 STATE_SOUNDS = {"recording": "Tink", "done": "Pop", "error": "Basso"}
 
-_APPLY_ORDER = (UiEvent.STATE, UiEvent.DRAFT, UiEvent.LEVEL, UiEvent.RESULT)
+_APPLY_ORDER = (
+    UiEvent.STATE,
+    UiEvent.DRAFT,
+    UiEvent.LEVEL,
+    UiEvent.ENDPOINT_PROGRESS,
+    UiEvent.RESULT,
+)
 
 
 def truncate_head(text: str, max_chars: int) -> str:
@@ -76,6 +82,7 @@ class HudViewModel:
     draft: str = ""
     final: str = ""
     level: float = 0.0
+    endpoint_fraction: float = 0.0  # 0..1 progress toward VAD auto-stop
     hide_at: float | None = None
 
     @property
@@ -128,6 +135,8 @@ class HudStateMachine:
             self.vm = replace(vm, draft=truncate_head(payload, self._max_chars))
         elif event is UiEvent.LEVEL and vm.state == "recording":
             self.vm = replace(vm, level=payload)
+        elif event is UiEvent.ENDPOINT_PROGRESS and vm.state == "recording":
+            self.vm = replace(vm, endpoint_fraction=payload)
         elif event is UiEvent.RESULT and vm.visible:
             status, text = payload
             if status == "ok":
@@ -273,6 +282,11 @@ class HudPanel:
                  "done": "✓", "error": "", "cancelled": "✕"}.get(vm.state, "")
         bars = self._bars(vm) if vm.state == "recording" else ""
         head = " ".join(p for p in (glyph, bars, vm.status) if p)
+        if vm.state == "recording" and vm.endpoint_fraction > 0.4:
+            # The auto-stop countdown: fills as silence accumulates, snaps
+            # back the moment speech resumes — auto-stop is never a surprise.
+            lit = round(vm.endpoint_fraction * 5)
+            head += f" · finishing {'▮' * lit}{'▯' * (5 - lit)}"
         self._status_label.setStringValue_(head)
         if vm.state == "done":
             body = vm.final

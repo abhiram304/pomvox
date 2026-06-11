@@ -140,6 +140,15 @@ class TestHudStateMachine:
         # The stale scheduled tick from the first utterance must be a no-op.
         assert m.tick(now=5.0).state == "recording"
 
+    def test_endpoint_progress_tracked_while_recording(self):
+        m = self.make()
+        m.apply({UiEvent.STATE: ("recording", "recording (hands-free)")}, now=0.0)
+        vm = m.apply({UiEvent.ENDPOINT_PROGRESS: 0.6}, now=1.0)
+        assert vm.endpoint_fraction == 0.6
+        # a fresh utterance starts clean
+        vm = m.apply({UiEvent.STATE: ("recording", "")}, now=2.0)
+        assert vm.endpoint_fraction == 0.0
+
     def test_cancelled_result_flashes_briefly(self):
         m = self.make()
         m.apply({UiEvent.STATE: ("recording", "")}, now=0.0)

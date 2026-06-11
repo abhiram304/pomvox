@@ -145,6 +145,17 @@ class HotkeyMachine:
             return PASS
         return PASS
 
+    def external_stop(self) -> bool:
+        """Stop initiated by something other than a key (VAD endpoint).
+
+        Valid only while hands-free: PTT's endpoint is the user's finger,
+        and a stale endpoint arriving in BUSY/IDLE must be a no-op.
+        """
+        if self.state is State.TOGGLE:
+            self.state = State.BUSY
+            return True
+        return False
+
     def done(self) -> None:
         """Transcription + insertion finished; accept hotkeys again."""
         self.state = State.IDLE

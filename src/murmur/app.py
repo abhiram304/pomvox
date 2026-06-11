@@ -57,7 +57,30 @@ class Controller:
         self.machine = HotkeyMachine(
             cfg.hotkey.ptt, cfg.hotkey.toggle, cfg.hotkey.stop, cfg.hotkey.cancel
         )
-        self.recorder = Recorder(on_block=self._on_block if self.hud else None)
+        self.vad_enabled = cfg.vad.enabled
+        self._endpointer = None
+        self._session_gen = 0
+        if cfg.vad.enabled:
+            try:
+                from .vad import Endpointer, EndpointDetector, WebrtcBackend
+
+                backend = WebrtcBackend(cfg.vad.aggressiveness)
+                frame_ms = backend.frame_samples * 1000 // 16000
+                self._endpointer = Endpointer(
+                    backend=backend,
+                    detector=EndpointDetector(
+                        cfg.vad.silence_ms,
+                        cfg.vad.min_speech_ms,
+                        frame_ms,
+                        cfg.vad.energy_gate_dbfs,
+                    ),
+                    max_session_s=cfg.vad.max_session_s,
+                )
+            except Exception:
+                log.exception("vad: backend failed to load — auto-stop disabled")
+        self.recorder = Recorder(
+            on_block=self._on_block if (self.hud or self._endpointer) else None
+        )
         self.worker = SttWorker(
             Transcriber(cfg.stt.model),
             self.recorder.q,
@@ -81,6 +104,8 @@ class Controller:
             on_style_change=self._set_cleanup_style,
             hud_enabled=cfg.hud.enabled if self.hud else None,
             on_hud_toggle=self._set_hud_enabled,
+            vad_enabled=cfg.vad.enabled if self._endpointer else None,
+            on_vad_toggle=self._set_vad_enabled,
         )
         self.bench = BenchLog()
         self.timings = Timings()
@@ -98,11 +123,36 @@ class Controller:
             self.hud.render(payloads)
 
     def _on_block(self, block) -> None:
-        # Audio callback thread: one numpy reduction + a coalesced post.
+        # Audio callback thread: numpy reductions + coalesced posts only.
+        # Never touch the recorder or the pipeline from here.
         from .audio import block_dbfs
         from .hud import level01
 
-        self.bus.post(self._ev.LEVEL, level01(block_dbfs(block)))
+        if self.hud is not None:
+            self.bus.post(self._ev.LEVEL, level01(block_dbfs(block)))
+        ep = self._endpointer
+        if ep is not None and ep.armed:
+            event, fraction = ep.process(block)
+            if fraction is not None:
+                self.bus.post(self._ev.ENDPOINT_PROGRESS, fraction)
+            if event == "endpoint":
+                from PyObjCTools import AppHelper
+
+                AppHelper.callAfter(self._on_vad_endpoint, ep.generation)
+            elif event == "cap_warning":
+                log.warning("vad: session time limit approaching")
+                self._post_state("recording", "recording — time limit soon")
+
+    def _on_vad_endpoint(self, generation: int) -> None:
+        # Main thread. The generation check makes a stale endpoint queued
+        # across sessions a no-op; external_stop() makes it a no-op in any
+        # state but TOGGLE (e.g. the user already stopped or cancelled).
+        if generation != self._session_gen:
+            log.debug("vad: stale endpoint (gen %d != %d)", generation, self._session_gen)
+            return
+        if self.machine.external_stop():
+            log.info("vad: natural pause — auto-stop")
+            self._stop_recording()
 
     def _set_hud_enabled(self, enabled: bool) -> None:
         # rumps menu callback (main thread).
@@ -118,16 +168,20 @@ class Controller:
         if action is Action.START_PTT:
             self._start_recording("push-to-talk")
         elif action is Action.ENTER_TOGGLE:
-            log.info("hands-free mode (stop with Esc or the toggle hotkey)")
+            log.info("hands-free mode (stop with fn/fn+space, cancel with esc)")
             self._post_state("recording", "recording (hands-free)")
+            if self._endpointer is not None and self.vad_enabled:
+                self._endpointer.arm(self._session_gen)
         elif action is Action.STOP:
             self._stop_recording()
         elif action is Action.CANCEL:
             log.info("cancelled by user")
+            self._end_vad_session()
             self.recorder.cancel()
             self.bus.post(self._ev.RESULT, ("cancelled", ""))
 
     def _start_recording(self, mode: str) -> None:
+        self._session_gen += 1
         try:
             self.recorder.start()
         except Exception:
@@ -138,9 +192,21 @@ class Controller:
         self._post_state("recording", f"recording ({mode})")
 
     def _stop_recording(self) -> None:
+        self._end_vad_session()
         self.timings.start()  # t0 = recording stop
         self.recorder.stop()
         self._post_state("transcribing")
+
+    def _end_vad_session(self) -> None:
+        # Invalidate any endpoint already in flight and stop classifying.
+        self._session_gen += 1
+        if self._endpointer is not None:
+            self._endpointer.disarm()
+
+    def _set_vad_enabled(self, enabled: bool) -> None:
+        # rumps menu callback (main thread); read at the next hands-free arm.
+        self.vad_enabled = enabled
+        log.info("vad: auto-stop %s (menu)", "enabled" if enabled else "disabled")
 
     def _on_text(self, text: str | None) -> None:
         # Runs on the STT worker thread. ``None`` = utterance cancelled.

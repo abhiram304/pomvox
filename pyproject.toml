@@ -8,7 +8,9 @@ dependencies = [
     "parakeet-mlx>=0.5; sys_platform == 'darwin'",
     "mlx-lm; sys_platform == 'darwin'",
     "sounddevice; sys_platform == 'darwin'",
-    "webrtcvad; sys_platform == 'darwin'",
+    # webrtcvad-wheels, not webrtcvad: upstream is unmaintained with no
+    # arm64 wheels, so it compiles from source on every contributor machine.
+    "webrtcvad-wheels>=2.0.14; sys_platform == 'darwin'",
     "pyobjc-framework-Quartz; sys_platform == 'darwin'",
     "pyobjc-framework-Cocoa; sys_platform == 'darwin'",
     "pyobjc-framework-AVFoundation; sys_platform == 'darwin'",

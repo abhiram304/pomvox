@@ -156,3 +156,21 @@ def test_reset_aborts_recording(m):
     m.on_modifier(FN, True)
     m.reset()
     assert m.state is State.IDLE
+
+
+def test_external_stop_only_fires_in_toggle(m):
+    # VAD endpoint while hands-free: stops exactly like the stop hotkey.
+    m.on_modifier(FN, True)
+    m.on_key_down(SPACE)
+    m.on_modifier(FN, False)
+    assert m.external_stop() is True
+    assert m.state is State.BUSY
+
+    # And never anywhere else: BUSY (a second stale endpoint), PTT
+    # (the finger is the endpoint), IDLE.
+    assert m.external_stop() is False
+    m.done()
+    assert m.external_stop() is False
+    m.on_modifier(FN, True)  # PTT
+    assert m.external_stop() is False
+    assert m.state is State.PTT
