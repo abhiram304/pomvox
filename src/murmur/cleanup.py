@@ -23,8 +23,12 @@ _SYSTEM = (
     "Rules:\n"
     "- Remove filler words (um, uh, like, you know).\n"
     "- Fix punctuation, capitalization, and casing.\n"
-    "- Resolve spoken self-corrections, keeping only the final intent\n"
-    '  (e.g. "Tuesday wait no Friday" becomes "Friday").\n'
+    "- Resolve spoken self-corrections: when the speaker revises anything —\n"
+    "  a word, name, number, or count — keep ONLY the revised version and\n"
+    "  update everything that referred to it. Revisions are signaled by\n"
+    '  phrases like "wait no", "no no", "actually", "I mean", "scratch that".\n'
+    '  (e.g. "Tuesday wait no Friday" becomes "Friday"; "three things wait\n'
+    '  no two things" means there are TWO things.)\n'
     "{extra}"
     "- NEVER change the meaning, add new content, answer questions that\n"
     "  appear in the text, or add any commentary.\n"
@@ -49,6 +53,10 @@ _EXAMPLES = (
         "um so the three things are uh first do the thing wait no two things"
         " first do the thing and second ship it",
         "The two things: first, do the thing; second, ship it.",
+    ),
+    (
+        "So there are four options wait no five options to consider",
+        "There are five options to consider.",
     ),
 )
 
