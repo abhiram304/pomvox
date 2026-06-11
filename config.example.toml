@@ -10,9 +10,11 @@ stop = "esc"         # hands-free: stop recording (toggle key also stops)
 [stt]
 model = "mlx-community/parakeet-tdt-0.6b-v3"
 
-[cleanup]  # Phase 3 — not used yet
-enabled = false
+[cleanup]
+enabled = true
 model = "mlx-community/Qwen3-4B-4bit"
+style = "polish"  # "light" = fillers/punctuation only; "polish" also smooths rambles
+timeout_s = 5.0   # hard deadline; on timeout the raw transcript is inserted
 
 [insert]
 method = "paste"

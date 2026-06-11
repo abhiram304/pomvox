@@ -35,9 +35,16 @@ class SttConfig:
 
 @dataclass(frozen=True)
 class CleanupConfig:
-    # Phase 3 — placeholder until the cleanup pass lands.
-    enabled: bool = False
+    enabled: bool = True
     model: str = "mlx-community/Qwen3-4B-4bit"
+    style: str = "polish"  # "light" or "polish"
+    timeout_s: float = 5.0  # hard deadline; on timeout the raw transcript inserts
+
+    def __post_init__(self) -> None:
+        if self.style not in ("light", "polish"):
+            raise ValueError(f"style must be 'light' or 'polish', got {self.style!r}")
+        if self.timeout_s <= 0:
+            raise ValueError("timeout_s must be positive")
 
 
 @dataclass(frozen=True)

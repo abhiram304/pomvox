@@ -16,7 +16,10 @@ def test_defaults_when_file_absent(tmp_path):
     assert cfg.hotkey.toggle == "fn+space"
     assert cfg.hotkey.stop == "esc"
     assert cfg.stt.model == "mlx-community/parakeet-tdt-0.6b-v3"
-    assert cfg.cleanup.enabled is False
+    assert cfg.cleanup.enabled is True
+    assert cfg.cleanup.model == "mlx-community/Qwen3-4B-4bit"
+    assert cfg.cleanup.style == "polish"
+    assert cfg.cleanup.timeout_s == 5.0
     assert cfg.insert.method == "paste"
     assert cfg.log.file is True
 
@@ -35,8 +38,10 @@ def test_full_file(tmp_path):
             model = "mlx-community/other-model"
 
             [cleanup]
-            enabled = true
+            enabled = false
             model = "mlx-community/Qwen3-4B-4bit"
+            style = "light"
+            timeout_s = 5.0
 
             [insert]
             method = "paste"
@@ -48,7 +53,9 @@ def test_full_file(tmp_path):
     )
     assert cfg.hotkey.ptt == "right_option"
     assert cfg.stt.model == "mlx-community/other-model"
-    assert cfg.cleanup.enabled is True
+    assert cfg.cleanup.enabled is False
+    assert cfg.cleanup.style == "light"
+    assert cfg.cleanup.timeout_s == 5.0
     assert cfg.log.file is False
 
 
@@ -66,6 +73,18 @@ def test_unknown_keys_and_sections_ignored(tmp_path, caplog):
     assert cfg == config.Config()
     assert any("unknown key" in r.message for r in caplog.records)
     assert any("unknown section" in r.message for r in caplog.records)
+
+
+def test_bad_cleanup_style_falls_back(tmp_path, caplog):
+    cfg = config.load(write(tmp_path, '[cleanup]\nstyle = "shouty"\n'))
+    assert cfg.cleanup == config.CleanupConfig()
+    assert any("bad [cleanup]" in r.message for r in caplog.records)
+
+
+def test_bad_cleanup_timeout_falls_back(tmp_path, caplog):
+    cfg = config.load(write(tmp_path, "[cleanup]\ntimeout_s = 0\n"))
+    assert cfg.cleanup == config.CleanupConfig()
+    assert any("bad [cleanup]" in r.message for r in caplog.records)
 
 
 def test_malformed_file_falls_back_to_defaults(tmp_path, caplog):
