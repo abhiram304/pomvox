@@ -205,8 +205,14 @@ class CleanupEngine:
         if self._model is None:
             log.info("cleanup: model not loaded yet, skipping")
             return None
+        import mlx.core as mx
         from mlx_lm import stream_generate
 
+        # The STT pass that just ran leaves the MLX buffer pool full of
+        # Parakeet-shaped buffers, which slows the first generation here by
+        # ~0.5s (measured). Dropping the pool is cheaper; Parakeet re-allocates
+        # during the next recording, off the stop-to-text critical path.
+        mx.clear_cache()
         deadline = time.perf_counter() + timeout_s
         prompt = self._render(text, style)
         kwargs = {}
