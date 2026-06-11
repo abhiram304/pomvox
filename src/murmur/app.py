@@ -82,6 +82,19 @@ class Controller:
         self._pending_models = {"stt"} | ({"cleanup"} if self.cleanup_enabled else set())
         self._models_ready = False
         self.tap = EventTap(self.machine, self._on_action)
+        # The history store must exist before MenuBarApp reads self.history
+        # to decide whether to show the History… item.
+        self.history = None
+        if cfg.history.enabled:
+            try:
+                import time
+
+                from .history import HistoryStore
+
+                self.history = HistoryStore(retention_days=cfg.history.retention_days)
+                self.history.purge(now=time.time())
+            except Exception:
+                log.exception("history: store failed to open — history disabled")
         self.app = MenuBarApp(
             cleanup_enabled=self.cleanup_enabled,
             style=self.cleanup_style,
@@ -101,17 +114,6 @@ class Controller:
         self.timings = Timings()
         self._cfg = cfg
         self._last_transcript = ""
-        self.history = None
-        if cfg.history.enabled:
-            try:
-                import time
-
-                from .history import HistoryStore
-
-                self.history = HistoryStore(retention_days=cfg.history.retention_days)
-                self.history.purge(now=time.time())
-            except Exception:
-                log.exception("history: store failed to open — history disabled")
         self._tap_installed = False
         self._history_window = None
         self._onboarding = None
