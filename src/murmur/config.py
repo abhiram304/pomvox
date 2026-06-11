@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 CONFIG_DIR = Path.home() / ".murmur"
 CONFIG_PATH = CONFIG_DIR / "config.toml"
 
-_SECTIONS = ("hotkey", "stt", "cleanup", "insert", "log", "hud", "vad")
+_SECTIONS = ("hotkey", "stt", "cleanup", "insert", "log", "hud", "vad", "history")
 
 
 @dataclass(frozen=True)
@@ -94,6 +94,16 @@ class VadConfig:
 
 
 @dataclass(frozen=True)
+class HistoryConfig:
+    enabled: bool = True  # transcripts only — audio is never stored
+    retention_days: int = 7  # auto-delete window; 0 = keep nothing
+
+    def __post_init__(self) -> None:
+        if self.retention_days < 0:
+            raise ValueError("retention_days must be >= 0")
+
+
+@dataclass(frozen=True)
 class Config:
     hotkey: HotkeyConfig = field(default_factory=HotkeyConfig)
     stt: SttConfig = field(default_factory=SttConfig)
@@ -102,6 +112,7 @@ class Config:
     log: LogConfig = field(default_factory=LogConfig)
     hud: HudConfig = field(default_factory=HudConfig)
     vad: VadConfig = field(default_factory=VadConfig)
+    history: HistoryConfig = field(default_factory=HistoryConfig)
 
 
 def _load_section(cls: type, data: dict, name: str):
@@ -164,4 +175,5 @@ def load(path: Path | None = None) -> Config:
         log=_load_section(LogConfig, data, "log"),
         hud=_load_section(HudConfig, data, "hud"),
         vad=_load_section(VadConfig, data, "vad"),
+        history=_load_section(HistoryConfig, data, "history"),
     )
