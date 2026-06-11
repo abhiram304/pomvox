@@ -38,6 +38,6 @@ retention_days = 7  # auto-delete window; 0 = keep nothing
 [hud]
 enabled = true
 show_draft = true          # false keeps live text out of screen shares
-position = "bottom-center" # or "top-center"
+position = "bottom-center" # or "top-center" / "notch" (blends into the MacBook notch)
 max_chars = 120
 sounds = true              # start/stop cues for eyes-off dictation

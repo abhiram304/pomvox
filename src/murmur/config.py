@@ -62,14 +62,15 @@ class LogConfig:
 class HudConfig:
     enabled: bool = True
     show_draft: bool = True  # off keeps live text out of screen-share view
-    position: str = "bottom-center"  # or "top-center"
+    position: str = "bottom-center"  # or "top-center" / "notch"
     max_chars: int = 120
     sounds: bool = True
 
     def __post_init__(self) -> None:
-        if self.position not in ("bottom-center", "top-center"):
+        if self.position not in ("bottom-center", "top-center", "notch"):
             raise ValueError(
-                f"position must be 'bottom-center' or 'top-center', got {self.position!r}"
+                f"position must be 'bottom-center', 'top-center', or 'notch', "
+                f"got {self.position!r}"
             )
         if self.max_chars <= 0:
             raise ValueError("max_chars must be positive")
