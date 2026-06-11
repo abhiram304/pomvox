@@ -95,12 +95,25 @@ class Controller:
             on_copy_last=self._copy_last_transcript,
             on_open_config=self._open_config,
             on_reload_config=self._reload_config,
+            on_history=self._open_history if self.history else None,
         )
         self.bench = BenchLog()
         self.timings = Timings()
         self._cfg = cfg
         self._last_transcript = ""
+        self.history = None
+        if cfg.history.enabled:
+            try:
+                import time
+
+                from .history import HistoryStore
+
+                self.history = HistoryStore(retention_days=cfg.history.retention_days)
+                self.history.purge(now=time.time())
+            except Exception:
+                log.exception("history: store failed to open — history disabled")
         self._tap_installed = False
+        self._history_window = None
         self._onboarding = None
         self._ob_flow = None
         self._poll_timer = None
@@ -298,6 +311,8 @@ class Controller:
             self._post_state("idle", "ready")
             return
         self.timings.stamp("stt_finalize")
+        raw = text
+        status = "off"
         if text:
             log.info("transcript: %r (%d chars)", preview(text), len(text))
             log.debug("transcript full: %r", text)
@@ -321,11 +336,64 @@ class Controller:
                 log.exception("insert failed — check Accessibility permission")
                 self.bus.post(self._ev.RESULT, ("error", "insert failed"))
             self.bench.add(self.timings)
+            self._record_history(raw, text, status)
         else:
             log.info("empty utterance, nothing to insert")
             self.bus.post(self._ev.RESULT, ("empty", ""))
         self.machine.done()
         self._post_state("idle", "ready")
+
+    def _open_history(self) -> None:
+        # rumps menu callback (main thread); same idle gate as onboarding —
+        # this window activates us and must never steal mid-dictation focus.
+        from .hotkey import State
+
+        if self.machine.state is not State.IDLE or self.history is None:
+            return
+        if self._history_window is None:
+            from .history import HistoryWindow
+
+            self._history_window = HistoryWindow(
+                self.history, on_reinsert=self._reinsert
+            )
+        self._history_window.show()
+
+    def _reinsert(self, text: str) -> None:
+        # 3-second countdown so the user can focus the target field —
+        # otherwise the paste would land in the History window itself.
+        from PyObjCTools import AppHelper
+
+        AppHelper.callLater(3.0, lambda: self._guarded_insert(text))
+
+    def _guarded_insert(self, text: str) -> None:
+        from .insert import insert_text
+
+        try:
+            insert_text(text)
+        except Exception:
+            log.exception("history: re-insert failed")
+
+    def _record_history(self, raw: str, final: str, status: str) -> None:
+        # STT worker thread, after insert + bench — strictly off the hot
+        # path (a ~1 ms INSERT on a now-idle thread). Never lose a word
+        # over bookkeeping: any store failure is log-and-continue.
+        if self.history is None:
+            return
+        try:
+            import json
+            import time
+
+            now = time.time()
+            self.history.add(
+                ts=now,
+                raw_text=raw,
+                final_text=final,
+                cleanup_status=status,
+                timings_json=json.dumps(self.timings.stages_ms()),
+            )
+            self.history.purge(now=now)
+        except Exception:
+            log.exception("history: write failed")
 
     def _model_ready(self, name: str) -> None:
         with self._ready_lock:

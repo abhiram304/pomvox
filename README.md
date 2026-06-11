@@ -68,6 +68,12 @@ styles, HUD, and auto-stop apply without a restart (model and hotkey
 changes still need one; the status line says so). **Copy Last Transcript**
 recovers the most recent dictation if a paste ever fails.
 
+**History…** shows your recent dictations (raw vs. cleaned side by side)
+with search, copy, re-insert, and delete. It is local-only sqlite at
+`~/.murmur/history.db`: transcripts only — audio is never stored — and
+rows auto-delete after `[history] retention_days` (default 7; `0` keeps
+nothing, `enabled = false` writes nothing).
+
 Logs include one line per utterance with stage timings
 (`stt_finalize=82ms insert=14ms total=96ms`).
 

@@ -31,6 +31,10 @@ min_speech_ms = 250     # debounce before "speech started"
 energy_gate_dbfs = -45.0 # frames quieter than this never count as speech
 max_session_s = 600.0   # hard stop for a forgotten open mic
 
+[history]
+enabled = true      # local only, transcripts only — audio is never stored
+retention_days = 7  # auto-delete window; 0 = keep nothing
+
 [hud]
 enabled = true
 show_draft = true          # false keeps live text out of screen shares
