@@ -367,6 +367,16 @@ class Hud:
     def prepare(self) -> None:
         self._panel.prepare()
 
+    def apply_config(self, cfg) -> None:
+        """Hot-apply a reloaded [hud] section (main thread)."""
+        self.enabled = cfg.enabled
+        self._machine._max_chars = cfg.max_chars
+        self._panel._position = cfg.position
+        self._panel._show_draft = cfg.show_draft
+        self._panel._sounds = cfg.sounds
+        if not cfg.enabled:
+            self.render({})  # hide immediately if showing
+
     def render(self, payloads: dict) -> None:
         import time
 

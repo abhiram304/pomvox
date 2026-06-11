@@ -123,6 +123,24 @@ def _load_section(cls: type, data: dict, name: str):
         return cls()
 
 
+def restart_required(old: Config, new: Config) -> list[str]:
+    """Config changes the menu-bar Reload can't hot-apply, sorted.
+
+    Models load once on worker threads at startup; the hotkey machine and
+    event tap are built before the run loop. Everything else hot-applies.
+    """
+    out = []
+    if old.hotkey != new.hotkey:
+        out.append("hotkey")
+    if old.stt.model != new.stt.model:
+        out.append("stt.model")
+    if old.cleanup.model != new.cleanup.model:
+        out.append("cleanup.model")
+    if old.log != new.log:
+        out.append("log")
+    return out
+
+
 def load(path: Path | None = None) -> Config:
     """Load config from *path* (default ``~/.murmur/config.toml``)."""
     path = CONFIG_PATH if path is None else path

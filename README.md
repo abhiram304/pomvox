@@ -63,6 +63,11 @@ Every key is optional. Highlights:
   your machine.
 - `[log] file` — set `false` to disable `~/.murmur/murmur.log`.
 
+The menu bar has **Open Config File** and **Reload Config** — edits to
+styles, HUD, and auto-stop apply without a restart (model and hotkey
+changes still need one; the status line says so). **Copy Last Transcript**
+recovers the most recent dictation if a paste ever fails.
+
 Logs include one line per utterance with stage timings
 (`stt_finalize=82ms insert=14ms total=96ms`).
 

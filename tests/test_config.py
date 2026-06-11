@@ -123,6 +123,25 @@ def test_malformed_file_falls_back_to_defaults(tmp_path, caplog):
     assert any("failed to read" in r.message for r in caplog.records)
 
 
+def test_restart_required_flags_model_and_hotkey_changes():
+    old = config.Config()
+    new = config.Config(
+        stt=config.SttConfig(model="mlx-community/other"),
+        hotkey=config.HotkeyConfig(ptt="right_option"),
+    )
+    assert config.restart_required(old, new) == ["hotkey", "stt.model"]
+
+
+def test_restart_required_empty_for_hot_appliable_changes():
+    old = config.Config()
+    new = config.Config(
+        cleanup=config.CleanupConfig(style="light", timeout_s=3.0),
+        hud=config.HudConfig(position="top-center"),
+        vad=config.VadConfig(silence_ms=800),
+    )
+    assert config.restart_required(old, new) == []
+
+
 def test_example_config_matches_defaults():
     example = Path(__file__).resolve().parents[1] / "config.example.toml"
     assert config.load(example) == config.Config()

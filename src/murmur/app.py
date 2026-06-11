@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from pathlib import Path
 
 from .config import Config
 
@@ -60,26 +61,8 @@ class Controller:
             cfg.hotkey.ptt, cfg.hotkey.toggle, cfg.hotkey.stop, cfg.hotkey.cancel
         )
         self.vad_enabled = cfg.vad.enabled
-        self._endpointer = None
+        self._endpointer = self._make_endpointer(cfg.vad) if cfg.vad.enabled else None
         self._session_gen = 0
-        if cfg.vad.enabled:
-            try:
-                from .vad import Endpointer, EndpointDetector, WebrtcBackend
-
-                backend = WebrtcBackend(cfg.vad.aggressiveness)
-                frame_ms = backend.frame_samples * 1000 // 16000
-                self._endpointer = Endpointer(
-                    backend=backend,
-                    detector=EndpointDetector(
-                        cfg.vad.silence_ms,
-                        cfg.vad.min_speech_ms,
-                        frame_ms,
-                        cfg.vad.energy_gate_dbfs,
-                    ),
-                    max_session_s=cfg.vad.max_session_s,
-                )
-            except Exception:
-                log.exception("vad: backend failed to load — auto-stop disabled")
         self.recorder = Recorder(
             on_block=self._on_block if (self.hud or self._endpointer) else None
         )
@@ -109,13 +92,39 @@ class Controller:
             vad_enabled=cfg.vad.enabled if self._endpointer else None,
             on_vad_toggle=self._set_vad_enabled,
             on_setup=self._open_onboarding,
+            on_copy_last=self._copy_last_transcript,
+            on_open_config=self._open_config,
+            on_reload_config=self._reload_config,
         )
         self.bench = BenchLog()
         self.timings = Timings()
+        self._cfg = cfg
+        self._last_transcript = ""
         self._tap_installed = False
         self._onboarding = None
         self._ob_flow = None
         self._poll_timer = None
+
+    @staticmethod
+    def _make_endpointer(vad_cfg):
+        try:
+            from .vad import Endpointer, EndpointDetector, WebrtcBackend
+
+            backend = WebrtcBackend(vad_cfg.aggressiveness)
+            frame_ms = backend.frame_samples * 1000 // 16000
+            return Endpointer(
+                backend=backend,
+                detector=EndpointDetector(
+                    vad_cfg.silence_ms,
+                    vad_cfg.min_speech_ms,
+                    frame_ms,
+                    vad_cfg.energy_gate_dbfs,
+                ),
+                max_session_s=vad_cfg.max_session_s,
+            )
+        except Exception:
+            log.exception("vad: backend failed to load — auto-stop disabled")
+            return None
 
     def _post_state(self, state: str, detail: str = "") -> None:
         self.bus.post(self._ev.STATE, (state, detail))
@@ -167,6 +176,70 @@ class Controller:
             self.hud.enabled = enabled
             self.hud.render({})  # apply immediately (hides the panel if shown)
         log.info("hud: %s (menu)", "enabled" if enabled else "disabled")
+
+    # -- settings menu actions (rumps callbacks, main thread) --------------
+
+    def _copy_last_transcript(self) -> None:
+        # The always-available recovery from a failed paste — independent
+        # of any history feature. A deliberate copy, so not concealed.
+        if not self._last_transcript:
+            log.info("copy last: nothing dictated yet")
+            return
+        from AppKit import NSPasteboard, NSPasteboardTypeString
+
+        pb = NSPasteboard.generalPasteboard()
+        pb.clearContents()
+        pb.setString_forType_(self._last_transcript, NSPasteboardTypeString)
+        log.info("copy last: %d chars on the clipboard", len(self._last_transcript))
+
+    def _open_config(self) -> None:
+        import shutil
+        import subprocess
+
+        from .config import CONFIG_DIR, CONFIG_PATH
+
+        if not CONFIG_PATH.exists():
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            example = Path(__file__).resolve().parents[2] / "config.example.toml"
+            if example.exists():
+                shutil.copy(example, CONFIG_PATH)
+            else:
+                CONFIG_PATH.write_text(
+                    "# Murmur configuration — every key is optional.\n"
+                    "# Reference: config.example.toml in the Murmur repo.\n"
+                )
+            log.info("config: created %s", CONFIG_PATH)
+        subprocess.run(["open", str(CONFIG_PATH)], check=False, timeout=5)
+
+    def _reload_config(self) -> None:
+        from . import config as config_mod
+
+        new = config_mod.load()
+        needs_restart = config_mod.restart_required(self._cfg, new)
+        # Hot-apply everything the running pipeline reads per utterance.
+        self._set_cleanup_enabled(new.cleanup.enabled)
+        self._set_cleanup_style(new.cleanup.style)
+        self._cleanup_timeout = new.cleanup.timeout_s
+        if self.hud is not None:
+            self.hud.apply_config(new.hud)
+        self.vad_enabled = new.vad.enabled
+        if self._endpointer is not None and not self._endpointer.armed:
+            rebuilt = self._make_endpointer(new.vad)
+            if rebuilt is not None:
+                self._endpointer = rebuilt
+        self.app.sync(
+            cleanup_enabled=self.cleanup_enabled,
+            style=self.cleanup_style,
+            hud_enabled=self.hud.enabled if self.hud else None,
+            vad_enabled=self.vad_enabled if self._endpointer else None,
+        )
+        self._cfg = new
+        if needs_restart:
+            log.warning("config: restart required for: %s", ", ".join(needs_restart))
+            self._post_state("idle", f"restart to apply: {', '.join(needs_restart)}")
+        else:
+            log.info("config: reloaded")
+            self._post_state("idle", "config reloaded")
 
     def _on_action(self, action) -> None:
         # Runs in the event tap callback — keep it short.
@@ -239,6 +312,7 @@ class Controller:
                     log.debug("cleanup full: %r", text)
                 else:
                     log.info("cleanup: %s, inserting raw", status)
+            self._last_transcript = text  # recovery path even if the paste fails
             try:
                 insert_text(text)
                 self.timings.stamp("insert")

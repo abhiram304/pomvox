@@ -30,6 +30,9 @@ class MenuBarApp(rumps.App):
         vad_enabled: bool | None = None,
         on_vad_toggle=None,
         on_setup=None,
+        on_copy_last=None,
+        on_open_config=None,
+        on_reload_config=None,
     ) -> None:
         super().__init__(GLYPHS["loading"], quit_button="Quit Murmur")
         self._status = rumps.MenuItem("Status: loading models…")
@@ -55,8 +58,18 @@ class MenuBarApp(rumps.App):
             )
             self._vad_item.state = 1 if vad_enabled else 0
             items.append(self._vad_item)
-        items.append(rumps.MenuItem("Setup Assistant…", callback=self._setup))
+        items += [
+            None,  # separator
+            rumps.MenuItem("Copy Last Transcript", callback=self._copy_last),
+            rumps.MenuItem("Open Config File", callback=self._open_config),
+            rumps.MenuItem("Reload Config", callback=self._reload_config),
+            None,
+            rumps.MenuItem("Setup Assistant…", callback=self._setup),
+        ]
         self.menu = items
+        self._on_copy_last = on_copy_last
+        self._on_open_config = on_open_config
+        self._on_reload_config = on_reload_config
 
     def set_state(self, state: str, detail: str = "") -> None:
         self.title = GLYPHS.get(state, GLYPHS["idle"])
@@ -86,3 +99,31 @@ class MenuBarApp(rumps.App):
     def _setup(self, _sender) -> None:
         if self._on_setup:
             self._on_setup()
+
+    def _copy_last(self, _sender) -> None:
+        if self._on_copy_last:
+            self._on_copy_last()
+
+    def _open_config(self, _sender) -> None:
+        if self._on_open_config:
+            self._on_open_config()
+
+    def _reload_config(self, _sender) -> None:
+        if self._on_reload_config:
+            self._on_reload_config()
+
+    def sync(
+        self,
+        cleanup_enabled: bool,
+        style: str,
+        hud_enabled: bool | None = None,
+        vad_enabled: bool | None = None,
+    ) -> None:
+        """Mirror hot-applied config back onto the menu item states."""
+        self._cleanup_item.state = 1 if cleanup_enabled else 0
+        self._style = style
+        self._style_item.title = f"Style: {style.capitalize()}"
+        if hud_enabled is not None and hasattr(self, "_hud_item"):
+            self._hud_item.state = 1 if hud_enabled else 0
+        if vad_enabled is not None and hasattr(self, "_vad_item"):
+            self._vad_item.state = 1 if vad_enabled else 0
