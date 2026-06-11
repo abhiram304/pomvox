@@ -80,7 +80,7 @@ class HudConfig:
 class VadConfig:
     enabled: bool = True  # hands-free auto-stop on a natural pause
     aggressiveness: int = 2  # webrtcvad mode 0–3
-    silence_ms: int = 1200  # pause length that ends the utterance
+    silence_ms: int = 2000  # pause length that ends the utterance
     min_speech_ms: int = 250  # debounce before "speech started"
     energy_gate_dbfs: float = -45.0  # AND-gate: kills breath/keyboard votes
     max_session_s: float = 600.0  # forgotten-open-mic hard stop

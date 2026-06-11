@@ -26,7 +26,7 @@ file = true  # also write ~/.murmur/murmur.log
 [vad]
 enabled = true          # hands-free auto-stop on a natural pause
 aggressiveness = 2      # webrtcvad mode 0-3 (3 = strictest about non-speech)
-silence_ms = 1200       # pause length that ends the utterance
+silence_ms = 2000       # pause length that ends the utterance
 min_speech_ms = 250     # debounce before "speech started"
 energy_gate_dbfs = -45.0 # frames quieter than this never count as speech
 max_session_s = 600.0   # hard stop for a forgotten open mic
