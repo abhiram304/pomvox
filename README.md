@@ -5,7 +5,9 @@ hotkey, speak, and the transcript is inserted into whatever text field is
 focused — in any app. No audio or text ever leaves your machine (the only
 network operation is the one-time model download from Hugging Face).
 
-See [SPEC.md](SPEC.md) for the full product spec.
+See [SPEC.md](SPEC.md) for the full product spec,
+[ARCHITECTURE.md](ARCHITECTURE.md) for how the implemented system fits
+together, and [CONTRIBUTING.md](CONTRIBUTING.md) to get involved.
 
 ## Requirements
 
@@ -60,8 +62,9 @@ Logs include one line per utterance with stage timings
 
 ## Development
 
-Pure-logic modules (`config`, `hotkey` state machine, `bench`) have no macOS
-dependencies, so the test suite runs anywhere:
+See [CONTRIBUTING.md](CONTRIBUTING.md). Pure-logic modules (`config`,
+`hotkey` state machine, `bench`, the prompt/guard half of `cleanup`) have no
+macOS dependencies, so the test suite runs anywhere:
 
 ```sh
 uv run pytest
