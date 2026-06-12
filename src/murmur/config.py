@@ -19,7 +19,8 @@ CONFIG_DIR = Path.home() / ".murmur"
 CONFIG_PATH = CONFIG_DIR / "config.toml"
 
 _SECTIONS = (
-    "hotkey", "stt", "cleanup", "insert", "log", "hud", "vad", "history", "audio"
+    "hotkey", "stt", "cleanup", "insert", "log", "hud", "vad", "history",
+    "audio", "engine"
 )
 
 
@@ -117,6 +118,16 @@ class HistoryConfig:
 
 
 @dataclass(frozen=True)
+class EngineConfig:
+    # The native Swift engine (Murmur.app) is off by default and owned by the
+    # Hub, which reads/writes `[engine] native`. The Python engine ignores this
+    # key entirely — it lives here only so config.toml round-trips cleanly (no
+    # "unknown section" warning). Mutual exclusion is enforced at runtime by the
+    # pidfile (pidfile.py), not by this flag.
+    native: bool = False
+
+
+@dataclass(frozen=True)
 class Config:
     hotkey: HotkeyConfig = field(default_factory=HotkeyConfig)
     stt: SttConfig = field(default_factory=SttConfig)
@@ -127,6 +138,7 @@ class Config:
     vad: VadConfig = field(default_factory=VadConfig)
     history: HistoryConfig = field(default_factory=HistoryConfig)
     audio: AudioConfig = field(default_factory=AudioConfig)
+    engine: EngineConfig = field(default_factory=EngineConfig)
 
 
 def _load_section(cls: type, data: dict, name: str):
@@ -193,4 +205,5 @@ def load(path: Path | None = None) -> Config:
         vad=_load_section(VadConfig, data, "vad"),
         history=_load_section(HistoryConfig, data, "history"),
         audio=_load_section(AudioConfig, data, "audio"),
+        engine=_load_section(EngineConfig, data, "engine"),
     )

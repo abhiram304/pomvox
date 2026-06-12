@@ -115,8 +115,10 @@ private struct SettingsPill: View {
 
 private struct GeneralPane: View {
     @EnvironmentObject var model: SettingsModel
+    @EnvironmentObject var engine: NativeEngine
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            NativeEngineGroup()
             SettingsGroup("Cleanup") {
                 SettingRow(title: "Clean up transcripts",
                            desc: "Run the local LLM pass after speech-to-text.") {
@@ -158,6 +160,84 @@ private struct GeneralPane: View {
                     SettingToggle(isOn: $model.values.hudSounds, label: "Sounds")
                 }
             }
+        }
+    }
+}
+
+/// The native dictation engine toggle (M4). A live engine control, not a
+/// batched setting — flipping it arms/disarms the CGEventTap + mic + STT and
+/// persists `[engine] native` itself, so it sits outside the Save flow.
+private struct NativeEngineGroup: View {
+    @EnvironmentObject var engine: NativeEngine
+
+    private var binding: Binding<Bool> {
+        Binding(
+            get: { engine.isArmed },
+            set: { on in
+                if on { Task { await engine.arm() } } else { engine.disarm() }
+            })
+    }
+
+    var body: some View {
+        SettingsGroup("Native engine (beta)") {
+            SettingRow(
+                title: "Use the native engine",
+                desc: "Off by default. Hold Fn, speak, release — the raw transcript pastes on-device (cleanup is not wired up yet). The Python engine stays your daily driver."
+            ) {
+                SettingToggle(isOn: binding, label: "Use the native engine")
+            }
+            RowDivider()
+            statusRow
+        }
+    }
+
+    private var statusRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: statusSymbol).font(.system(size: 12)).foregroundStyle(statusColor)
+                .frame(width: 18)
+            Text(statusText).font(Typo.ui(12.5)).foregroundStyle(Palette.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            if let ms = engine.lastPasteMs {
+                Text(String(format: "last paste %.0f ms", ms))
+                    .font(Typo.ui(11.5, .medium)).monospacedDigit().foregroundStyle(Palette.muted)
+            }
+        }
+        .padding(.vertical, 11).padding(.horizontal, 16)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Engine status: \(statusText)")
+    }
+
+    private var statusText: String {
+        switch engine.status {
+        case .off:               "Off — the Python engine is your daily driver."
+        case .preparing:         "Preparing the speech model… (first run downloads it)."
+        case .ready:             "Ready — hold Fn, speak, then release."
+        case .recording:         "Recording… release Fn to transcribe."
+        case .transcribing:      "Transcribing on the Neural Engine…"
+        case let .blocked(msg):  msg
+        case let .failed(msg):   msg
+        }
+    }
+
+    private var statusSymbol: String {
+        switch engine.status {
+        case .off:          "moon.zzz"
+        case .preparing:    "arrow.down.circle"
+        case .ready:        "checkmark.circle.fill"
+        case .recording:    "mic.fill"
+        case .transcribing: "waveform"
+        case .blocked:      "exclamationmark.triangle.fill"
+        case .failed:       "xmark.octagon.fill"
+        }
+    }
+
+    private var statusColor: Color {
+        switch engine.status {
+        case .ready, .recording:  Palette.ember
+        case .blocked:            Palette.gold
+        case .failed:             Palette.ember
+        default:                  Palette.muted
         }
     }
 }
