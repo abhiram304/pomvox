@@ -35,6 +35,10 @@ max_session_s = 600.0   # hard stop for a forgotten open mic
 enabled = true      # local only, transcripts only — audio is never stored
 retention_days = 7  # auto-delete window; 0 = keep nothing
 
+[audio]
+device = ""  # input mic by name; "" = system default. Wrong mic? Pick it here
+             # (Hub: Settings → Voice). Restart required to switch devices.
+
 [hud]
 enabled = true
 show_draft = true          # false keeps live text out of screen shares

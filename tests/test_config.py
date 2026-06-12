@@ -123,6 +123,23 @@ def test_malformed_file_falls_back_to_defaults(tmp_path, caplog):
     assert any("failed to read" in r.message for r in caplog.records)
 
 
+def test_audio_section(tmp_path):
+    cfg = config.load(write(tmp_path, '[audio]\ndevice = "MacBook Pro Microphone"\n'))
+    assert cfg.audio.device == "MacBook Pro Microphone"
+
+
+def test_audio_defaults_to_system_device(tmp_path):
+    cfg = config.load(tmp_path / "missing.toml")
+    assert cfg.audio == config.AudioConfig()
+    assert cfg.audio.device == ""  # empty = system default input
+
+
+def test_restart_required_flags_audio_device_change():
+    old = config.Config()
+    new = config.Config(audio=config.AudioConfig(device="USB Mic"))
+    assert config.restart_required(old, new) == ["audio.device"]
+
+
 def test_restart_required_flags_model_and_hotkey_changes():
     old = config.Config()
     new = config.Config(

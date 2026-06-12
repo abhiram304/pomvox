@@ -18,7 +18,9 @@ log = logging.getLogger(__name__)
 CONFIG_DIR = Path.home() / ".murmur"
 CONFIG_PATH = CONFIG_DIR / "config.toml"
 
-_SECTIONS = ("hotkey", "stt", "cleanup", "insert", "log", "hud", "vad", "history")
+_SECTIONS = (
+    "hotkey", "stt", "cleanup", "insert", "log", "hud", "vad", "history", "audio"
+)
 
 
 @dataclass(frozen=True)
@@ -95,6 +97,16 @@ class VadConfig:
 
 
 @dataclass(frozen=True)
+class AudioConfig:
+    # Input device, by name (sounddevice/PortAudio name). Empty = system
+    # default. Wrong-mic is the #1 "it doesn't work" cause, so the Hub
+    # surfaces a picker; a name that no longer resolves falls back to the
+    # default with a warning (audio.py). Restart-required: the InputStream is
+    # built once at startup.
+    device: str = ""
+
+
+@dataclass(frozen=True)
 class HistoryConfig:
     enabled: bool = True  # transcripts only — audio is never stored
     retention_days: int = 7  # auto-delete window; 0 = keep nothing
@@ -114,6 +126,7 @@ class Config:
     hud: HudConfig = field(default_factory=HudConfig)
     vad: VadConfig = field(default_factory=VadConfig)
     history: HistoryConfig = field(default_factory=HistoryConfig)
+    audio: AudioConfig = field(default_factory=AudioConfig)
 
 
 def _load_section(cls: type, data: dict, name: str):
@@ -148,6 +161,8 @@ def restart_required(old: Config, new: Config) -> list[str]:
         out.append("stt.model")
     if old.cleanup.model != new.cleanup.model:
         out.append("cleanup.model")
+    if old.audio.device != new.audio.device:
+        out.append("audio.device")
     if old.log != new.log:
         out.append("log")
     return out
@@ -177,4 +192,5 @@ def load(path: Path | None = None) -> Config:
         hud=_load_section(HudConfig, data, "hud"),
         vad=_load_section(VadConfig, data, "vad"),
         history=_load_section(HistoryConfig, data, "history"),
+        audio=_load_section(AudioConfig, data, "audio"),
     )
