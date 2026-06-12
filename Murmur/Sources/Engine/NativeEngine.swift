@@ -6,9 +6,12 @@ import SwiftUI
 /// toggle. M5 adds the live UX the Python HUD has: a never-steals-focus NSPanel
 /// HUD with two-tone streaming drafts (incremental re-transcription on a ~1 s
 /// cadence — M0 Result 2), a waveform and a VAD silence arc, hands-free mode
-/// (Fn+Space), energy-based auto-stop, and Esc-cancel. STT stays on the ANE;
-/// cleanup is OFF (M6) — it still pastes the raw transcript. Mutual exclusion
-/// with the Python engine is enforced by the pidfile.
+/// (Fn+Space), energy-based auto-stop, and Esc-cancel. M6 wires in the cleanup
+/// LLM: STT stays on the ANE, Qwen3 cleanup runs on the now-free GPU between
+/// transcribe and paste when `[cleanup] enabled`, falling back to the raw
+/// transcript on timeout/rejection/error — the raw <300 ms paste path is
+/// untouched when cleanup is off. Mutual exclusion with the Python engine is
+/// enforced by the pidfile.
 ///
 /// Threading: the hotkey path runs on the event-tap thread (serialized by
 /// `machineLock`); the audio callback posts level/VAD via the thread-safe
@@ -39,8 +42,16 @@ final class NativeEngine: ObservableObject {
     private let pidfile = Pidfile()
     private let capture = AudioCapture()
     private let transcriber = Transcriber()
+    private let cleanup = CleanupEngine()
     private var tap: EventTap?
     private let configPath: String
+
+    // [cleanup] snapshot, read at arm() like [hud]/[vad] (re-arm to apply).
+    // Defaults mirror SettingsStore/config.py.
+    private var cleanupEnabled = true
+    private var cleanupStyle = "polish"
+    private var cleanupTimeoutS = 5.0
+    private var cleanupModelID = "mlx-community/Qwen3-4B-4bit"
 
     // HUD + bus (the bus is thread-safe; its drain renders on the main actor).
     private let hud: HudController
@@ -95,7 +106,7 @@ final class NativeEngine: ObservableObject {
         NSLog("murmur-engine: arm() begin — AX trusted=%@", axTrusted ? "yes" : "no")
         status = .preparing
 
-        loadHudAndVadConfig()
+        loadEngineConfig()
 
         do {
             try await transcriber.prepare()
@@ -105,6 +116,14 @@ final class NativeEngine: ObservableObject {
             pidfile.release()
             status = .failed("Speech model failed to load. \(error.localizedDescription)")
             return
+        }
+
+        // The cleanup LLM loads + warms in the background (first run downloads
+        // ~2.3 GB): arm→ready never waits on it. Until it's ready, clean()
+        // returns nil and the raw transcript pastes — Python's exact behavior.
+        if cleanupEnabled {
+            let modelID = cleanupModelID
+            Task { [cleanup] in await cleanup.prepare(modelID: modelID) }
         }
 
         // The audio callback posts mic level (waveform) and, when armed, drives
@@ -141,6 +160,9 @@ final class NativeEngine: ObservableObject {
         endVadSession()
         capture.stop()
         capture.onBlock = nil
+        // Unlike the ~600 MB Parakeet models (kept for fast re-arm), the
+        // ~2.3 GB cleanup LLM is dropped on toggle-off; re-arm reloads in ~1.5s.
+        Task { [cleanup] in await cleanup.unload() }
         bus.post(.state("idle", "ready"))   // hide the HUD if showing
         pidfile.release()
         resetMachine()
@@ -148,9 +170,9 @@ final class NativeEngine: ObservableObject {
         status = .off
     }
 
-    /// Read `[hud]`/`[vad]` from config.toml (defaults match `config.py`) and build
-    /// the HUD config + the energy-only endpointer.
-    private func loadHudAndVadConfig() {
+    /// Read `[hud]`/`[vad]`/`[cleanup]` from config.toml (defaults match
+    /// `config.py`) and build the HUD config + the energy-only endpointer.
+    private func loadEngineConfig() {
         let doc = ConfigDocument.load(path: configPath)
         let hudEnabled = doc.bool("hud", "enabled") ?? true
         hud.applyConfig(
@@ -160,6 +182,11 @@ final class NativeEngine: ObservableObject {
             sounds: doc.bool("hud", "sounds") ?? true,
             maxChars: doc.int("hud", "max_chars") ?? 120)
         hud.prepare()
+
+        cleanupEnabled = doc.bool("cleanup", "enabled") ?? true
+        cleanupStyle = doc.string("cleanup", "style") ?? "polish"
+        cleanupTimeoutS = doc.double("cleanup", "timeout_s") ?? 5.0
+        cleanupModelID = doc.string("cleanup", "model") ?? "mlx-community/Qwen3-4B-4bit"
 
         vadEnabled = doc.bool("vad", "enabled") ?? true
         let detector = EndpointDetector(
@@ -276,10 +303,27 @@ final class NativeEngine: ObservableObject {
         machineLock.lock(); let t0 = stopAt; machineLock.unlock()
         NSLog("murmur-engine: stop — %d samples (%.1fs), transcribing", samples.count,
               Double(samples.count) / 16000)
+        // Snapshot on the main actor; the Task below runs off it.
+        let doCleanup = cleanupEnabled
+        let style = cleanupStyle
+        let timeoutS = cleanupTimeoutS
         Task { [weak self] in
             guard let self else { return }
-            let text = (try? await self.transcriber.transcribe(samples)) ?? ""
-            NSLog("murmur-engine: transcript = %@", text.isEmpty ? "<empty>" : text)
+            let raw = (try? await self.transcriber.transcribe(samples)) ?? ""
+            NSLog("murmur-engine: transcript = %@", raw.isEmpty ? "<empty>" : raw)
+            var text = raw
+            // Cleanup OFF: nothing below runs — the <300 ms raw path is intact.
+            // The draft loop is already stopped (`finishing`), so the GPU pass
+            // never overlaps STT on the ANE.
+            if doCleanup, !raw.isEmpty {
+                self.bus.post(.state("polishing", ""))
+                let (cleaned, cleanupStatus) = await self.cleanupWithWatchdog(
+                    raw: raw, style: style, timeoutS: timeoutS)
+                text = cleaned
+                if cleanupStatus != .ok {
+                    NSLog("murmur-engine: cleanup %@ — pasting raw", cleanupStatus.rawValue)
+                }
+            }
             await MainActor.run {
                 if !text.isEmpty {
                     self.lastTranscript = text  // retained for recovery before the paste
@@ -301,6 +345,29 @@ final class NativeEngine: ObservableObject {
                 self.doneMachine()
                 self.status = .ready
             }
+        }
+    }
+
+    /// Race the cleanup against `timeout_s` plus a grace period. The per-chunk
+    /// deadline inside `clean()` is authoritative, but a Metal kernel that
+    /// hangs without ever yielding a chunk would never reach it — the paste
+    /// must not be held hostage. First result wins; a late one is discarded
+    /// (the zombie generation can only delay the *next* cleanup, never STT,
+    /// which runs on the ANE).
+    private nonisolated func cleanupWithWatchdog(
+        raw: String, style: String, timeoutS: Double
+    ) async -> (String, CleanupStatus) {
+        await withTaskGroup(of: Optional<(String, CleanupStatus)>.self) { group in
+            group.addTask { [cleanup] in
+                await runCleanup(cleanup, text: raw, style: style, timeoutS: timeoutS)
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64((timeoutS + 2.0) * 1_000_000_000))
+                return nil
+            }
+            let first = await group.next()!
+            group.cancelAll()
+            return first ?? (raw, .timeout)
         }
     }
 
