@@ -3,11 +3,13 @@ import SwiftUI
 @main
 struct MurmurApp: App {
     @StateObject private var model = HubModel()
+    @StateObject private var settings = SettingsModel()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(model)
+                .environmentObject(settings)
                 .frame(minWidth: 920, minHeight: 600)
                 .onAppear { model.reload() }
         }
