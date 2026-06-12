@@ -22,6 +22,9 @@ struct HomeView: View {
                                       totalWords: model.stats.totalWords,
                                       spokenHours: model.stats.spokenHours)
                             .padding(.bottom, 30)
+                        SectionHeader(title: "Patterns", sub: "last 90 days")
+                        HeatmapCard(cells: model.heatmap, streak: model.stats.streak)
+                            .padding(.bottom, 30)
                         SectionHeader(title: "Recent", action: ("View all →", goToHistory))
                         recent
                     }

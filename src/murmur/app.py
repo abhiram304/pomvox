@@ -109,7 +109,6 @@ class Controller:
             on_copy_last=self._copy_last_transcript,
             on_open_config=self._open_config,
             on_reload_config=self._reload_config,
-            on_history=self._open_history if self.history else None,
             on_open_hub=self._open_hub,
         )
         self.bench = BenchLog()
@@ -117,7 +116,6 @@ class Controller:
         self._cfg = cfg
         self._last_transcript = ""
         self._tap_installed = False
-        self._history_window = None
         self._onboarding = None
         self._ob_flow = None
         self._poll_timer = None
@@ -364,36 +362,6 @@ class Controller:
                 subprocess.run(["open", app_path], check=False, timeout=5)
                 return
         log.warning("hub: Murmur.app not found (build it from Murmur/ — see README)")
-
-    def _open_history(self) -> None:
-        # rumps menu callback (main thread); same idle gate as onboarding —
-        # this window activates us and must never steal mid-dictation focus.
-        from .hotkey import State
-
-        if self.machine.state is not State.IDLE or self.history is None:
-            return
-        if self._history_window is None:
-            from .history import HistoryWindow
-
-            self._history_window = HistoryWindow(
-                self.history, on_reinsert=self._reinsert
-            )
-        self._history_window.show()
-
-    def _reinsert(self, text: str) -> None:
-        # 3-second countdown so the user can focus the target field —
-        # otherwise the paste would land in the History window itself.
-        from PyObjCTools import AppHelper
-
-        AppHelper.callLater(3.0, lambda: self._guarded_insert(text))
-
-    def _guarded_insert(self, text: str) -> None:
-        from .insert import insert_text
-
-        try:
-            insert_text(text)
-        except Exception:
-            log.exception("history: re-insert failed")
 
     def _record_history(self, raw: str, final: str, status: str) -> None:
         # STT worker thread, after insert + bench — strictly off the hot

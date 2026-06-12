@@ -109,4 +109,69 @@ final class HistoryReaderTests: XCTestCase {
         XCTAssertEqual(Dictation.countWords("  spaced   out  "), 2)
         XCTAssertEqual(Dictation.countWords(""), 0)
     }
+
+    // MARK: - heatmap (90-day calendar grid)
+
+    private func dictation(daysAgo: Int, words: Int) -> Dictation {
+        let ts = utc.date(byAdding: .day, value: -daysAgo, to: now)!
+        let final = words > 0 ? Array(repeating: "w", count: words).joined(separator: " ") : ""
+        return Dictation(id: Int64(daysAgo), timestamp: ts, raw: final, final: final,
+                         cleanupStatus: "ok", appHint: nil, durationSeconds: nil)
+    }
+
+    func testHeatmapGridShape() throws {
+        let path = try makeDB(fixture())
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let reader = HistoryReader(path: path)
+        let cells = reader.heatmap(rows: reader.load(), now: now, calendar: utc, weeks: 13)
+
+        XCTAssertEqual(cells.count, 91)                       // 13 weeks × 7 days
+        XCTAssertEqual(cells.map(\.week).max(), 12)
+        XCTAssertTrue(cells.allSatisfy { (0...6).contains($0.weekday) })
+
+        let today = utc.startOfDay(for: now)
+        XCTAssertTrue(cells.filter { $0.inFuture }.allSatisfy { $0.date > today })
+        XCTAssertTrue(cells.filter { !$0.inFuture }.allSatisfy { $0.date <= today })
+
+        // today (June 11) is a Thursday → Fri+Sat are the only future cells.
+        XCTAssertEqual(cells.filter(\.inFuture).count, 2)
+
+        // The 90-day window includes the -40d row (0 words); total still 17.
+        let todayCell = cells.first { utc.isDate($0.date, inSameDayAs: now) }
+        XCTAssertEqual(todayCell?.words, 10)                  // 4 + 6
+        XCTAssertEqual(cells.filter { !$0.inFuture }.reduce(0) { $0 + $1.words }, 17)
+    }
+
+    // MARK: - streak (your consecutive active days)
+
+    func testStreakCountsConsecutiveDays() {
+        let r = [dictation(daysAgo: 0, words: 4),
+                 dictation(daysAgo: 1, words: 2),
+                 dictation(daysAgo: 2, words: 9)]
+        XCTAssertEqual(HistoryReader().streak(rows: r, now: now, calendar: utc), 3)
+    }
+
+    func testStreakStopsAtAGap() {
+        let r = [dictation(daysAgo: 0, words: 4),
+                 dictation(daysAgo: 1, words: 2),
+                 dictation(daysAgo: 3, words: 9)]   // gap at -2d
+        XCTAssertEqual(HistoryReader().streak(rows: r, now: now, calendar: utc), 2)
+    }
+
+    func testStreakGraceWhenTodayEmpty() {
+        // Nothing today yet, but yesterday + the day before were active.
+        let r = [dictation(daysAgo: 1, words: 2), dictation(daysAgo: 2, words: 3)]
+        XCTAssertEqual(HistoryReader().streak(rows: r, now: now, calendar: utc), 2)
+    }
+
+    func testStreakZeroWhenStale() {
+        let r = [dictation(daysAgo: 3, words: 3), dictation(daysAgo: 4, words: 3)]
+        XCTAssertEqual(HistoryReader().streak(rows: r, now: now, calendar: utc), 0)
+    }
+
+    func testStreakIgnoresEmptyText() {
+        // A 0-word row today must not count as an active day.
+        let r = [dictation(daysAgo: 0, words: 0), dictation(daysAgo: 1, words: 2)]
+        XCTAssertEqual(HistoryReader().streak(rows: r, now: now, calendar: utc), 1)  // grace → yesterday
+    }
 }

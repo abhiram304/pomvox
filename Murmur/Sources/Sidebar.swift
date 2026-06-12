@@ -53,6 +53,8 @@ private struct NavRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .accessibilityLabel(item.title)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : [.isButton])
     }
 }
 
@@ -86,9 +88,17 @@ private struct PrivacyFooter: View {
 
 /// The signature mark — a small live waveform that ties the Hub to the
 /// dictation HUD. Five bars breathing on a staggered loop.
+///
+/// The loop freezes whenever the app isn't frontmost (`controlActiveState ==
+/// .inactive`): a `repeatForever` animation otherwise keeps redrawing at the
+/// display refresh rate even when backgrounded, which blows the "~0% CPU
+/// backgrounded" footprint budget. Pausing it drops idle CPU to near zero.
 struct Waveform: View {
+    @Environment(\.controlActiveState) private var activeState
     @State private var animate = false
     private let heights: [CGFloat] = [7, 15, 20, 11, 6]
+
+    private var running: Bool { activeState != .inactive }
 
     var body: some View {
         HStack(alignment: .center, spacing: 2.5) {
@@ -98,12 +108,16 @@ struct Waveform: View {
                     .frame(width: 2.5, height: heights[i])
                     .scaleEffect(y: animate ? 1 : 0.5, anchor: .center)
                     .animation(
-                        .easeInOut(duration: 0.7).repeatForever(autoreverses: true)
-                            .delay(Double(i) * 0.12),
+                        animate
+                            ? .easeInOut(duration: 0.7).repeatForever(autoreverses: true)
+                                .delay(Double(i) * 0.12)
+                            : .default,   // settle once, no repeat, when paused
                         value: animate)
             }
         }
         .frame(height: 20)
-        .onAppear { animate = true }
+        .onAppear { animate = running }
+        .onChange(of: activeState) { _, _ in animate = running }
+        .accessibilityHidden(true)
     }
 }

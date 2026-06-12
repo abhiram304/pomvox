@@ -27,6 +27,18 @@ struct DayBucket: Identifiable {
     let words: Int
 }
 
+/// One cell of the 90-day calendar heatmap: a single day placed on a
+/// week (column) × weekday (row) grid. `inFuture` days sit past today in the
+/// last column and render blank. Pure value type, built by `HistoryReader`.
+struct HeatmapCell: Identifiable {
+    let id: Int          // week * 7 + weekday, stable across a render
+    let date: Date
+    let words: Int
+    let week: Int        // 0 = oldest shown week (leftmost column)
+    let weekday: Int     // 0 = Sunday … 6 = Saturday (calendar-relative)
+    let inFuture: Bool    // beyond today — drawn empty, excluded from stats
+}
+
 /// Everything the Home dashboard summarizes — all computed on this Mac,
 /// compared to nobody.
 struct HubStats {
@@ -35,6 +47,9 @@ struct HubStats {
     /// Words ÷ minutes spoken, over dictations with a known positive duration.
     var averageWPM: Int = 0
     var activity: [DayBucket] = []
+    /// Consecutive days (ending today, or yesterday if today is still empty) on
+    /// which you dictated. Your own streak — compared to nobody.
+    var streak: Int = 0
 
     var spokenHours: Double {
         // derived only for display; activity-independent

@@ -4,12 +4,14 @@ import SwiftUI
 struct MurmurApp: App {
     @StateObject private var model = HubModel()
     @StateObject private var settings = SettingsModel()
+    @StateObject private var reinserter = ReinsertController()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(model)
                 .environmentObject(settings)
+                .environmentObject(reinserter)
                 .frame(minWidth: 920, minHeight: 600)
                 .onAppear { model.reload() }
         }

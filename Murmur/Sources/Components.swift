@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import Charts
 
 // MARK: - Chip
 
@@ -81,6 +83,8 @@ struct StatCard: View {
         .offset(y: hovering ? -3 : 0)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: hovering)
         .onHover { hovering = $0 }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label): \(value)\(unit.map { " " + $0 } ?? ""). \(meta)")
     }
 
     @ViewBuilder private var metaLine: some View {
@@ -134,12 +138,116 @@ struct ActivityStrip: View {
         .padding(.init(top: 18, leading: 20, bottom: 14, trailing: 20))
         .background(RoundedRectangle(cornerRadius: 13).fill(Palette.card))
         .overlay(RoundedRectangle(cornerRadius: 13).stroke(Palette.hair, lineWidth: 0.5))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(format: "Activity: %@ words over the last 30 days, about %.1f hours of speaking.",
+                                   totalWords.formatted(), spokenHours))
     }
 
     private func axisLabel(_ date: Date?) -> String {
         guard let date else { return "" }
         let f = DateFormatter(); f.dateFormat = "MMM d"
         return f.string(from: date)
+    }
+}
+
+// MARK: - 90-day heatmap + streak (the richer "Patterns" view)
+
+/// A GitHub-style calendar heatmap of the last 13 weeks, drawn with Swift
+/// Charts, plus your personal streak. Every number is from this Mac's history —
+/// no percentile, no cohort, compared to nobody (decision #3).
+struct HeatmapCard: View {
+    let cells: [HeatmapCell]
+    let streak: Int
+
+    private var maxWords: Int {
+        max(cells.lazy.filter { !$0.inFuture }.map(\.words).max() ?? 1, 1)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header.padding(.bottom, 16)
+            chart
+            legend.padding(.top, 12)
+        }
+        .padding(.init(top: 18, leading: 20, bottom: 16, trailing: 20))
+        .background(RoundedRectangle(cornerRadius: 13).fill(Palette.card))
+        .overlay(RoundedRectangle(cornerRadius: 13).stroke(Palette.hair, lineWidth: 0.5))
+    }
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            if streak > 0 {
+                Text("\(streak)").font(Typo.display(22, .semibold)).foregroundStyle(Palette.ember)
+                Text(streak == 1 ? "day streak" : "day streak")
+                    .font(Typo.ui(13.5, .medium)).foregroundStyle(Palette.ink)
+            } else {
+                Text("No active streak").font(Typo.ui(13.5, .medium)).foregroundStyle(Palette.inkSoft)
+            }
+            Spacer()
+            Text("CONSECUTIVE DAYS YOU DICTATED · JUST YOU")
+                .font(Typo.ui(11, .semibold)).tracking(0.4).foregroundStyle(Palette.muted)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(streak > 0
+            ? "\(streak) day streak — consecutive days you dictated, compared to nobody."
+            : "No active streak yet.")
+    }
+
+    private var chart: some View {
+        Chart(cells) { cell in
+            // Inset each cell a touch so the grid reads as separate squares.
+            // Sunday (weekday 0) on top: flip the row so y grows downward.
+            RectangleMark(
+                xStart: .value("week start", Double(cell.week) + 0.08),
+                xEnd:   .value("week end",   Double(cell.week) + 0.92),
+                yStart: .value("day start",  Double(6 - cell.weekday) + 0.08),
+                yEnd:   .value("day end",    Double(6 - cell.weekday) + 0.92))
+                .foregroundStyle(color(for: cell))
+                .cornerRadius(2)
+                .accessibilityLabel(label(for: cell))
+                .accessibilityValue("\(cell.words) words")
+                .accessibilityHidden(cell.inFuture)
+        }
+        .chartXAxis(.hidden)
+        .chartYAxis(.hidden)
+        .chartXScale(domain: 0...13)
+        .chartYScale(domain: 0...7)
+        .frame(height: 116)
+        .accessibilityLabel("Dictation activity heatmap, last 90 days")
+    }
+
+    private var legend: some View {
+        HStack(spacing: 8) {
+            Text(rangeCaption).font(Typo.ui(10.5)).foregroundStyle(Palette.muted)
+            Spacer()
+            Text("Less").font(Typo.ui(10.5)).foregroundStyle(Palette.muted)
+            ForEach([0.0, 0.25, 0.5, 0.75, 1.0], id: \.self) { frac in
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(frac == 0 ? Palette.hairStrong.opacity(0.5) : Palette.ember.opacity(0.35 + frac * 0.65))
+                    .frame(width: 11, height: 11)
+            }
+            Text("More").font(Typo.ui(10.5)).foregroundStyle(Palette.muted)
+        }
+        .accessibilityHidden(true)
+    }
+
+    private func color(for cell: HeatmapCell) -> Color {
+        if cell.inFuture { return .clear }
+        if cell.words == 0 { return Palette.hairStrong.opacity(0.5) }
+        let frac = Double(cell.words) / Double(maxWords)
+        return Palette.ember.opacity(0.35 + frac * 0.65)
+    }
+
+    private func label(for cell: HeatmapCell) -> String {
+        let f = DateFormatter(); f.dateFormat = "EEEE, MMMM d"
+        return f.string(from: cell.date)
+    }
+
+    private var rangeCaption: String {
+        let visible = cells.filter { !$0.inFuture }
+        guard let first = visible.first?.date, let last = visible.last?.date else { return "" }
+        let f = DateFormatter(); f.dateFormat = "MMM d"
+        return "\(f.string(from: first)) – \(f.string(from: last))"
     }
 }
 
@@ -150,6 +258,8 @@ struct DictationRow: View {
     var dateStyle: WhenStyle = .relative
     var showDelete: Bool = false
     @State private var hovering = false
+    @EnvironmentObject private var model: HubModel
+    @EnvironmentObject private var reinserter: ReinsertController
 
     enum WhenStyle { case relative, calendar }
 
@@ -175,13 +285,29 @@ struct DictationRow: View {
                     Text(formatDuration(dur)).font(Typo.ui(10.5)).monospacedDigit().foregroundStyle(Palette.muted)
                 }
                 if let app = dictation.appHint { AppBadge(name: app) }
-                rowActions.opacity(hovering ? 1 : 0)
+                // Faintly visible at rest (not opacity 0, which drops the buttons
+                // from the accessibility tree), full on hover. Keeps Copy /
+                // Re-insert / Delete reachable by keyboard and VoiceOver.
+                rowActions.opacity(hovering ? 1 : 0.55)
             }
             .padding(.top, 1)
         }
         .padding(.horizontal, 18).padding(.vertical, 15)
         .background(hovering ? Palette.pane2 : .clear)
         .onHover { hovering = $0 }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(a11ySummary)
+    }
+
+    private var a11ySummary: String {
+        let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .short
+        return "\(f.string(from: dictation.timestamp)). \(dictation.final)"
+    }
+
+    private func copy() {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(dictation.final, forType: .string)
     }
 
     @ViewBuilder private var whenColumn: some View {
@@ -199,25 +325,37 @@ struct DictationRow: View {
 
     private var rowActions: some View {
         HStack(spacing: 4) {
-            RowButton(symbol: "doc.on.doc")
-            RowButton(symbol: "arrow.uturn.left")
-            if showDelete { RowButton(symbol: "trash") }
+            RowButton(symbol: "doc.on.doc", label: "Copy", action: copy)
+            RowButton(symbol: "arrow.uturn.left", label: "Re-insert") {
+                reinserter.start(text: dictation.final)
+            }
+            if showDelete {
+                RowButton(symbol: "trash", label: "Delete", danger: true) { model.delete(dictation) }
+            }
         }
     }
 }
 
 private struct RowButton: View {
     let symbol: String
+    let label: String
+    var danger: Bool = false
+    let action: () -> Void
     @State private var hovering = false
+
+    private var tint: Color { hovering ? (danger ? Palette.ember : Palette.ember) : Palette.inkSoft }
+
     var body: some View {
-        Button(action: {}) {
+        Button(action: action) {
             Image(systemName: symbol).font(.system(size: 12))
-                .foregroundStyle(hovering ? Palette.ember : Palette.inkSoft)
+                .foregroundStyle(tint)
                 .frame(width: 26, height: 26)
                 .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Palette.pane2 : Palette.card))
                 .overlay(RoundedRectangle(cornerRadius: 7).stroke(Palette.hair, lineWidth: 0.5))
         }
         .buttonStyle(.plain).onHover { hovering = $0 }
+        .accessibilityLabel(label)
+        .help(label)
     }
 }
 

@@ -7,15 +7,40 @@ import SwiftUI
 final class HubModel: ObservableObject {
     @Published private(set) var rows: [Dictation] = []
     @Published private(set) var stats: HubStats = .empty
+    @Published private(set) var heatmap: [HeatmapCell] = []
     @Published private(set) var hasDatabase: Bool = false
 
     private let reader = HistoryReader()
+    private let writer = HistoryWriter()
 
     func reload() {
         hasDatabase = reader.databaseExists
         let loaded = reader.load()
+        let nowDate = Date()
         rows = loaded
-        stats = reader.stats(rows: loaded)
+        stats = reader.stats(rows: loaded, now: nowDate)
+        heatmap = reader.heatmap(rows: loaded, now: nowDate, calendar: .current)
+    }
+
+    // MARK: - Destructive actions (the Hub's only writes — explicit user intent)
+
+    /// Delete one row, then re-read so every view reflects the on-disk truth.
+    func delete(_ dictation: Dictation) {
+        _ = writer.delete(id: dictation.id)
+        reload()
+    }
+
+    /// Clear every dictation (History "Delete all"). Confirmed in the view.
+    func deleteAll() {
+        _ = writer.deleteAll()
+        reload()
+    }
+
+    /// Privacy wipe: erase all history and shrink the file on disk. Confirmed
+    /// in the Privacy pane; identical data effect to `deleteAll` plus VACUUM.
+    func wipe() {
+        _ = writer.wipe()
+        reload()
     }
 
     func recent(_ n: Int) -> [Dictation] { Array(rows.prefix(n)) }
