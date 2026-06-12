@@ -9,15 +9,25 @@ options:
   createIntermediateGroups: true
   groupSortPosition: top
 
+packages:
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio.git
+    from: "0.15.0"
+
 settings:
   base:
     SWIFT_VERSION: "5.10"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
-    # Ad-hoc local signing — no Apple Developer account needed for the read-only
-    # Hub. Developer ID + notarization arrive with the engine port (M4/M7).
+    # Stable self-signed identity (M4): the native engine uses Microphone /
+    # Input Monitoring / Accessibility, and macOS keys those TCC grants to the
+    # app's code identity. An ad-hoc signature ("-") changes identity every
+    # build, resetting the grants — fatal for iterative engine work. "Murmur Dev"
+    # is a free, local, self-signed Code Signing cert (scripts/dev-signing-cert.sh);
+    # grants then survive rebuilds. Developer ID + hardened runtime + notarization
+    # arrive with distribution (M7).
     CODE_SIGN_STYLE: Manual
-    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_IDENTITY: "Murmur Dev"
     DEVELOPMENT_TEAM: ""
     ENABLE_HARDENED_RUNTIME: NO
 
@@ -35,9 +45,12 @@ targets:
         INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Abhi Ram Salammagari · MIT"
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.productivity"
         INFOPLIST_KEY_CFBundleDisplayName: Murmur
+        # Native engine (M4): shown when macOS prompts for the microphone.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Murmur transcribes your speech on-device. Audio never leaves this Mac."
         ENABLE_PREVIEWS: YES
     dependencies:
       - sdk: libsqlite3.tbd
+      - package: FluidAudio
 
   MurmurTests:
     type: bundle.unit-test

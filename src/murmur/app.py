@@ -533,12 +533,32 @@ class Controller:
     def _try_install_tap(self) -> bool:
         if self._tap_installed:
             return True
+        # Mutual exclusion: never hold the event tap while the native Swift
+        # engine holds it (and vice-versa). Acquire before starting the tap so
+        # two engines can't both arm. When the native engine is off — the only
+        # pre-M4 reality — there's never a live foreign holder, so this is a
+        # no-op write and the dictation path is unchanged.
+        from . import pidfile
+
+        blocker = pidfile.acquire("python")
+        if blocker is not None:
+            log.error(
+                "hotkey: another Murmur engine holds the tap (%s, pid %d) — "
+                "quit it before starting the Python engine",
+                blocker.name, blocker.pid,
+            )
+            self._post_state("setup", "another Murmur engine is running")
+            return False
         try:
             self.tap.start()
         except RuntimeError as exc:
+            pidfile.release("python")
             log.error("%s", exc)
             self._post_state("setup", "setup needed — see Setup Assistant")
             return False
+        import atexit
+
+        atexit.register(pidfile.release, "python")
         self._tap_installed = True
         return True
 

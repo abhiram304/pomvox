@@ -5,6 +5,7 @@ struct MurmurApp: App {
     @StateObject private var model = HubModel()
     @StateObject private var settings = SettingsModel()
     @StateObject private var reinserter = ReinsertController()
+    @StateObject private var engine = NativeEngine()
 
     var body: some Scene {
         WindowGroup {
@@ -12,6 +13,7 @@ struct MurmurApp: App {
                 .environmentObject(model)
                 .environmentObject(settings)
                 .environmentObject(reinserter)
+                .environmentObject(engine)
                 .frame(minWidth: 920, minHeight: 600)
                 .onAppear { model.reload() }
         }

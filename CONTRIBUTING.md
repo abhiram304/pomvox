@@ -39,6 +39,35 @@ uv run murmur                        # macOS only: the app
 - Permissions while developing: TCC grants attach to your *terminal app*, not
   Murmur. See the dev note in README.
 
+### Building the native Hub / engine (Swift)
+
+The Hub (`Murmur/`) is a SwiftUI app generated with XcodeGen:
+
+```sh
+brew install xcodegen                                 # one-time
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer  # not CommandLineTools
+cd Murmur && xcodegen generate                        # after editing project.yml / adding files
+xcodebuild test -scheme Murmur -derivedDataPath /tmp/murmur-hub-dd \
+  -destination 'platform=macOS'                       # build to /tmp, never iCloud Desktop
+```
+
+From M4, the Hub carries an off-by-default **Native engine (beta)** toggle
+(Settings ▸ General) that uses the Microphone, Input Monitoring, and
+Accessibility TCC permissions. macOS keys those grants to the app's *code
+identity*, so the build is signed with a stable, free, self-signed certificate
+rather than ad-hoc — otherwise every rebuild resets the grants. Create it once:
+
+```sh
+scripts/dev-signing-cert.sh          # makes the "Murmur Dev" Code Signing cert
+```
+
+`project.yml` then signs with `CODE_SIGN_IDENTITY: "Murmur Dev"`. The native and
+Python engines never hold the event tap / mic at the same time — a pidfile
+(`~/.murmur/engine.pid`, see `src/murmur/pidfile.py` and
+`Murmur/Sources/Engine/Pidfile.swift`) enforces it; arming one while the other
+runs is refused with a message. Distribution signing (Developer ID +
+notarization) is a later milestone.
+
 ## Code style
 
 - Match what's there: type hints, dataclasses for config, deferred imports
