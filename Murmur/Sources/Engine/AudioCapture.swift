@@ -14,6 +14,12 @@ final class AudioCapture {
     private var samples: [Float] = []
     private var recording = false
 
+    /// Called on the audio thread with each converted 16 kHz block (mirrors
+    /// `app.py:_on_block`). Used to post mic level and feed the VAD endpointer.
+    /// Must only do reductions + coalesced posts — never touch the recorder, the
+    /// pipeline, or AppKit/SwiftUI directly. Set before `start()`.
+    var onBlock: (([Float]) -> Void)?
+
     init() {
         targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
                                      sampleRate: 16000, channels: 1, interleaved: false)!
@@ -45,6 +51,14 @@ final class AudioCapture {
         return out
     }
 
+    /// A non-destructive copy of the audio accumulated so far — the source for
+    /// the incremental re-transcription draft loop. Distinct from `stop()`, which
+    /// returns *and clears* for the finalize batch.
+    func snapshot() -> [Float] {
+        lock.lock(); defer { lock.unlock() }
+        return samples
+    }
+
     private func append(_ buffer: AVAudioPCMBuffer) {
         guard let converter else { return }
         let ratio = targetFormat.sampleRate / buffer.format.sampleRate
@@ -62,10 +76,11 @@ final class AudioCapture {
         if error != nil { return }
         guard let channel = out.floatChannelData else { return }
         let count = Int(out.frameLength)
+        let block = Array(UnsafeBufferPointer(start: channel[0], count: count))
         lock.lock()
-        if recording {
-            samples.append(contentsOf: UnsafeBufferPointer(start: channel[0], count: count))
-        }
+        let active = recording
+        if active { samples.append(contentsOf: block) }
         lock.unlock()
+        if active { onBlock?(block) }
     }
 }

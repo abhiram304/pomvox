@@ -13,6 +13,24 @@ packages:
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio.git
     from: "0.15.0"
+  # Cleanup LLM (M6): Qwen3 on the GPU via mlx-swift-lm. Same pins as the M0
+  # spike harness (native/Package.swift); mlx-swift's default.metallib is an
+  # Xcode build phase, which is why cleanup lives in this target, not a CLI.
+  mlx-swift-lm:
+    url: https://github.com/ml-explore/mlx-swift-lm.git
+    from: "3.31.0"
+  swift-huggingface-mlx:
+    url: https://github.com/DePasqualeOrg/swift-huggingface-mlx.git
+    from: "0.2.0"
+  swift-tokenizers-mlx:
+    url: https://github.com/DePasqualeOrg/swift-tokenizers-mlx.git
+    from: "0.3.0"
+  # Transitive pin: swift-tokenizers 0.6+ made encode/decode throwing, which
+  # swift-tokenizers-mlx 0.3.0 doesn't compile against yet.
+  swift-tokenizers:
+    url: https://github.com/DePasqualeOrg/swift-tokenizers.git
+    minVersion: "0.5.0"
+    maxVersion: "0.6.0"
 
 settings:
   base:
@@ -51,6 +69,18 @@ targets:
     dependencies:
       - sdk: libsqlite3.tbd
       - package: FluidAudio
+      - package: mlx-swift-lm
+        product: MLXLLM
+      - package: mlx-swift-lm
+        product: MLXLMCommon
+      - package: swift-huggingface-mlx
+        product: MLXLMHuggingFace
+      - package: swift-tokenizers-mlx
+        product: MLXLMTokenizers
+      # Linked transitively anyway; an explicit product keeps xcodegen from
+      # pruning the version-pinned package reference.
+      - package: swift-tokenizers
+        product: Tokenizers
 
   MurmurTests:
     type: bundle.unit-test
