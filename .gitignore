@@ -20,3 +20,7 @@ build/
 # Local artifacts
 *.wav
 *.aiff
+
+# native spike (M0)
+native/.build/
+native/fixtures/
