@@ -101,9 +101,16 @@ final class NativeEngine: ObservableObject {
     /// grant doesn't reach an already-running process (relaunch note).
     var tapInstalled: Bool { tap != nil }
 
-    // MARK: - arm / disarm (driven by the Settings toggle)
+    /// One engine per process — the AppDelegate auto-arms it at launch and the
+    /// scenes observe it, so both need the same instance.
+    static let shared = NativeEngine()
 
-    func arm() async {
+    // MARK: - arm / disarm (Settings/menu toggle, or the silent launch path)
+
+    /// `interactive: false` is the launch auto-arm (M7a): never prompt, never
+    /// dialog-storm a fresh login — a missing grant degrades to a menu-bar
+    /// badge whose fix path is the Setup pane.
+    func arm(interactive: Bool = true) async {
         guard !isArmed else { return }
         if let holder = pidfile.acquire("native") {
             NSLog("murmur-engine: blocked by %@ engine", holder.name)
@@ -111,9 +118,19 @@ final class NativeEngine: ObservableObject {
                 "Murmur's \(holder.name) engine is running — quit it before enabling the native engine.")
             return
         }
-        let axTrusted = AXIsProcessTrustedWithOptions(
-            [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
-        NSLog("murmur-engine: arm() begin — AX trusted=%@", axTrusted ? "yes" : "no")
+        if interactive {
+            let axTrusted = AXIsProcessTrustedWithOptions(
+                [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
+            NSLog("murmur-engine: arm() begin — AX trusted=%@", axTrusted ? "yes" : "no")
+        } else {
+            guard Permissions.allGranted() else {
+                NSLog("murmur-engine: auto-arm skipped — permissions missing")
+                pidfile.release()
+                status = .failed("Permissions needed — open Setup to finish enabling Murmur.")
+                return
+            }
+            NSLog("murmur-engine: auto-arm — all grants present")
+        }
         status = .preparing
 
         loadEngineConfig()

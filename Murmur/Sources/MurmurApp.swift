@@ -2,13 +2,16 @@ import SwiftUI
 
 @main
 struct MurmurApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = HubModel()
     @StateObject private var settings = SettingsModel()
     @StateObject private var reinserter = ReinsertController()
-    @StateObject private var engine = NativeEngine()
+    @StateObject private var engine = NativeEngine.shared
 
     var body: some Scene {
-        WindowGroup {
+        // A single Window (not WindowGroup): the Hub. The AppDelegate keeps it
+        // closed on login-item launches and drops the Dock icon when it closes.
+        Window("Murmur", id: HubWindow.id) {
             RootView()
                 .environmentObject(model)
                 .environmentObject(settings)
@@ -26,5 +29,13 @@ struct MurmurApp: App {
                     .keyboardShortcut("r", modifiers: .command)
             }
         }
+
+        MenuBarExtra {
+            MenuBarContent()
+                .environmentObject(engine)
+        } label: {
+            MenuBarIcon(status: engine.status)
+        }
+        .menuBarExtraStyle(.menu)
     }
 }

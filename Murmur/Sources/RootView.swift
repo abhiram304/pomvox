@@ -37,6 +37,10 @@ struct RootView: View {
             NotificationCenter.default.publisher(for: .murmurHistoryDidChange)
                 .receive(on: RunLoop.main)
         ) { _ in model.reload() }
+        // Menu bar "Open Setup…" deep link.
+        .onReceive(NotificationCenter.default.publisher(for: .murmurShowSetup)) { _ in
+            selection = .setup
+        }
     }
 
     @ViewBuilder private var detail: some View {
