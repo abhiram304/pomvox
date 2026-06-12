@@ -120,37 +120,42 @@ private struct GeneralPane: View {
             SettingsGroup("Cleanup") {
                 SettingRow(title: "Clean up transcripts",
                            desc: "Run the local LLM pass after speech-to-text.") {
-                    SettingToggle(isOn: $model.values.cleanupEnabled)
+                    SettingToggle(isOn: $model.values.cleanupEnabled, label: "Clean up transcripts")
                 }
                 RowDivider()
                 SettingRow(title: "Style") {
                     SegmentControl(options: [("light", "Light"), ("polish", "Polish")],
-                                   selection: $model.values.cleanupStyle)
+                                   selection: $model.values.cleanupStyle,
+                                   accessibilityLabel: "Cleanup style")
                 }
                 RowDivider()
                 SettingRow(title: "Cleanup timeout",
                            desc: "On timeout the raw transcript is inserted instead.") {
-                    SliderControl(value: $model.values.cleanupTimeoutS, range: 1...15, step: 0.5) {
+                    SliderControl(value: $model.values.cleanupTimeoutS, range: 1...15, step: 0.5,
+                                  label: "Cleanup timeout") {
                         String(format: "%.1f s", $0)
                     }
                 }
             }
             SettingsGroup("On-screen HUD") {
-                SettingRow(title: "Show HUD") { SettingToggle(isOn: $model.values.hudEnabled) }
+                SettingRow(title: "Show HUD") {
+                    SettingToggle(isOn: $model.values.hudEnabled, label: "Show HUD")
+                }
                 RowDivider()
                 SettingRow(title: "Show live draft",
                            desc: "Off keeps live text out of screen shares.") {
-                    SettingToggle(isOn: $model.values.hudShowDraft)
+                    SettingToggle(isOn: $model.values.hudShowDraft, label: "Show live draft")
                 }
                 RowDivider()
                 SettingRow(title: "Position") {
                     SegmentControl(options: [("bottom-center", "Bottom"), ("top-center", "Top"), ("notch", "Notch")],
-                                   selection: $model.values.hudPosition)
+                                   selection: $model.values.hudPosition,
+                                   accessibilityLabel: "HUD position")
                 }
                 RowDivider()
                 SettingRow(title: "Sounds",
                            desc: "Start/stop cues for eyes-off dictation.") {
-                    SettingToggle(isOn: $model.values.hudSounds)
+                    SettingToggle(isOn: $model.values.hudSounds, label: "Sounds")
                 }
             }
         }
@@ -235,14 +240,15 @@ private struct VoicePane: View {
             SettingsGroup("Hands-free auto-stop") {
                 SettingRow(title: "Auto-stop on a pause",
                            desc: "End the utterance after a natural silence.") {
-                    SettingToggle(isOn: $model.values.vadEnabled)
+                    SettingToggle(isOn: $model.values.vadEnabled, label: "Auto-stop on a pause")
                 }
                 RowDivider()
                 SettingRow(title: "Silence to end") {
                     SliderControl(value: Binding(
                         get: { Double(model.values.vadSilenceMs) },
                         set: { model.values.vadSilenceMs = Int($0) }),
-                        range: 400...4000, step: 100) { String(format: "%.0f ms", $0) }
+                        range: 400...4000, step: 100,
+                        label: "Silence to end") { String(format: "%.0f ms", $0) }
                 }
                 RowDivider()
                 SettingRow(title: "Aggressiveness",
@@ -250,7 +256,8 @@ private struct VoicePane: View {
                     SegmentControl(options: (0...3).map { ("\($0)", "\($0)") },
                                    selection: Binding(
                                     get: { "\(model.values.vadAggressiveness)" },
-                                    set: { model.values.vadAggressiveness = Int($0) ?? 2 }))
+                                    set: { model.values.vadAggressiveness = Int($0) ?? 2 }),
+                                   accessibilityLabel: "Voice detection aggressiveness")
                 }
             }
             SettingsGroup("Microphone") {
@@ -266,12 +273,16 @@ private struct VoicePane: View {
 
 private struct PrivacyPane: View {
     @EnvironmentObject var model: SettingsModel
+    @EnvironmentObject var hub: HubModel
+    @State private var storage: [StorageItem] = []
+    @State private var confirmingWipe = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             SettingsGroup("History") {
                 SettingRow(title: "Keep history",
                            desc: "Transcripts only — audio is never stored.") {
-                    SettingToggle(isOn: $model.values.historyEnabled)
+                    SettingToggle(isOn: $model.values.historyEnabled, label: "Keep history")
                 }
                 RowDivider()
                 SettingRow(title: "Keep for",
@@ -279,20 +290,68 @@ private struct PrivacyPane: View {
                     SliderControl(value: Binding(
                         get: { Double(model.values.retentionDays) },
                         set: { model.values.retentionDays = Int($0) }),
-                        range: 0...90, step: 1) {
+                        range: 0...90, step: 1, label: "Keep history for") {
                             $0 == 0 ? "Off" : String(format: "%.0f days", $0)
                         }
                 }
             }
-            SettingsGroup("Where it lives") {
-                InfoRow(symbol: "internaldrive", text: "~/.murmur/history.db — on this Mac only.")
-                RowDivider()
-                InfoRow(symbol: "waveform.slash", text: "Text only · never audio.")
-                RowDivider()
-                InfoRow(symbol: "lock.fill", text: "No account, no cloud, no telemetry.")
+            SettingsGroup("Stored on this Mac") {
+                ForEach(Array(storage.enumerated()), id: \.element.id) { idx, item in
+                    if idx > 0 { RowDivider() }
+                    StorageRow(item: item)
+                }
             }
-            PaneNote("Per-entry copy, re-insert, and delete-all live in the History tab, arriving with the next update.")
+            SettingsGroup("Erase") {
+                SettingRow(title: "Erase all history",
+                           desc: "Deletes every dictation and shrinks the file on disk. Settings and downloaded models are left alone.") {
+                    Button(role: .destructive) { confirmingWipe = true } label: {
+                        Text("Erase…").font(Typo.ui(12.5, .semibold)).foregroundStyle(.white)
+                            .padding(.horizontal, 14).padding(.vertical, 6)
+                            .background(Capsule().fill(Palette.ember))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(hub.rows.isEmpty)
+                    .accessibilityLabel("Erase all dictation history")
+                    .confirmationDialog("Erase all dictation history?",
+                                        isPresented: $confirmingWipe, titleVisibility: .visible) {
+                        Button("Erase All History", role: .destructive) {
+                            hub.wipe(); storage = StorageInspector.scan()
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Every transcript on this Mac is removed. This can't be undone.")
+                    }
+                }
+            }
+            SettingsGroup("Verifiably local") {
+                InfoRow(symbol: "lock.fill", text: "No account, no cloud, no telemetry.")
+                RowDivider()
+                InfoRow(symbol: "antenna.radiowaves.left.and.right.slash",
+                        text: "Verify it yourself: Little Snitch or LuLu shows zero connections from Murmur.")
+            }
         }
+        .onAppear { storage = StorageInspector.scan() }
+    }
+}
+
+/// One artifact in the Privacy pane: label, real path, on-disk size, detail.
+private struct StorageRow: View {
+    let item: StorageItem
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.label).font(Typo.ui(13.5, .medium)).foregroundStyle(Palette.ink)
+                Text(item.displayPath).font(Typo.ui(11.5)).monospaced().foregroundStyle(Palette.muted)
+                Text(item.detail).font(Typo.ui(12)).foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            Text(item.sizeText).font(Typo.ui(12.5, .medium)).monospacedDigit()
+                .foregroundStyle(Palette.inkSoft)
+        }
+        .padding(.vertical, 12).padding(.horizontal, 16)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(item.label), \(item.sizeText), at \(item.displayPath)")
     }
 }
 
@@ -376,30 +435,42 @@ private struct PaneNote: View {
 
 private struct SettingToggle: View {
     @Binding var isOn: Bool
+    var label: String = ""
     var body: some View {
         Toggle("", isOn: $isOn).labelsHidden().toggleStyle(.switch).tint(Palette.ember)
+            .accessibilityLabel(label)
     }
 }
 
+/// A segmented picker. Each option is a real `Button` (keyboard-focusable, with
+/// the `.isSelected` trait) — not a tap-gesture on a `Text`, which VoiceOver and
+/// the keyboard can't reach.
 private struct SegmentControl: View {
     let options: [(value: String, label: String)]
     @Binding var selection: String
+    var accessibilityLabel: String = ""
     var body: some View {
         HStack(spacing: 0) {
             ForEach(options, id: \.value) { opt in
                 let sel = selection == opt.value
-                Text(opt.label)
-                    .font(Typo.ui(12.5, sel ? .semibold : .regular))
-                    .foregroundStyle(sel ? Color.white : Palette.inkSoft)
-                    .padding(.horizontal, 13).padding(.vertical, 5)
-                    .background(sel ? Palette.ember : .clear)
-                    .contentShape(Rectangle())
-                    .onTapGesture { selection = opt.value }
+                Button { selection = opt.value } label: {
+                    Text(opt.label)
+                        .font(Typo.ui(12.5, sel ? .semibold : .regular))
+                        .foregroundStyle(sel ? Color.white : Palette.inkSoft)
+                        .padding(.horizontal, 13).padding(.vertical, 5)
+                        .background(sel ? Palette.ember : .clear)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(opt.label)
+                .accessibilityAddTraits(sel ? [.isSelected] : [])
             }
         }
         .background(Palette.pane2)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.hair, lineWidth: 0.5))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(accessibilityLabel)
     }
 }
 
@@ -407,12 +478,16 @@ private struct SliderControl: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     let step: Double
+    var label: String = ""
     let format: (Double) -> String
     var body: some View {
         HStack(spacing: 12) {
             Slider(value: $value, in: range, step: step).frame(width: 190).tint(Palette.ember)
+                .accessibilityLabel(label)
+                .accessibilityValue(format(value))
             Text(format(value)).font(Typo.ui(12.5, .medium)).monospacedDigit()
                 .foregroundStyle(Palette.ink).frame(width: 72, alignment: .trailing)
+                .accessibilityHidden(true)
         }
     }
 }

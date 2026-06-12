@@ -33,7 +33,6 @@ class MenuBarApp(rumps.App):
         on_copy_last=None,
         on_open_config=None,
         on_reload_config=None,
-        on_history=None,
         on_open_hub=None,
     ) -> None:
         super().__init__(GLYPHS["loading"], quit_button="Quit Murmur")
@@ -62,8 +61,9 @@ class MenuBarApp(rumps.App):
             items.append(self._vad_item)
         items += [
             None,  # separator
-            rumps.MenuItem("Open Hub…", callback=self._open_hub),
-            rumps.MenuItem("History…", callback=self._history),
+            # "History…" now opens the native Hub (Murmur.app), which hosts the
+            # full history UI; the old PyObjC window was retired in M3.
+            rumps.MenuItem("History…", callback=self._open_hub),
             rumps.MenuItem("Copy Last Transcript", callback=self._copy_last),
             rumps.MenuItem("Open Config File", callback=self._open_config),
             rumps.MenuItem("Reload Config", callback=self._reload_config),
@@ -74,7 +74,6 @@ class MenuBarApp(rumps.App):
         self._on_copy_last = on_copy_last
         self._on_open_config = on_open_config
         self._on_reload_config = on_reload_config
-        self._on_history = on_history
         self._on_open_hub = on_open_hub
 
     def set_state(self, state: str, detail: str = "") -> None:
@@ -105,10 +104,6 @@ class MenuBarApp(rumps.App):
     def _setup(self, _sender) -> None:
         if self._on_setup:
             self._on_setup()
-
-    def _history(self, _sender) -> None:
-        if self._on_history:
-            self._on_history()
 
     def _open_hub(self, _sender) -> None:
         if self._on_open_hub:
