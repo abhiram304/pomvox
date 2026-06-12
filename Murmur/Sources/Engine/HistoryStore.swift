@@ -190,6 +190,18 @@ final class HistoryStore: @unchecked Sendable {
         }
     }
 
+    /// Launch-time retention purge for the native-only user whose engine may
+    /// never arm (Python purges on insert; someone must purge when nothing
+    /// inserts). Conservative like HistoryWriter: opens an existing file,
+    /// never creates one just to purge. Returns the purged-row count.
+    @discardableResult
+    static func purgeExisting(path: String, retentionDays: Int, now: Double) -> Int {
+        guard FileManager.default.fileExists(atPath: path),
+              let store = HistoryStore(path: path, retentionDays: retentionDays) else { return 0 }
+        defer { store.close() }
+        return store.purge(now: now)
+    }
+
     // MARK: - helpers
 
     private func withLock<T>(_ body: () -> T) -> T {
@@ -210,4 +222,10 @@ final class HistoryStore: @unchecked Sendable {
     private func logSQLError(_ what: String) {
         NSLog("history: %@ failed: %@", what, String(cString: sqlite3_errmsg(db)))
     }
+}
+
+extension Notification.Name {
+    /// Posted by the native engine after it inserts a dictation row, so the
+    /// Hub (same process now) refreshes without polling.
+    static let murmurHistoryDidChange = Notification.Name("app.murmur.historyDidChange")
 }

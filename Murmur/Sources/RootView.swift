@@ -32,6 +32,11 @@ struct RootView: View {
         }
         .navigationTitle("")
         .toolbar(removing: .sidebarToggle)
+        // The native engine writes rows in-process now — refresh on each insert.
+        .onReceive(
+            NotificationCenter.default.publisher(for: .murmurHistoryDidChange)
+                .receive(on: RunLoop.main)
+        ) { _ in model.reload() }
     }
 
     @ViewBuilder private var detail: some View {

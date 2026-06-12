@@ -132,6 +132,40 @@ final class HistoryStoreTests: XCTestCase {
         XCTAssertEqual(rows[0].timestamp.timeIntervalSince1970, 1234.5, accuracy: 0.001)
     }
 
+    /// Mixed db — Python rows (NULL app_hint/duration_s, today's writer) and
+    /// native rows (real values) must aggregate together in the Hub stats:
+    /// words/count from every row, the WPM denominator only from timed rows.
+    func testMixedPythonAndNativeRowsAggregateInHubStats() throws {
+        let s = try store()
+        // Python-shaped: _record_history passes neither app_hint nor duration_s.
+        s.add(ts: 1000, rawText: "hello there world", finalText: "Hello there, world.",
+              cleanupStatus: "ok", timingsJson: "{}")
+        // Native-shaped: real duration and app hint.
+        s.add(ts: 2000, rawText: "a b c d e", finalText: "a b c d e",
+              cleanupStatus: "off", appHint: "Notes", durationS: 6.0,
+              timingsJson: #"{"stt_finalize": 200.0, "insert": 30.0, "total": 230.0}"#)
+        let reader = HistoryReader(path: dbPath)
+        let stats = reader.stats(rows: reader.load())
+        XCTAssertEqual(stats.dictationCount, 2)
+        XCTAssertEqual(stats.totalWords, 8)        // 3 + 5, untimed rows still count
+        XCTAssertEqual(stats.averageWPM, 50)       // 5 words / (6 s / 60) — timed row only
+        XCTAssertEqual(stats.secondsSpoken, 6)
+    }
+
+    /// The launch-time retention purge must be conservative like
+    /// HistoryWriter: purge an existing db, never create one just to purge.
+    func testLaunchPurgeNeverCreatesTheDatabase() throws {
+        XCTAssertEqual(HistoryStore.purgeExisting(path: dbPath, retentionDays: 7, now: 1000), 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dbPath))
+
+        let s = try store()
+        add(s, ts: 100.0)
+        add(s, ts: 999.5)
+        s.close()
+        // retention 0 keeps nothing — the acceptance demo's setting.
+        XCTAssertEqual(HistoryStore.purgeExisting(path: dbPath, retentionDays: 0, now: 1000), 2)
+    }
+
     /// Opening an existing Python-written db must not re-create or alter it —
     /// add() into a foreign schema-compatible file just works.
     func testOpensExistingDatabaseWithoutTouchingSchema() throws {

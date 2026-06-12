@@ -53,6 +53,12 @@ final class NativeEngine: ObservableObject {
     private var cleanupTimeoutS = 5.0
     private var cleanupModelID = "mlx-community/Qwen3-4B-4bit"
 
+    // [history] snapshot + store (M7a: the native engine writes the rows).
+    // Opens at arm(), closes at disarm(); enabled=false writes nothing.
+    private var historyEnabled = true
+    private var historyRetentionDays = 7
+    private var history: HistoryStore?
+
     // HUD + bus (the bus is thread-safe; its drain renders on the main actor).
     private let hud: HudController
     private nonisolated let bus: HudBus
@@ -91,6 +97,10 @@ final class NativeEngine: ObservableObject {
         }
     }
 
+    /// The Setup checklist's "tap really works" probe: an Input Monitoring
+    /// grant doesn't reach an already-running process (relaunch note).
+    var tapInstalled: Bool { tap != nil }
+
     // MARK: - arm / disarm (driven by the Settings toggle)
 
     func arm() async {
@@ -108,12 +118,22 @@ final class NativeEngine: ObservableObject {
 
         loadEngineConfig()
 
+        // History store (M7a): the engine process holds the pidfile, so it is
+        // the single inserter. A failed open degrades to no-history — the
+        // engine must dictate even when bookkeeping can't.
+        if historyEnabled {
+            history = HistoryStore(
+                path: HistoryReader.defaultPath(), retentionDays: historyRetentionDays)
+            if history == nil { NSLog("history: store failed to open — history disabled") }
+        }
+
         do {
             try await transcriber.prepare()
             NSLog("murmur-engine: model ready")
         } catch {
             NSLog("murmur-engine: model load FAILED: %@", String(describing: error))
             pidfile.release()
+            history?.close(); history = nil
             status = .failed("Speech model failed to load. \(error.localizedDescription)")
             return
         }
@@ -143,6 +163,7 @@ final class NativeEngine: ObservableObject {
         } catch {
             NSLog("murmur-engine: event tap FAILED (Input Monitoring?): %@", String(describing: error))
             pidfile.release()
+            history?.close(); history = nil
             status = .failed(
                 "Input Monitoring isn't granted. Enable Murmur in System Settings ▸ Privacy & "
                 + "Security ▸ Input Monitoring, then turn this on again.")
@@ -164,6 +185,7 @@ final class NativeEngine: ObservableObject {
         // ~2.3 GB cleanup LLM is dropped on toggle-off; re-arm reloads in ~1.5s.
         Task { [cleanup] in await cleanup.unload() }
         bus.post(.state("idle", "ready"))   // hide the HUD if showing
+        history?.close(); history = nil
         pidfile.release()
         resetMachine()
         persist(false)
@@ -187,6 +209,9 @@ final class NativeEngine: ObservableObject {
         cleanupStyle = doc.string("cleanup", "style") ?? "polish"
         cleanupTimeoutS = doc.double("cleanup", "timeout_s") ?? 5.0
         cleanupModelID = doc.string("cleanup", "model") ?? "mlx-community/Qwen3-4B-4bit"
+
+        historyEnabled = doc.bool("history", "enabled") ?? true
+        historyRetentionDays = doc.int("history", "retention_days") ?? 7
 
         vadEnabled = doc.bool("vad", "enabled") ?? true
         let detector = EndpointDetector(
@@ -307,43 +332,76 @@ final class NativeEngine: ObservableObject {
         let doCleanup = cleanupEnabled
         let style = cleanupStyle
         let timeoutS = cleanupTimeoutS
+        let store = history
+        let durationS = Double(samples.count) / 16000.0
         Task { [weak self] in
             guard let self else { return }
+            // Stage timings mirror bench.py (t0 = key-up/auto-stop); they land
+            // in history.timings_json with Python's keys.
+            var timings = EngineTimings()
+            timings.start(at: t0)
             let raw = (try? await self.transcriber.transcribe(samples)) ?? ""
+            timings.stamp("stt_finalize")
             NSLog("murmur-engine: transcript = %@", raw.isEmpty ? "<empty>" : raw)
             var text = raw
+            var cleanupStatus: CleanupStatus?
             // Cleanup OFF: nothing below runs — the <300 ms raw path is intact.
             // The draft loop is already stopped (`finishing`), so the GPU pass
             // never overlaps STT on the ANE.
             if doCleanup, !raw.isEmpty {
                 self.bus.post(.state("polishing", ""))
-                let (cleaned, cleanupStatus) = await self.cleanupWithWatchdog(
+                let (cleaned, status) = await self.cleanupWithWatchdog(
                     raw: raw, style: style, timeoutS: timeoutS)
                 text = cleaned
-                if cleanupStatus != .ok {
-                    NSLog("murmur-engine: cleanup %@ — pasting raw", cleanupStatus.rawValue)
+                cleanupStatus = status
+                timings.stamp("cleanup")
+                if status != .ok {
+                    NSLog("murmur-engine: cleanup %@ — pasting raw", status.rawValue)
                 }
             }
-            await MainActor.run {
-                if !text.isEmpty {
-                    self.lastTranscript = text  // retained for recovery before the paste
-                    let outcome = Paster.paste(text)
-                    self.lastPasteMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-                    switch outcome {
-                    case .pasted:
-                        self.bus.post(.result("ok", text))
-                        NSLog("engine: paste %.0fms (%d chars)", self.lastPasteMs ?? 0, text.count)
-                    case .copiedToClipboard:
-                        // No editable field had focus — the transcript is on the
-                        // clipboard, not lost. Tell the user via the HUD flash.
-                        self.bus.post(.result("error", "copied to clipboard"))
-                        NSLog("engine: no focused field — left %d chars on the clipboard", text.count)
-                    }
-                } else {
+            let (appHint, pastedAt): (String?, Double?) = await MainActor.run {
+                guard !text.isEmpty else {
                     self.bus.post(.result("empty", ""))
+                    self.doneMachine()
+                    self.status = .ready
+                    return (nil, nil)
+                }
+                // app_hint = whatever is frontmost when the paste lands.
+                let hint = NSWorkspace.shared.frontmostApplication?.localizedName
+                self.lastTranscript = text  // retained for recovery before the paste
+                let outcome = Paster.paste(text)
+                let pasteT = CFAbsoluteTimeGetCurrent()
+                self.lastPasteMs = (pasteT - t0) * 1000
+                var pastedAt: Double?
+                switch outcome {
+                case .pasted:
+                    pastedAt = pasteT
+                    self.bus.post(.result("ok", text))
+                    NSLog("engine: paste %.0fms (%d chars)", self.lastPasteMs ?? 0, text.count)
+                case .copiedToClipboard:
+                    // No editable field had focus — the transcript is on the
+                    // clipboard, not lost. Tell the user via the HUD flash.
+                    self.bus.post(.result("error", "copied to clipboard"))
+                    NSLog("engine: no focused field — left %d chars on the clipboard", text.count)
                 }
                 self.doneMachine()
                 self.status = .ready
+                return (hint, pastedAt)
+            }
+            // History row, strictly after the paste and the ready flip — a
+            // ~1 ms INSERT on this now-idle task, never on the latency path.
+            // Python records even when the insert failed (the words must not
+            // be lost from history too) but only stamps "insert" on success.
+            if let store, !text.isEmpty {
+                if let pastedAt { timings.stamp("insert", at: pastedAt) }
+                let now = Date().timeIntervalSince1970
+                store.add(
+                    ts: now, rawText: raw, finalText: text,
+                    cleanupStatus: cleanupStatus?.rawValue ?? "off",
+                    appHint: appHint, durationS: durationS,
+                    timingsJson: timings.json())
+                store.purge(now: now)
+                NotificationCenter.default.post(name: .murmurHistoryDidChange, object: nil)
             }
         }
     }
