@@ -34,6 +34,7 @@ class MenuBarApp(rumps.App):
         on_open_config=None,
         on_reload_config=None,
         on_history=None,
+        on_open_hub=None,
     ) -> None:
         super().__init__(GLYPHS["loading"], quit_button="Quit Murmur")
         self._status = rumps.MenuItem("Status: loading models…")
@@ -61,6 +62,7 @@ class MenuBarApp(rumps.App):
             items.append(self._vad_item)
         items += [
             None,  # separator
+            rumps.MenuItem("Open Hub…", callback=self._open_hub),
             rumps.MenuItem("History…", callback=self._history),
             rumps.MenuItem("Copy Last Transcript", callback=self._copy_last),
             rumps.MenuItem("Open Config File", callback=self._open_config),
@@ -73,6 +75,7 @@ class MenuBarApp(rumps.App):
         self._on_open_config = on_open_config
         self._on_reload_config = on_reload_config
         self._on_history = on_history
+        self._on_open_hub = on_open_hub
 
     def set_state(self, state: str, detail: str = "") -> None:
         self.title = GLYPHS.get(state, GLYPHS["idle"])
@@ -106,6 +109,10 @@ class MenuBarApp(rumps.App):
     def _history(self, _sender) -> None:
         if self._on_history:
             self._on_history()
+
+    def _open_hub(self, _sender) -> None:
+        if self._on_open_hub:
+            self._on_open_hub()
 
     def _copy_last(self, _sender) -> None:
         if self._on_copy_last:

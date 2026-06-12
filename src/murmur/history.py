@@ -64,6 +64,10 @@ class HistoryStore:
         existed = self._path.exists()
         self._db = sqlite3.connect(self._path, check_same_thread=False)
         self._db.execute("PRAGMA journal_mode=WAL")
+        # Schema-contract version for the native Hub, which reads this DB in a
+        # separate process (Murmur.app, M1). Bump only with a coordinated change
+        # on both sides; the columns the Hub reads are frozen at v1.
+        self._db.execute("PRAGMA user_version=1")
         self._db.executescript(_SCHEMA)
         self._db.commit()
         if not existed:

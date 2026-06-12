@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" data-view="home">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Murmur Hub — mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --font-ui: -apple-system, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+    --font-display: "Fraunces", Georgia, serif;
+    --ease: cubic-bezier(.2,.8,.2,1);
+
+    /* warm paper light theme */
+    --bg: #ece7e0;
+    --desk-1: #d9d0c5; --desk-2: #cabfb1;
+    --pane: #faf8f5;
+    --pane-2: #f3efea;
+    --sidebar: rgba(243,238,231,.72);
+    --ink: #221f1b;
+    --ink-soft: #5b554c;
+    --muted: #938b7e;
+    --hair: rgba(40,34,26,.10);
+    --hair-strong: rgba(40,34,26,.16);
+    --card: #ffffff;
+    --card-edge: rgba(40,34,26,.07);
+    --ember: #cf4f27;
+    --ember-soft: rgba(207,79,39,.12);
+    --gold: #b6863a;
+    --sel: rgba(207,79,39,.10);
+    --shadow: 0 32px 80px -24px rgba(40,28,16,.45), 0 8px 24px -12px rgba(40,28,16,.3);
+    --raw: #b3a89a;
+  }
+  [data-theme="dark"] {
+    --bg: #17140f;
+    --desk-1: #211c16; --desk-2: #14110c;
+    --pane: #211d18;
+    --pane-2: #1b1813;
+    --sidebar: rgba(28,24,19,.72);
+    --ink: #f1ece4;
+    --ink-soft: #c3bbae;
+    --muted: #897f70;
+    --hair: rgba(255,245,230,.09);
+    --hair-strong: rgba(255,245,230,.15);
+    --card: #26211b;
+    --card-edge: rgba(255,245,230,.06);
+    --ember: #f4703f;
+    --ember-soft: rgba(244,112,63,.16);
+    --gold: #d8a851;
+    --sel: rgba(244,112,63,.15);
+    --shadow: 0 40px 90px -24px rgba(0,0,0,.7), 0 8px 24px -12px rgba(0,0,0,.5);
+    --raw: #6f6657;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--font-ui);
+    background:
+      radial-gradient(120% 120% at 80% 0%, var(--desk-1), var(--desk-2) 70%),
+      var(--bg);
+    color: var(--ink);
+    display: grid; place-items: center;
+    min-height: 100vh; padding: 40px;
+    -webkit-font-smoothing: antialiased;
+    transition: background .5s var(--ease);
+    overflow: hidden;
+  }
+  /* faint grain on the desktop */
+  body::before {
+    content:""; position: fixed; inset:0; pointer-events:none; opacity:.5; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.4'/%3E%3C/svg%3E");
+  }
+
+  /* ===== window ===== */
+  .win {
+    width: min(1180px, 96vw); height: min(760px, 92vh);
+    background: var(--pane);
+    border-radius: 13px;
+    box-shadow: var(--shadow);
+    border: .5px solid var(--hair-strong);
+    display: grid; grid-template-columns: 248px 1fr;
+    overflow: hidden; position: relative;
+    animation: rise .7s var(--ease) both;
+  }
+  @keyframes rise { from { opacity:0; transform: translateY(14px) scale(.992);} to {opacity:1; transform:none;} }
+
+  /* ===== sidebar ===== */
+  .side {
+    background: var(--sidebar);
+    -webkit-backdrop-filter: blur(40px) saturate(1.6);
+    backdrop-filter: blur(40px) saturate(1.6);
+    border-right: .5px solid var(--hair);
+    display: flex; flex-direction: column;
+    padding: 0 12px 14px;
+    position: relative;
+  }
+  .traffic { display: flex; gap: 8px; padding: 18px 8px 16px; }
+  .traffic i { width: 12px; height: 12px; border-radius: 50%; display:block; }
+  .traffic .r { background:#ff5f57; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.18);}
+  .traffic .y { background:#febc2e; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.18);}
+  .traffic .g { background:#28c840; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.18);}
+
+  .brand { display:flex; align-items:center; gap:10px; padding: 2px 8px 18px; }
+  .brand .wave { display:flex; align-items:center; gap:2px; height:20px; }
+  .brand .wave span {
+    width:2.5px; border-radius:2px; background: var(--ember);
+    animation: bar 1.4s var(--ease) infinite;
+  }
+  .brand .wave span:nth-child(1){height:7px; animation-delay:0s}
+  .brand .wave span:nth-child(2){height:15px; animation-delay:.15s}
+  .brand .wave span:nth-child(3){height:20px; animation-delay:.3s}
+  .brand .wave span:nth-child(4){height:11px; animation-delay:.45s}
+  .brand .wave span:nth-child(5){height:6px; animation-delay:.6s}
+  @keyframes bar { 0%,100%{transform:scaleY(.5); opacity:.65} 50%{transform:scaleY(1); opacity:1} }
+  .brand h1 {
+    font-family: var(--font-display); font-weight: 600; font-size: 23px;
+    letter-spacing: -.01em; color: var(--ink); font-optical-sizing: auto;
+  }
+
+  nav { display:flex; flex-direction: column; gap: 2px; }
+  .nav-item {
+    display:flex; align-items:center; gap:11px;
+    padding: 8px 10px; border-radius: 8px;
+    font-size: 13.5px; font-weight: 500; color: var(--ink-soft);
+    cursor: pointer; position: relative;
+    transition: background .18s var(--ease), color .18s var(--ease);
+  }
+  .nav-item svg { width:17px; height:17px; opacity:.85; flex:none; }
+  .nav-item:hover { background: var(--pane-2); color: var(--ink); }
+  .nav-item.active { background: var(--sel); color: var(--ember); }
+  .nav-item.active svg { opacity:1; }
+  .nav-item .kbd { margin-left:auto; font-size:11px; color:var(--muted); font-weight:500; }
+
+  .side-spacer { flex:1; }
+
+  .status {
+    margin: 0 4px 12px; padding: 11px 12px;
+    border: .5px solid var(--hair); border-radius: 10px;
+    background: var(--pane); display:flex; align-items:center; gap:9px;
+  }
+  .status .dot {
+    width:8px; height:8px; border-radius:50%; background: #34c759;
+    box-shadow: 0 0 0 0 rgba(52,199,89,.5); animation: pulse 2.4s infinite;
+  }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(52,199,89,.45)} 70%{box-shadow:0 0 0 7px rgba(52,199,89,0)} 100%{box-shadow:0 0 0 0 rgba(52,199,89,0)} }
+  .status .txt { font-size:12px; }
+  .status .txt b { font-weight:600; display:block; color:var(--ink); }
+  .status .txt span { color: var(--muted); font-size:11px; }
+
+  .privacy {
+    display:flex; align-items:center; gap:7px; padding: 2px 8px;
+    font-size: 11px; color: var(--muted); line-height:1.3;
+  }
+  .privacy svg { width:13px; height:13px; flex:none; opacity:.7; }
+
+  /* ===== content ===== */
+  .content { background: var(--pane); display:flex; flex-direction:column; overflow:hidden; }
+  .toolbar {
+    height: 52px; flex:none; border-bottom: .5px solid var(--hair);
+    display:flex; align-items:center; gap:14px; padding: 0 22px;
+    -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+  }
+  .toolbar .t-title { font-size:14px; font-weight:600; letter-spacing:-.01em; }
+  .toolbar .grow { flex:1; }
+
+  .search {
+    display:flex; align-items:center; gap:7px; height:30px; min-width:230px;
+    padding: 0 10px; border-radius: 8px; background: var(--pane-2);
+    border:.5px solid var(--hair); color: var(--muted); font-size:13px;
+  }
+  .search svg{ width:14px; height:14px; }
+  .search input { border:0; background:none; outline:none; font-family:var(--font-ui); font-size:13px; color:var(--ink); width:100%; }
+
+  .chip {
+    font-size:12px; color: var(--ink-soft); padding: 5px 10px; border-radius:7px;
+    border:.5px solid var(--hair); background: var(--pane-2); font-weight:500;
+    display:flex; align-items:center; gap:6px;
+  }
+  .chip svg{ width:13px;height:13px; opacity:.7 }
+  .seg { display:flex; background: var(--pane-2); border:.5px solid var(--hair); border-radius:8px; padding:2px; }
+  .seg button {
+    border:0; background:none; font-family:var(--font-ui); font-size:12px; font-weight:500;
+    color: var(--muted); padding:4px 11px; border-radius:6px; cursor:pointer; transition:.16s var(--ease);
+  }
+  .seg button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+
+  .scroll { overflow-y:auto; flex:1; }
+  .scroll::-webkit-scrollbar{ width:9px } .scroll::-webkit-scrollbar-thumb{ background:var(--hair-strong); border-radius:9px; border:2px solid transparent; background-clip:padding-box }
+
+  /* ---- HOME ---- */
+  .page { padding: 30px 34px 40px; }
+  .greet { font-family:var(--font-display); font-size: 30px; font-weight:500; letter-spacing:-.015em; }
+  .greet .sub { display:block; font-family:var(--font-ui); font-size:13.5px; font-weight:450; color:var(--muted); margin-top:5px; letter-spacing:0; }
+
+  .cards { display:grid; grid-template-columns: repeat(3,1fr); gap:14px; margin-top: 26px; }
+  .card {
+    background: var(--card); border:.5px solid var(--card-edge); border-radius:13px;
+    padding: 18px 18px 16px; position:relative; overflow:hidden;
+    box-shadow: 0 1px 2px rgba(40,28,16,.04);
+    transition: transform .25s var(--ease), box-shadow .25s var(--ease);
+    animation: pop .6s var(--ease) both;
+  }
+  .card:hover { transform: translateY(-3px); box-shadow: 0 16px 36px -18px rgba(40,28,16,.4); }
+  .card:nth-child(1){ animation-delay:.05s } .card:nth-child(2){ animation-delay:.12s } .card:nth-child(3){ animation-delay:.19s }
+  @keyframes pop { from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none} }
+  .card .lbl { font-size:11.5px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
+  .card .num { font-family:var(--font-display); font-weight:600; font-size:38px; letter-spacing:-.02em; margin-top:8px; line-height:1; font-variant-numeric: tabular-nums; }
+  .card .num small{ font-size:18px; color:var(--muted); font-weight:500; margin-left:4px; }
+  .card .meta { font-size:12px; color:var(--ink-soft); margin-top:9px; display:flex; align-items:center; gap:6px; }
+  .card .meta .up { color: var(--gold); font-weight:600; }
+  .card.feature::after {
+    content:""; position:absolute; right:-30px; top:-30px; width:120px; height:120px;
+    background: radial-gradient(circle, var(--ember-soft), transparent 70%);
+  }
+  .card .spark { display:flex; align-items:flex-end; gap:3px; height:26px; margin-top:12px; }
+  .card .spark i { flex:1; background: var(--ember); opacity:.28; border-radius:2px; }
+
+  .section-h { display:flex; align-items:baseline; margin: 30px 0 14px; }
+  .section-h h2 { font-size:15px; font-weight:600; letter-spacing:-.01em; }
+  .section-h h2 .sub { font-weight:450; color:var(--muted); font-size:13px; margin-left:8px; }
+  .section-h a { margin-left:auto; font-size:12.5px; color:var(--ember); text-decoration:none; font-weight:500; }
+
+  /* activity strip */
+  .activity { background: var(--card); border:.5px solid var(--card-edge); border-radius:13px; padding:18px 20px 14px; }
+  .activity .top { display:flex; align-items:baseline; margin-bottom:14px; }
+  .activity .top .big { font-family:var(--font-display); font-size:19px; font-weight:600; }
+  .activity .top .lbl { font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); font-weight:600; margin-left:auto; }
+  .bars { display:flex; align-items:flex-end; gap:4px; height:62px; }
+  .bars i { flex:1; min-width:0; background: var(--ember); border-radius:3px 3px 2px 2px; opacity:.85; transition: opacity .15s; }
+  .bars i:hover{ opacity:1 }
+  .bars i.q0{ background: var(--hair-strong); opacity:.6 }
+  .axis { display:flex; justify-content:space-between; margin-top:8px; font-size:10.5px; color:var(--muted); }
+
+  /* recent dictations */
+  .dict { background: var(--card); border:.5px solid var(--card-edge); border-radius:13px; overflow:hidden; }
+  .row {
+    display:grid; grid-template-columns: 64px 1fr auto; gap:16px; align-items:start;
+    padding: 15px 18px; border-bottom:.5px solid var(--hair); position:relative;
+    transition: background .15s;
+  }
+  .row:last-child{ border-bottom:0 }
+  .row:hover{ background: var(--pane-2); }
+  .row .when { font-size:11.5px; color:var(--muted); line-height:1.5; padding-top:1px; }
+  .row .when b{ display:block; color:var(--ink-soft); font-weight:600; font-size:12px; }
+  .row .body .clean { font-size:13.5px; line-height:1.5; color:var(--ink); }
+  .row .body .clean .del { color: var(--raw); text-decoration: line-through; text-decoration-color: var(--raw); opacity:.8; }
+  .row .body .clean .ins { color: var(--ember); }
+  .row .body .raw { font-size:11.5px; color:var(--muted); margin-top:5px; display:flex; gap:6px; align-items:baseline;}
+  .row .body .raw .tag{ font-size:9.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); border:.5px solid var(--hair); padding:1px 5px; border-radius:4px; flex:none; }
+  .row .side-meta { display:flex; align-items:center; gap:10px; }
+  .row .app { font-size:11px; color:var(--muted); display:flex; align-items:center; gap:5px; }
+  .row .app .ic { width:15px; height:15px; border-radius:4px; display:grid; place-items:center; font-size:9px; color:#fff; font-weight:700; }
+  .row .acts { display:flex; gap:4px; opacity:0; transition:opacity .15s; }
+  .row:hover .acts{ opacity:1 }
+  .row .acts button { width:26px; height:26px; border-radius:7px; border:.5px solid var(--hair); background:var(--card); color:var(--ink-soft); cursor:pointer; display:grid; place-items:center; }
+  .row .acts button:hover{ background:var(--pane-2); color:var(--ember) }
+  .row .acts svg{ width:13px; height:13px }
+  .dur { font-size:10.5px; color:var(--muted); font-variant-numeric:tabular-nums; }
+
+  /* ---- HISTORY ---- */
+  .hist-meta { display:flex; align-items:center; gap:10px; padding: 14px 34px; color:var(--muted); font-size:12.5px; border-bottom:.5px solid var(--hair); }
+  .hist-meta .grow{ flex:1 }
+  .danger { color:var(--ember); border-color: var(--ember-soft); background: var(--ember-soft); }
+  .hist .row { grid-template-columns: 92px 1fr auto; }
+  [data-view="home"] #view-history, [data-view="history"] #view-home { display:none; }
+
+  /* floating mockup controls (not part of the app) */
+  .mock {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    display:flex; gap:8px; align-items:center; z-index:50;
+    background: rgba(20,16,12,.7); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+    padding:7px 9px; border-radius: 12px; border:.5px solid rgba(255,255,255,.12);
+    box-shadow: 0 10px 30px rgba(0,0,0,.4);
+  }
+  .mock span{ color:rgba(255,255,255,.5); font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; padding:0 4px; }
+  .mock button{
+    border:0; font-family:var(--font-ui); font-size:12px; font-weight:600; cursor:pointer;
+    color:rgba(255,255,255,.85); background: rgba(255,255,255,.08); padding:6px 12px; border-radius:8px; transition:.15s;
+  }
+  .mock button:hover{ background: rgba(255,255,255,.16) }
+  .mock button.on{ background:#fff; color:#1a1410; }
+</style>
+</head>
+<body>
+
+<div class="win">
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+    <div class="brand">
+      <div class="wave"><span></span><span></span><span></span><span></span><span></span></div>
+      <h1>Murmur</h1>
+    </div>
+    <nav>
+      <div class="nav-item active" data-nav="home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-8 9 8M5 9.5V20h5v-6h4v6h5V9.5"/></svg>
+        Home
+      </div>
+      <div class="nav-item" data-nav="history">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v4h4M12 7v5l3.5 2"/></svg>
+        History
+      </div>
+      <div class="nav-item" data-nav="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3 14.1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 8a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9 4.6a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1A1.6 1.6 0 0 0 17 4.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9c.2.6.8 1 1.5 1.1H22a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+        Settings
+      </div>
+      <div class="nav-item" data-nav="setup">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12l2 2 4-4M12 3l7 4v5c0 4.4-3 8.3-7 9.4C8 20.3 5 16.4 5 12V7z"/></svg>
+        Setup
+      </div>
+    </nav>
+    <div class="side-spacer"></div>
+    <div class="status">
+      <div class="dot"></div>
+      <div class="txt"><b>Ready to dictate</b><span>Hold&nbsp;Fn&nbsp;·&nbsp;or&nbsp;Fn&nbsp;+&nbsp;Space</span></div>
+    </div>
+    <div class="privacy">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+      Everything stays on this Mac.
+    </div>
+  </aside>
+
+  <!-- CONTENT -->
+  <main class="content">
+
+    <!-- ============ HOME ============ -->
+    <div id="view-home" style="display:flex; flex-direction:column; min-height:0; flex:1">
+      <div class="toolbar">
+        <div class="t-title">Home</div>
+        <div class="grow"></div>
+        <div class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3"/></svg>New dictation <span style="opacity:.6;margin-left:2px">⌘⇧Space</span></div>
+      </div>
+      <div class="scroll">
+        <div class="page">
+          <div class="greet">Good evening, Abhi.<span class="sub">Wednesday, June 11 · 38 dictations today, 4,120 words</span></div>
+
+          <div class="cards">
+            <div class="card feature">
+              <div class="lbl">Words dictated</div>
+              <div class="num">48,217</div>
+              <div class="meta"><span class="up">↑ 12%</span> vs. last week</div>
+              <div class="spark"><i style="height:40%"></i><i style="height:55%"></i><i style="height:35%"></i><i style="height:70%"></i><i style="height:50%"></i><i style="height:85%"></i><i style="height:65%"></i><i style="height:100%"></i></div>
+            </div>
+            <div class="card">
+              <div class="lbl">Dictations</div>
+              <div class="num">1,204</div>
+              <div class="meta">Across 23 apps</div>
+              <div class="spark"><i style="height:60%"></i><i style="height:45%"></i><i style="height:75%"></i><i style="height:40%"></i><i style="height:65%"></i><i style="height:55%"></i><i style="height:90%"></i><i style="height:70%"></i></div>
+            </div>
+            <div class="card">
+              <div class="lbl">Avg. speed</div>
+              <div class="num">162<small>wpm</small></div>
+              <div class="meta">Computed on this Mac · compared to nobody</div>
+              <div class="spark"><i style="height:55%"></i><i style="height:62%"></i><i style="height:58%"></i><i style="height:70%"></i><i style="height:66%"></i><i style="height:74%"></i><i style="height:68%"></i><i style="height:80%"></i></div>
+            </div>
+          </div>
+
+          <div class="section-h"><h2>Activity<span class="sub">last 30 days</span></h2></div>
+          <div class="activity">
+            <div class="top"><span class="big">61,940 words</span><span class="lbl">~6.4 hrs of speaking</span></div>
+            <div class="bars" id="bars"></div>
+            <div class="axis"><span>May 12</span><span>May 27</span><span>Jun 11</span></div>
+          </div>
+
+          <div class="section-h"><h2>Recent</h2><a href="#" data-nav="history">View all →</a></div>
+          <div class="dict">
+            <div class="row">
+              <div class="when"><b>6:41 PM</b>just now</div>
+              <div class="body">
+                <div class="clean">Let's meet on <span class="del">Tuesday, wait no,</span> <span class="ins">Friday</span> at 2&nbsp;PM to review the draft.</div>
+                <div class="raw"><span class="tag">raw</span>let's meet on tuesday wait no friday at two pm to review the draft</div>
+              </div>
+              <div class="side-meta">
+                <span class="dur">0:06</span>
+                <div class="app"><span class="ic" style="background:#1a7cff">M</span>Mail</div>
+                <div class="acts"><button title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button><button title="Re-insert"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 10L4 15l5 5M4 15h11a5 5 0 0 0 0-10h-1"/></svg></button></div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="when"><b>6:38 PM</b>3 min ago</div>
+              <div class="body">
+                <div class="clean"><span class="del">Um, so</span> the two things are: first, do the thing; second, ship it.</div>
+                <div class="raw"><span class="tag">raw</span>um so the three things are uh first do the thing wait no two things first do the thing and second ship it</div>
+              </div>
+              <div class="side-meta">
+                <span class="dur">0:11</span>
+                <div class="app"><span class="ic" style="background:#611f69">S</span>Slack</div>
+                <div class="acts"><button title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button><button title="Re-insert"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 10L4 15l5 5M4 15h11a5 5 0 0 0 0-10h-1"/></svg></button></div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="when"><b>5:52 PM</b>49 min ago</div>
+              <div class="body">
+                <div class="clean">Refactor the endpoint detector so the silence threshold is configurable.</div>
+                <div class="raw"><span class="tag">raw</span>refactor the uh endpoint detector so the the silence threshold is configurable</div>
+              </div>
+              <div class="side-meta">
+                <span class="dur">0:08</span>
+                <div class="app"><span class="ic" style="background:#0a84ff">C</span>Cursor</div>
+                <div class="acts"><button title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button><button title="Re-insert"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 10L4 15l5 5M4 15h11a5 5 0 0 0 0-10h-1"/></svg></button></div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="when"><b>5:30 PM</b>1 hr ago</div>
+              <div class="body">
+                <div class="clean">Send the report to <span class="del">John, no wait,</span> <span class="ins">Jane</span> by Friday.</div>
+                <div class="raw"><span class="tag">raw</span>send the report to john no wait to jane by friday</div>
+              </div>
+              <div class="side-meta">
+                <span class="dur">0:05</span>
+                <div class="app"><span class="ic" style="background:#34a853">N</span>Notes</div>
+                <div class="acts"><button title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button><button title="Re-insert"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 10L4 15l5 5M4 15h11a5 5 0 0 0 0-10h-1"/></svg></button></div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="when"><b>4:03 PM</b>2 hr ago</div>
+              <div class="body">
+                <div class="clean">The budget is <span class="del">fifteen K, I mean,</span> <span class="ins">50K</span> for the quarter.</div>
+                <div class="raw"><span class="tag">raw</span>the budget is fifteen k um i mean fifty k for the quarter</div>
+              </div>
+              <div class="side-meta">
+                <span class="dur">0:07</span>
+                <div class="app"><span class="ic" style="background:#1a7cff">M</span>Mail</div>
+                <div class="acts"><button title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button><button title="Re-insert"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 10L4 15l5 5M4 15h11a5 5 0 0 0 0-10h-1"/></svg></button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ HISTORY ============ -->
+    <div id="view-history" style="flex-direction:column; min-height:0; flex:1">
+      <div class="toolbar">
+        <div class="t-title">History</div>
+        <div class="grow"></div>
+        <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="Search dictations…"></div>
+      </div>
+      <div class="hist-meta">
+        <span>1,204 dictations</span>
+        <div class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v4h4M12 7v5l3.5 2"/></svg>Kept 7 days, then auto-deleted</div>
+        <div class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l9-6 9 6v11H3z"/></svg>Text only · never audio</div>
+        <div class="grow"></div>
+        <div class="chip danger">Delete all</div>
+      </div>
+      <div class="scroll">
+        <div class="dict hist" style="border-radius:0; border:0;">
+          <div class="row">
+            <div class="when"><b>Jun 11</b>6:41 PM</div>
+            <div class="body"><div class="clean">Let's meet on <span class="del">Tuesday, wait no,</span> <span class="ins">Friday</span> at 2&nbsp;PM to review the draft.</div><div class="raw"><span class="tag">raw</span>let's meet on tuesday wait no friday at two pm to review the draft</div></div>
+            <div class="side-meta"><span class="dur">0:06</span><div class="app"><span class="ic" style="background:#1a7cff">M</span>Mail</div><div class="acts"><button title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button><button title="Re-insert"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 10L4 15l5 5M4 15h11a5 5 0 0 0 0-10h-1"/></svg></button><button title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M6 7l1 13h10l1-13"/></svg></button></div></div>
+          </div>
+          <div class="row">
+            <div class="when"><b>Jun 11</b>6:38 PM</div>
+            <div class="body"><div class="clean"><span class="del">Um, so</span> the two things are: first, do the thing; second, ship it.</div><div class="raw"><span class="tag">raw</span>um so the three things are uh first do the thing wait no two things first do the thing and second ship it</div></div>
+            <div class="side-meta"><span class="dur">0:11</span><div class="app"><span class="ic" style="background:#611f69">S</span>Slack</div><div class="acts"><button title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button><button title="Re-insert"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 10L4 15l5 5M4 15h11a5 5 0 0 0 0-10h-1"/></svg></button><button title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M6 7l1 13h10l1-13"/></svg></button></div></div>
+          </div>
+          <div class="row">
+            <div class="when"><b>Jun 11</b>5:52 PM</div>
+            <div class="body"><div class="clean">Refactor the endpoint detector so the silence threshold is configurable.</div><div class="raw"><span class="tag">raw</span>refactor the uh endpoint detector so the the silence threshold is configurable</div></div>
+            <div class="side-meta"><span class="dur">0:08</span><div class="app"><span class="ic" style="background:#0a84ff">C</span>Cursor</div><div class="acts"><button title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button><button title="Re-insert"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 10L4 15l5 5M4 15h11a5 5 0 0 0 0-10h-1"/></svg></button><button title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M6 7l1 13h10l1-13"/></svg></button></div></div>
+          </div>
+          <div class="row">
+            <div class="when"><b>Jun 11</b>5:30 PM</div>
+            <div class="body"><div class="clean">Send the report to <span class="del">John, no wait,</span> <span class="ins">Jane</span> by Friday.</div><div class="raw"><span class="tag">raw</span>send the report to john no wait to jane by friday</div></div>
+            <div class="side-meta"><span class="dur">0:05</span><div class="app"><span class="ic" style="background:#34a853">N</span>Notes</div><div class="acts"><button title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button><button title="Re-insert"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 10L4 15l5 5M4 15h11a5 5 0 0 0 0-10h-1"/></svg></button><button title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M6 7l1 13h10l1-13"/></svg></button></div></div>
+          </div>
+          <div class="row">
+            <div class="when"><b>Jun 11</b>4:03 PM</div>
+            <div class="body"><div class="clean">The budget is <span class="del">fifteen K, I mean,</span> <span class="ins">50K</span> for the quarter.</div><div class="raw"><span class="tag">raw</span>the budget is fifteen k um i mean fifty k for the quarter</div></div>
+            <div class="side-meta"><span class="dur">0:07</span><div class="app"><span class="ic" style="background:#1a7cff">M</span>Mail</div><div class="acts"><button title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button><button title="Re-insert"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 10L4 15l5 5M4 15h11a5 5 0 0 0 0-10h-1"/></svg></button><button title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M6 7l1 13h10l1-13"/></svg></button></div></div>
+          </div>
+          <div class="row">
+            <div class="when"><b>Jun 10</b>9:18 PM</div>
+            <div class="body"><div class="clean">Let's circle back on the API design tomorrow morning.</div><div class="raw"><span class="tag">raw</span>lets circle back on the api design uh tomorrow morning ish</div></div>
+            <div class="side-meta"><span class="dur">0:04</span><div class="app"><span class="ic" style="background:#611f69">S</span>Slack</div><div class="acts"><button title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button><button title="Re-insert"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 10L4 15l5 5M4 15h11a5 5 0 0 0 0-10h-1"/></svg></button><button title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M6 7l1 13h10l1-13"/></svg></button></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- mockup-only controls -->
+<div class="mock">
+  <span>Mockup</span>
+  <button id="t-home" class="on" onclick="setView('home')">Home</button>
+  <button id="t-hist" onclick="setView('history')">History</button>
+  <button onclick="toggleTheme()" id="t-theme">◐ Theme</button>
+</div>
+
+<script>
+  // build the 30-day activity bars deterministically
+  const bars = document.getElementById('bars');
+  const heights = [42,55,38,61,70,33,48,80,58,66,90,72,45,52,63,77,40,68,84,59,71,95,66,74,49,82,61,88,76,100];
+  heights.forEach((h,i) => {
+    const b = document.createElement('i');
+    b.style.height = h + '%';
+    if (h < 40) b.classList.add('q0');
+    b.style.opacity = (0.45 + h/180).toFixed(2);
+    bars.appendChild(b);
+  });
+
+  function setView(v){
+    document.documentElement.setAttribute('data-view', v);
+    document.getElementById('view-history').style.display = (v==='history')?'flex':'none';
+    document.getElementById('view-home').style.display = (v==='home')?'flex':'none';
+    document.getElementById('t-home').classList.toggle('on', v==='home');
+    document.getElementById('t-hist').classList.toggle('on', v==='history');
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.nav===v));
+  }
+  document.querySelectorAll('[data-nav]').forEach(el => {
+    if (el.dataset.nav==='home' || el.dataset.nav==='history')
+      el.addEventListener('click', e => { e.preventDefault(); setView(el.dataset.nav); });
+  });
+  function toggleTheme(){
+    const cur = document.documentElement.getAttribute('data-theme');
+    document.documentElement.setAttribute('data-theme', cur==='light'?'dark':'light');
+  }
+  if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches)
+    document.documentElement.setAttribute('data-theme','dark');
+</script>
+</body>
+</html>
