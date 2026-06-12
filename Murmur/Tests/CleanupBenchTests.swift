@@ -66,5 +66,37 @@ final class CleanupBenchTests: XCTestCase {
             print("bench output \(name): \(output)")
             XCTAssertTrue(statuses.allSatisfy { $0 == .ok }, "\(name): \(statuses)")
         }
+        await engine.unload()
+    }
+
+    /// SPEC §5 Phase-3 acceptance, natively: the self-correction utterance must
+    /// clean to the SAME output as the Python engine (measured on this machine,
+    /// both styles, 2026-06-12 — see the M6 PR), and a forced timeout must
+    /// return the raw text untouched (the kill-mid-request criterion: the
+    /// deadline abandons generation, runCleanup falls back to raw).
+    func testPhase3AcceptanceParityAndTimeoutFallback() async throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["MURMUR_LLM_BENCH"] == "1",
+            "set TEST_RUNNER_MURMUR_LLM_BENCH=1 to run the cleanup LLM acceptance")
+
+        let utterance = "um so the three things are uh first do the thing wait no two things"
+            + " first do the thing and second ship it"
+        let pythonOutput = "The two things: first, do the thing; second, ship it."
+
+        let engine = CleanupEngine()
+        await engine.prepare(modelID: "mlx-community/Qwen3-4B-4bit")
+        let loaded = await engine.isLoaded
+        try XCTSkipUnless(loaded, "model failed to load — see the cleanup: NSLogs")
+
+        for style in CleanupLogic.styles {
+            let (out, status) = await runCleanup(engine, text: utterance, style: style, timeoutS: 10.0)
+            XCTAssertEqual(status, .ok, "style \(style)")
+            XCTAssertEqual(out, pythonOutput, "style \(style)")
+        }
+
+        let (out, status) = await runCleanup(engine, text: utterance, style: "polish", timeoutS: 0.05)
+        XCTAssertEqual(status, .timeout)
+        XCTAssertEqual(out, utterance, "a timeout must paste the raw transcript, never lose it")
+        await engine.unload()
     }
 }
