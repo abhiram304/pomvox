@@ -282,11 +282,19 @@ final class NativeEngine: ObservableObject {
             NSLog("murmur-engine: transcript = %@", text.isEmpty ? "<empty>" : text)
             await MainActor.run {
                 if !text.isEmpty {
-                    Paster.paste(text)
+                    self.lastTranscript = text  // retained for recovery before the paste
+                    let outcome = Paster.paste(text)
                     self.lastPasteMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-                    self.lastTranscript = text
-                    self.bus.post(.result("ok", text))
-                    NSLog("engine: paste %.0fms (%d chars)", self.lastPasteMs ?? 0, text.count)
+                    switch outcome {
+                    case .pasted:
+                        self.bus.post(.result("ok", text))
+                        NSLog("engine: paste %.0fms (%d chars)", self.lastPasteMs ?? 0, text.count)
+                    case .copiedToClipboard:
+                        // No editable field had focus — the transcript is on the
+                        // clipboard, not lost. Tell the user via the HUD flash.
+                        self.bus.post(.result("error", "copied to clipboard"))
+                        NSLog("engine: no focused field — left %d chars on the clipboard", text.count)
+                    }
                 } else {
                     self.bus.post(.result("empty", ""))
                 }
