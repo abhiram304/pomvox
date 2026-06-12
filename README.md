@@ -89,3 +89,22 @@ uv run pytest
 
 Known build quirk: `webrtcvad` (used from Phase 2) ships source-only; if the
 clang build fails, swap the dependency to `webrtcvad-wheels` (drop-in fork).
+
+### The Hub (native macOS app)
+
+Murmur is migrating to a native Swift app — see
+[docs/native-swift-path.md](docs/native-swift-path.md). The first piece is the
+**Hub**, a read-only SwiftUI main window (dashboard + history) that opens from
+the menu bar's *Open Hub…* item. It reads `~/.murmur/history.db` in a separate
+process, so it adds zero latency to dictation.
+
+```sh
+brew install xcodegen                 # one-time
+cd Murmur && xcodegen generate        # regenerate Murmur.xcodeproj from project.yml
+xcodebuild -project Murmur.xcodeproj -scheme Murmur -derivedDataPath /tmp/murmur-hub-dd build
+open /tmp/murmur-hub-dd/Build/Products/Debug/Murmur.app
+```
+
+Build to a derived-data path **outside** an iCloud-synced folder (e.g. `/tmp`);
+iCloud attaches extended attributes that make codesign reject the bundle. The
+design reference is [docs/design/hub-mockup.html](docs/design/hub-mockup.html).

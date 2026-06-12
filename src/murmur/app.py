@@ -109,6 +109,7 @@ class Controller:
             on_open_config=self._open_config,
             on_reload_config=self._reload_config,
             on_history=self._open_history if self.history else None,
+            on_open_hub=self._open_hub,
         )
         self.bench = BenchLog()
         self.timings = Timings()
@@ -344,6 +345,23 @@ class Controller:
             self.bus.post(self._ev.RESULT, ("empty", ""))
         self.machine.done()
         self._post_state("idle", "ready")
+
+    def _open_hub(self) -> None:
+        # Launch the native Hub (Murmur.app) — a separate process that reads
+        # ~/.murmur/history.db read-only, so it never touches the dictation
+        # path. Looks for an installed app first, then a local dev build.
+        import subprocess
+
+        candidates = [
+            "/Applications/Murmur.app",
+            str(Path.home() / "Applications" / "Murmur.app"),
+            "/tmp/murmur-hub-dd/Build/Products/Debug/Murmur.app",
+        ]
+        for app_path in candidates:
+            if Path(app_path).exists():
+                subprocess.run(["open", app_path], check=False, timeout=5)
+                return
+        log.warning("hub: Murmur.app not found (build it from Murmur/ — see README)")
 
     def _open_history(self) -> None:
         # rumps menu callback (main thread); same idle gate as onboarding —
