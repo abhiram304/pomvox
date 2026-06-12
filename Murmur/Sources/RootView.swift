@@ -38,14 +38,14 @@ struct RootView: View {
         switch selection {
         case .home:     HomeView(goToHistory: { selection = .history })
         case .history:  HistoryView()
-        case .settings: ComingSoonView(item: .settings)
+        case .settings: SettingsView()
         case .setup:    ComingSoonView(item: .setup)
         }
     }
 }
 
-/// Settings/Setup land in later milestones (M2/M7); the shell shows their place
-/// honestly rather than faking panes.
+/// Setup lands with the native engine (M7); the shell shows its place honestly
+/// rather than faking a pane. (Settings became real in M2.)
 struct ComingSoonView: View {
     let item: NavItem
     var body: some View {
@@ -54,9 +54,7 @@ struct ComingSoonView: View {
                 .font(.system(size: 34, weight: .light))
                 .foregroundStyle(Palette.muted)
             Text(item.title).font(Typo.display(22))
-            Text(item == .settings
-                 ? "Models, hotkeys, voice, and privacy — arriving next."
-                 : "Permission checklist and the dictation self-test — arriving with the native engine.")
+            Text("Permission checklist and the dictation self-test — arriving with the native engine.")
                 .font(Typo.ui(13)).foregroundStyle(Palette.muted)
                 .multilineTextAlignment(.center).frame(maxWidth: 320)
         }

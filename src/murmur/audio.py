@@ -26,6 +26,27 @@ class _Cancel:
 CANCEL = _Cancel()
 
 
+def resolve_input_device(name: str, devices) -> str | int | None:
+    """Map a configured input-device *name* to a sounddevice selector.
+
+    ``""`` → ``None`` (system default). An exact or substring name match on an
+    input-capable device → that device's full name. No match → ``None`` (the
+    default) plus a warning: a stale device name must never crash dictation.
+    *devices* is the ``sounddevice.query_devices()`` list (injected for tests).
+    """
+    if not name:
+        return None
+    inputs = [d for d in devices if d.get("max_input_channels", 0) > 0]
+    for d in inputs:
+        if d["name"] == name:
+            return name
+    for d in inputs:
+        if name.lower() in d["name"].lower():
+            return d["name"]
+    log.warning("audio: input device %r not found — using system default", name)
+    return None
+
+
 def block_dbfs(block) -> float:
     """RMS level of a float32 block in dBFS (pure numpy; feeds the HUD)."""
     import math
@@ -34,17 +55,21 @@ def block_dbfs(block) -> float:
 
 
 class Recorder:
-    def __init__(self, on_block=None) -> None:
+    def __init__(self, on_block=None, device: str = "") -> None:
         import sounddevice as sd
 
         self.q: queue.Queue = queue.Queue()
         self._on_block = on_block
         self._recording = False
+        selector = resolve_input_device(device, sd.query_devices())
+        if selector is not None:
+            log.info("audio: input device %r", selector)
         self._stream = sd.InputStream(
             samplerate=SAMPLERATE,
             channels=1,
             dtype="float32",
             blocksize=BLOCKSIZE,
+            device=selector,
             callback=self._callback,
         )
 

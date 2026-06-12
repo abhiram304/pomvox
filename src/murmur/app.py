@@ -64,7 +64,8 @@ class Controller:
         self._endpointer = self._make_endpointer(cfg.vad) if cfg.vad.enabled else None
         self._session_gen = 0
         self.recorder = Recorder(
-            on_block=self._on_block if (self.hud or self._endpointer) else None
+            on_block=self._on_block if (self.hud or self._endpointer) else None,
+            device=cfg.audio.device,
         )
         self.worker = SttWorker(
             Transcriber(cfg.stt.model),
@@ -120,6 +121,7 @@ class Controller:
         self._onboarding = None
         self._ob_flow = None
         self._poll_timer = None
+        self._config_watcher = None
 
     @staticmethod
     def _make_endpointer(vad_cfg):
@@ -528,6 +530,16 @@ class Controller:
         self.worker.start()
         if self.cleanup_enabled:
             self._start_cleanup_loader()
+        # Watch config.toml so the native Hub's saves hot-apply within ~1 s.
+        # _reload_config touches the rumps UI, so hop to the main thread.
+        from .config import CONFIG_PATH
+        from .watcher import ConfigWatchThread
+
+        self._config_watcher = ConfigWatchThread(
+            CONFIG_PATH,
+            on_change=lambda: AppHelper.callAfter(self._reload_config),
+        )
+        self._config_watcher.start()
         # rumps runs first; the tap is installed from inside the run loop
         # (the main thread owns it either way). A failed install degrades
         # to the Setup Assistant instead of exiting — there has to be a
