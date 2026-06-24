@@ -159,6 +159,49 @@ def test_restart_required_empty_for_hot_appliable_changes():
     assert config.restart_required(old, new) == []
 
 
+def test_dictionary_section(tmp_path):
+    cfg = config.load(
+        write(
+            tmp_path,
+            """
+            [dictionary]
+            enabled = true
+            words = ["Salammagari", "parakeet-mlx"]
+
+            [dictionary.replacements]
+            "salam mcgarry" = "Salammagari"
+            """,
+        )
+    )
+    assert cfg.dictionary.words == ["Salammagari", "parakeet-mlx"]
+    assert cfg.dictionary.replacements == {"salam mcgarry": "Salammagari"}
+
+
+def test_dictionary_defaults_are_empty(tmp_path):
+    cfg = config.load(tmp_path / "missing.toml")
+    assert cfg.dictionary == config.DictionaryConfig()
+    assert cfg.dictionary.words == []
+    assert cfg.dictionary.replacements == {}
+
+
+def test_bad_dictionary_words_fall_back(tmp_path, caplog):
+    cfg = config.load(write(tmp_path, '[dictionary]\nwords = "not a list"\n'))
+    assert cfg.dictionary == config.DictionaryConfig()
+    assert any("bad [dictionary]" in r.message for r in caplog.records)
+
+
+def test_restart_required_flags_dictionary_words_change():
+    old = config.Config()
+    new = config.Config(dictionary=config.DictionaryConfig(words=["Murmur"]))
+    assert config.restart_required(old, new) == ["dictionary.words"]
+
+
+def test_restart_required_ignores_replacements_only_change():
+    old = config.Config()
+    new = config.Config(dictionary=config.DictionaryConfig(replacements={"a": "b"}))
+    assert config.restart_required(old, new) == []
+
+
 def test_example_config_matches_defaults():
     example = Path(__file__).resolve().parents[1] / "config.example.toml"
     assert config.load(example) == config.Config()

@@ -20,7 +20,7 @@ CONFIG_PATH = CONFIG_DIR / "config.toml"
 
 _SECTIONS = (
     "hotkey", "stt", "cleanup", "insert", "log", "hud", "vad", "history",
-    "audio", "engine"
+    "audio", "engine", "dictionary"
 )
 
 
@@ -128,6 +128,29 @@ class EngineConfig:
 
 
 @dataclass(frozen=True)
+class DictionaryConfig:
+    # Custom words injected into the cleanup prompt so the LLM spells proper
+    # nouns / jargon the user's way, plus literal misheard→correct
+    # replacements applied to the final text (even when cleanup is off or
+    # times out). See dictionary.py. Changing `words` is restart-required
+    # (it's baked into the cached prompt prefix); `replacements` hot-applies.
+    enabled: bool = True
+    words: list = field(default_factory=list)
+    replacements: dict = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.words, list) or not all(
+            isinstance(w, str) for w in self.words
+        ):
+            raise ValueError("words must be a list of strings")
+        if not isinstance(self.replacements, dict) or not all(
+            isinstance(k, str) and isinstance(v, str)
+            for k, v in self.replacements.items()
+        ):
+            raise ValueError("replacements must be a table of string = string")
+
+
+@dataclass(frozen=True)
 class Config:
     hotkey: HotkeyConfig = field(default_factory=HotkeyConfig)
     stt: SttConfig = field(default_factory=SttConfig)
@@ -139,6 +162,7 @@ class Config:
     history: HistoryConfig = field(default_factory=HistoryConfig)
     audio: AudioConfig = field(default_factory=AudioConfig)
     engine: EngineConfig = field(default_factory=EngineConfig)
+    dictionary: DictionaryConfig = field(default_factory=DictionaryConfig)
 
 
 def _load_section(cls: type, data: dict, name: str):
@@ -177,6 +201,13 @@ def restart_required(old: Config, new: Config) -> list[str]:
         out.append("audio.device")
     if old.log != new.log:
         out.append("log")
+    # `words` is baked into the cached cleanup prompt prefix at startup, so a
+    # change only takes effect on restart; `replacements` (a post-step) and the
+    # enabled flag for it hot-apply, so they're deliberately not flagged here.
+    old_terms = old.dictionary.words if old.dictionary.enabled else []
+    new_terms = new.dictionary.words if new.dictionary.enabled else []
+    if old_terms != new_terms:
+        out.append("dictionary.words")
     return out
 
 
@@ -206,4 +237,5 @@ def load(path: Path | None = None) -> Config:
         history=_load_section(HistoryConfig, data, "history"),
         audio=_load_section(AudioConfig, data, "audio"),
         engine=_load_section(EngineConfig, data, "engine"),
+        dictionary=_load_section(DictionaryConfig, data, "dictionary"),
     )
