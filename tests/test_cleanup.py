@@ -23,6 +23,19 @@ def test_build_messages_embeds_text_and_rules():
     assert msgs[-1] == {"role": "user", "content": "hello world"}
 
 
+def test_build_messages_injects_terms_hint():
+    hint = "- Keep these terms spelled exactly: Salammagari.\n"
+    system = build_messages("x", "polish", hint)[0]["content"]
+    assert "Salammagari" in system
+    # The hint sits among the rules, before the final "output only" line.
+    assert system.index("Salammagari") < system.index("Output only")
+
+
+def test_build_messages_terms_hint_defaults_empty():
+    system = build_messages("x", "light")[0]["content"]
+    assert "{terms}" not in system  # placeholder fully resolved
+
+
 def test_build_messages_styles_differ():
     light = build_messages("x", "light")[0]["content"].lower()
     polish = build_messages("x", "polish")[0]["content"].lower()

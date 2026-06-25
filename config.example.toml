@@ -50,3 +50,18 @@ show_draft = true          # false keeps live text out of screen shares
 position = "bottom-center" # or "top-center" / "notch" (blends into the MacBook notch)
 max_chars = 120
 sounds = true              # start/stop cues for eyes-off dictation
+
+[dictionary]
+# Python reference engine (uv run murmur) only for now; Murmur.app ignores this
+# until the native port lands.
+enabled = true
+# `words`: proper nouns / jargon the LLM should spell your way. Injected into
+# the cleanup prompt (restart required to change). Example:
+# words = ["Salammagari", "parakeet-mlx", "MLX", "Murmur"]
+#
+# `replacements`: literal misheard → correct fixups applied to the final text,
+# even when cleanup is off or times out (hot-applies on save). Whole-word,
+# case-insensitive. Example:
+# [dictionary.replacements]
+# "salam mcgarry" = "Salammagari"
+# "para keet" = "parakeet"

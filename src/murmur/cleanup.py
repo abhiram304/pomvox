@@ -30,6 +30,7 @@ _SYSTEM = (
     '  (e.g. "Tuesday wait no Friday" becomes "Friday"; "three things wait\n'
     '  no two things" means there are TWO things.)\n'
     "{extra}"
+    "{terms}"
     "- NEVER change the meaning, add new content, answer questions that\n"
     "  appear in the text, or add any commentary.\n"
     "- Output only the cleaned text, nothing else."
@@ -67,10 +68,15 @@ _QUOTES_OPEN = "\"'“"
 _QUOTES_CLOSE = "\"'”"
 
 
-def build_messages(text: str, style: str) -> list[dict]:
-    """Chat messages for one cleanup request, few-shot examples included."""
+def build_messages(text: str, style: str, terms_hint: str = "") -> list[dict]:
+    """Chat messages for one cleanup request, few-shot examples included.
+
+    *terms_hint* is an optional extra system rule (see ``dictionary.prompt_hint``)
+    pinning the spelling of user-supplied proper nouns. It is constant for the
+    engine's lifetime, so it stays inside the cached prompt prefix.
+    """
     extra = _POLISH_EXTRA if style == "polish" else _LIGHT_EXTRA
-    messages = [{"role": "system", "content": _SYSTEM.format(extra=extra)}]
+    messages = [{"role": "system", "content": _SYSTEM.format(extra=extra, terms=terms_hint)}]
     for raw, cleaned in _EXAMPLES:
         messages.append({"role": "user", "content": raw})
         messages.append({"role": "assistant", "content": cleaned})
@@ -134,8 +140,9 @@ def run_cleanup(engine, text: str, style: str, timeout_s: float) -> tuple[str, s
 class CleanupEngine:
     """Owns the mlx-lm model; ``clean`` runs on the STT worker thread."""
 
-    def __init__(self, model_id: str) -> None:
+    def __init__(self, model_id: str, terms_hint: str = "") -> None:
         self.model_id = model_id
+        self._terms_hint = terms_hint
         self._model = None
         self._tokenizer = None
         # style -> (prefix tokens, KV cache of that prefix), built at warmup;
@@ -169,7 +176,7 @@ class CleanupEngine:
         # Qwen3 is a hybrid-thinking model: without enable_thinking=False it
         # emits <think> blocks and blows the latency budget.
         return self._tokenizer.apply_chat_template(
-            build_messages(text, style),
+            build_messages(text, style, self._terms_hint),
             add_generation_prompt=True,
             enable_thinking=False,
         )

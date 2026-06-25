@@ -39,6 +39,7 @@ class Controller:
         from .audio import Recorder
         from .bench import BenchLog, Timings
         from .cleanup import CleanupEngine
+        from .dictionary import Dictionary
         from .hotkey import EventTap, HotkeyMachine
         from .hud import Hud
         from .menubar import MenuBarApp
@@ -74,10 +75,13 @@ class Controller:
             on_ready=lambda: self._model_ready("stt"),
             on_draft=(lambda text: self.bus.post(UiEvent.DRAFT, text)) if self.hud else None,
         )
+        self.dictionary = Dictionary(
+            cfg.dictionary.words, cfg.dictionary.replacements, cfg.dictionary.enabled
+        )
         self.cleanup_enabled = cfg.cleanup.enabled
         self.cleanup_style = cfg.cleanup.style
         self._cleanup_timeout = cfg.cleanup.timeout_s
-        self.cleanup = CleanupEngine(cfg.cleanup.model)
+        self.cleanup = CleanupEngine(cfg.cleanup.model, terms_hint=self.dictionary.hint)
         self._cleanup_loader: threading.Thread | None = None
         self._ready_lock = threading.Lock()
         self._pending_models = {"stt"} | ({"cleanup"} if self.cleanup_enabled else set())
@@ -238,6 +242,14 @@ class Controller:
         self._cleanup_timeout = new.cleanup.timeout_s
         if self.hud is not None:
             self.hud.apply_config(new.hud)
+        # Replacements hot-apply; the prompt hint (words) is restart-required,
+        # flagged via restart_required below — rebuild anyway so the post-step
+        # picks up new replacements immediately.
+        from .dictionary import Dictionary
+
+        self.dictionary = Dictionary(
+            new.dictionary.words, new.dictionary.replacements, new.dictionary.enabled
+        )
         self.vad_enabled = new.vad.enabled
         if self._endpointer is not None and not self._endpointer.armed:
             rebuilt = self._make_endpointer(new.vad)
@@ -330,6 +342,9 @@ class Controller:
                     log.debug("cleanup full: %r", text)
                 else:
                     log.info("cleanup: %s, inserting raw", status)
+            # Custom-word fixups run last so a misheard proper noun is corrected
+            # whether cleanup polished the text, fell back to raw, or is off.
+            text = self.dictionary.apply(text)
             self._last_transcript = text  # recovery path even if the paste fails
             try:
                 insert_text(text)
