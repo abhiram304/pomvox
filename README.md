@@ -2,109 +2,148 @@
 
 Fully local, privacy-first voice dictation for macOS on Apple Silicon. Hold a
 hotkey, speak, and the transcript is inserted into whatever text field is
-focused — in any app. No audio or text ever leaves your machine (the only
-network operation is the one-time model download from Hugging Face).
+focused — in any app. Speech-to-text runs on the Neural Engine and an optional
+cleanup pass runs a local LLM on the GPU; **no audio or text ever leaves your
+machine** (the only network operation is the one-time model download from
+Hugging Face).
+
+Murmur is a native SwiftUI menu-bar app (`Murmur.app`): live two-tone draft as
+you speak, a Hub window with your dictation history and settings, and a Setup
+walkthrough for permissions. It runs from the menu bar, can launch at login, and
+keeps a bounded, transcripts-only history you can search and wipe.
 
 See [SPEC.md](SPEC.md) for the full product spec,
-[ARCHITECTURE.md](ARCHITECTURE.md) for how the implemented system fits
-together, and [CONTRIBUTING.md](CONTRIBUTING.md) to get involved.
+[ARCHITECTURE.md](ARCHITECTURE.md) for how the implemented system fits together,
+and [CONTRIBUTING.md](CONTRIBUTING.md) to get involved.
+
+> **Project status.** Murmur began as a Python menu-bar app and is now a native
+> Swift app. The native app is the daily driver; the original Python engine
+> still ships in this repo as a runnable reference and the cross-checked test
+> spec (see [Two engines](#two-engines)). Today you build `Murmur.app` from
+> source; a signed, notarized download (and Homebrew cask) is the next
+> milestone. The native engine is **off by default** until you enable it.
 
 ## Requirements
 
 - Apple Silicon Mac (reference hardware: M1, 16 GB), macOS 14+
-- [`uv`](https://docs.astral.sh/uv/)
+- [Xcode](https://developer.apple.com/xcode/) (full app, not just Command Line
+  Tools) and [`xcodegen`](https://github.com/yonsm/XcodeGen) — `brew install xcodegen`
+- [`uv`](https://docs.astral.sh/uv/) — only for the Python reference engine and
+  the test suite
 
-## Quick start
+## Install (build from source)
 
 ```sh
-uv sync
-uv run python scripts/preflight.py   # downloads parakeet-tdt-0.6b-v3 (~1.2 GB), transcribes a test WAV
-uv run murmur --check                # permission report
-uv run murmur                        # menu bar app
+# 1. A stable self-signed identity so macOS keeps your permission grants across
+#    rebuilds (without it, every rebuild resets Microphone/Accessibility/Input
+#    Monitoring). One-time; needs a GUI auth prompt to trust the cert.
+scripts/dev-signing-cert.sh
+
+# 2. Generate the Xcode project and build OUTSIDE iCloud (codesign rejects the
+#    extended attributes iCloud adds to a synced folder).
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+cd Murmur && xcodegen generate
+xcodebuild -project Murmur.xcodeproj -scheme Murmur \
+  -configuration Debug -derivedDataPath /tmp/murmur-hub-dd build
+
+# 3. Install to a stable path (launch-at-login and TCC grants need this — not a
+#    DerivedData path).
+cp -R /tmp/murmur-hub-dd/Build/Products/Debug/Murmur.app ~/Applications/
+open ~/Applications/Murmur.app
 ```
 
-## First run checklist
+## First run
 
-1. **Permissions** — `uv run murmur --check` reports what's missing. Grant in
-   System Settings → Privacy & Security:
-   - **Microphone** (recording)
-   - **Accessibility** (synthesizing ⌘V to paste the transcript)
-   - **Input Monitoring** (the global hotkey event tap)
-2. **Globe key** — System Settings → Keyboard → "Press 🌐 key to" →
-   **Do Nothing**, otherwise macOS intercepts the Fn key before Murmur sees it.
-   `murmur --check` warns if this is set wrong.
-
-> **Dev note:** while running via `uv run` from a terminal, the TCC permission
-> grants attach to the *terminal app* (Terminal.app, iTerm2, …), not to
-> Murmur. If hotkeys or pasting silently do nothing, re-check the grants for
-> the terminal you're launching from. After changing grants, restart the
-> terminal.
+1. **Grant permissions.** Open the Hub window → **Setup**. It walks three grants
+   with a live checklist and deep links into System Settings:
+   - **Microphone** — to hear you.
+   - **Input Monitoring** — for the global hotkey (after granting, relaunch
+     Murmur once; macOS doesn't extend this grant to an already-running app).
+   - **Accessibility** — to paste via ⌘V. The Setup pane's *insertion self-test*
+     confirms it end-to-end.
+2. **Set the Globe key to Do Nothing.** System Settings → Keyboard → "Press 🌐
+   key to" → **Do Nothing**, otherwise macOS intercepts Fn before Murmur sees
+   it.
+3. **Enable the engine.** Settings → *Native engine* → on. It arms the hotkey,
+   loads the speech model (first run downloads parakeet-tdt-0.6b-v3, ~1.2 GB),
+   and is ready in a second or two.
+4. **(Optional) Launch at login.** Settings → General → *Launch at login*.
+   Murmur then comes up in the menu bar at login, already armed — zero clicks
+   from login to dictating.
 
 ## Usage
 
 - **Push-to-talk:** hold `Fn`, speak, release → text appears at the cursor.
-- **Hands-free:** press `Fn+Space` to start; `Fn+Space` again (or a tap of
-  `Fn`) to stop and insert. (Auto-stop on silence arrives in Phase 2.)
-- **Cancel:** `Esc` while recording (either mode) discards the utterance —
-  nothing is inserted.
+- **Hands-free:** `Fn+Space` to start; it auto-stops on a natural pause (or press
+  `Fn+Space` / tap `Fn` to stop).
+- **Cancel:** `Esc` while recording discards the utterance — nothing is inserted.
 
-> **Breaking change:** `Esc` used to *stop and insert* in hands-free mode;
-> it now *cancels*. Set `[hotkey] cancel = ""` and `stop = "esc"` in
-> `~/.murmur/config.toml` to restore the old behavior.
+A floating HUD shows a live two-tone draft (settled words bright, the newest
+chunk dimmed) while you speak, then "finishing…" during cleanup. The menu-bar
+icon mirrors engine state, and has **Open Hub…**, an engine toggle, and Quit.
 
-Menu bar icon: 🎤 idle · 🔴 recording · ✍️ transcribing.
+## The Hub
+
+The Hub window (menu bar → **Open Hub…**, or the Dock icon while it's open):
+
+- **Home** — words / dictations / average WPM, a 30-day activity strip, and your
+  recent dictations as two-tone raw→clean pairs.
+- **History** — raw vs. cleaned side by side, search, copy / re-insert / delete /
+  delete-all. Local-only sqlite at `~/.murmur/history.db`: **transcripts only —
+  audio is never stored** — rows auto-delete after `[history] retention_days`
+  (default 7; `0` keeps nothing, `enabled = false` writes nothing).
+- **Settings** — models, hotkeys, cleanup, HUD, launch-at-login. Cleanup/HUD
+  edits apply live; model changes re-arm.
+- **Setup** — the live permission checklist and insertion self-test.
 
 ## Configuration
 
-Copy [`config.example.toml`](config.example.toml) to `~/.murmur/config.toml`.
-Every key is optional. Highlights:
+Settings are edited in the Hub; everything also lives in `~/.murmur/config.toml`
+(comment-preserving — hand edits and unknown sections survive). Copy
+[`config.example.toml`](config.example.toml) for the full set. Highlights:
 
-- `[hotkey] ptt` — set to `"right_option"` if Fn interception is unreliable on
-  your machine.
-- `[log] file` — set `false` to disable `~/.murmur/murmur.log`.
+- `[cleanup]` — `enabled`, `model`, `style` (`light` = fillers/punctuation only;
+  `polish` also smooths rambles), `timeout_s` (on timeout the raw transcript is
+  inserted — Murmur never loses your words to a slow model).
+- `[history]` — `retention_days`, `enabled`.
+- `[engine] native` — the native engine toggle (the app owns this; the Hub flips
+  it).
 
-The menu bar has **Open Config File** and **Reload Config** — edits to
-styles, HUD, and auto-stop apply without a restart (model and hotkey
-changes still need one; the status line says so). **Copy Last Transcript**
-recovers the most recent dictation if a paste ever fails.
+Anything model-shaped is a config value, never a constant — swap STT and cleanup
+models to trade speed for quality on your hardware.
 
-**History…** shows your recent dictations (raw vs. cleaned side by side)
-with search, copy, re-insert, and delete. It is local-only sqlite at
-`~/.murmur/history.db`: transcripts only — audio is never stored — and
-rows auto-delete after `[history] retention_days` (default 7; `0` keeps
-nothing, `enabled = false` writes nothing).
+## Two engines
 
-Logs include one line per utterance with stage timings
-(`stt_finalize=82ms insert=14ms total=96ms`).
+This repo contains two implementations that share `~/.murmur/config.toml` and
+`~/.murmur/history.db`:
+
+- **Native Swift engine** (`Murmur.app`, `Murmur/`) — the daily driver. STT on
+  the Neural Engine ([FluidAudio](https://github.com/FluidInference/FluidAudio)),
+  cleanup on the GPU ([mlx-swift](https://github.com/ml-explore/mlx-swift)).
+- **Python engine** (`src/murmur/`, `uv run murmur`) — the original app, now
+  frozen as a runnable reference. Its pure-logic modules (state machines,
+  endpointer, history, onboarding) are Linux-tested and remain the **spec** the
+  Swift port is checked against, vector for vector.
+
+Only one engine runs at a time — a pidfile (`~/.murmur/engine.pid`) enforces
+mutual exclusion, so the single writer to `history.db` is guaranteed. Run the
+Python engine with `uv run murmur` (see `uv run murmur --check` for a permission
+report); note that under `uv run` the TCC grants attach to your terminal app,
+not to Murmur.
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Pure-logic modules (`config`,
-`hotkey` state machine, `bench`, the prompt/guard half of `cleanup`) have no
-macOS dependencies, so the test suite runs anywhere:
+See [CONTRIBUTING.md](CONTRIBUTING.md). The pure-logic modules have no platform
+dependencies, so the Python spec suite runs anywhere; the Swift ports are
+checked against the same vectors.
 
 ```sh
-uv run pytest
+uv run pytest                                              # Python spec suite
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+xcodebuild test -project Murmur/Murmur.xcodeproj -scheme Murmur \
+  -derivedDataPath /tmp/murmur-hub-dd -destination 'platform=macOS'
 ```
 
-Known build quirk: `webrtcvad` (used from Phase 2) ships source-only; if the
-clang build fails, swap the dependency to `webrtcvad-wheels` (drop-in fork).
-
-### The Hub (native macOS app)
-
-Murmur is migrating to a native Swift app — see
-[docs/native-swift-path.md](docs/native-swift-path.md). The first piece is the
-**Hub**, a read-only SwiftUI main window (dashboard + history) that opens from
-the menu bar's *Open Hub…* item. It reads `~/.murmur/history.db` in a separate
-process, so it adds zero latency to dictation.
-
-```sh
-brew install xcodegen                 # one-time
-cd Murmur && xcodegen generate        # regenerate Murmur.xcodeproj from project.yml
-xcodebuild -project Murmur.xcodeproj -scheme Murmur -derivedDataPath /tmp/murmur-hub-dd build
-open /tmp/murmur-hub-dd/Build/Products/Debug/Murmur.app
-```
-
-Build to a derived-data path **outside** an iCloud-synced folder (e.g. `/tmp`);
-iCloud attaches extended attributes that make codesign reject the bundle. The
-design reference is [docs/design/hub-mockup.html](docs/design/hub-mockup.html).
+Latency and footprint claims in PRs come with numbers from a real Apple Silicon
+run, never assumed (CONTRIBUTING rule 4). The native-engine feasibility work and
+its measured gates are in [docs/native-swift-path.md](docs/native-swift-path.md).
