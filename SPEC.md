@@ -38,13 +38,15 @@ The core product is built and is the daily driver — a native SwiftUI menu-bar 
 - ✅ Hub window (dashboard, searchable history, settings), native onboarding /
   permission walkthrough, launch-at-login.
 - ✅ Bounded, transcripts-only history (sqlite, default 7-day retention).
+- ✅ Custom dictionary (Phase 4) — proper-noun spellings + misheard-term fixups,
+  in both engines.
 
 What's next:
 
 - **Distribution** — Developer ID + notarization, a signed download, and a
   Homebrew cask (today the app is built from source).
-- **Context-aware tone + custom dictionary** (Phase 4 below) — `context.py` /
-  `dictionary.py` are docstring-only seams.
+- **Context-aware tone** (rest of Phase 4) — `context.py` is a docstring-only
+  seam.
 - **Command Mode** (Phase 5, stretch).
 
 The project began as a Python app; that engine still ships in the repo as a
@@ -154,13 +156,17 @@ the three things are uh first do the thing wait no two things first do the thing
 and second ship it" → "The two things: first, do the thing; second, ship it."
 Raw-fallback works when the LLM is killed mid-request.
 
-### Phase 4 — Context-aware tone + custom dictionary (next)
-Read `NSWorkspace.frontmostApplication`; map bundle IDs to tone profiles (Mail →
-formal, Slack/Messages → casual, editors/terminals → verbatim). User dictionary
-(proper nouns, jargon, spellings) injected into the cleanup prompt and applied as
-post-replacements. **Acceptance:** same spoken input yields a formal version in
-Mail and a casual one in Slack; "Salammagari" / "parakeet-mlx" come out spelled
-right. (`context.py` / `dictionary.py` are docstring-only seams today.)
+### Phase 4 — Context-aware tone + custom dictionary
+**Custom dictionary ✅** (both engines): proper nouns / jargon injected into the
+cleanup prompt, plus literal misheard→correct fixups applied to the final text
+even when cleanup is off/times out. "Salammagari" / "parakeet-mlx" come out
+spelled right.
+
+**Context-aware tone (next):** read `NSWorkspace.frontmostApplication`; map
+bundle IDs to tone profiles (Mail → formal, Slack/Messages → casual,
+editors/terminals → verbatim) selecting the cleanup prompt. **Acceptance:** the
+same spoken input yields a formal version in Mail and a casual one in Slack.
+(`context.py` is a docstring-only seam today.)
 
 ### Phase 5 — Command Mode (stretch)
 Select text in any app, press a second hotkey, speak a transform ("make this more

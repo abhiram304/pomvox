@@ -35,7 +35,17 @@ actor CleanupEngine: CleanupCleaning {
     private var preparing = false
     private var prefixCaches: [String: PrefixEntry] = [:]
 
+    /// Custom-dictionary spelling rule injected into the cleanup prompt. Set at
+    /// arm before `prepare()` so it's baked into the cached prefix (changing it
+    /// is re-arm-required — the prefix cache is built once). Default "" keeps
+    /// the prompt byte-identical to the no-dictionary case.
+    private var termsHint = ""
+
     var isLoaded: Bool { container != nil }
+
+    /// Set the dictionary prompt hint. Must precede `prepare()`/`buildPrefixCaches`
+    /// so the hint rides inside the prefilled prefix.
+    func setTermsHint(_ hint: String) { termsHint = hint }
 
     /// Download (first run, ~2.3 GB), load, and warm the model. Idempotent.
     /// Mirrors Python: a load failure leaves the engine unloaded (raw pastes,
@@ -88,12 +98,14 @@ actor CleanupEngine: CleanupCleaning {
     /// non-fatal: the style just runs uncached (M0's sanctioned fallback).
     private func buildPrefixCaches() async {
         guard let container else { return }
+        let hint = termsHint
         for style in CleanupLogic.styles {
             do {
                 let entry: PrefixEntry = try await container.perform { context in
-                    let a = try await Self.renderTokens(context, text: "placeholder one", style: style)
+                    let a = try await Self.renderTokens(
+                        context, text: "placeholder one", style: style, termsHint: hint)
                     let b = try await Self.renderTokens(
-                        context, text: "a different text entirely", style: style)
+                        context, text: "a different text entirely", style: style, termsHint: hint)
                     let prefix = Array(a.prefix(CleanupLogic.commonPrefixLen(a, b)))
                     // TokenIterator prefills the prompt into the cache and
                     // samples ahead; generate one token like Python's
@@ -143,9 +155,11 @@ actor CleanupEngine: CleanupCleaning {
         Memory.clearCache()
         let deadline = CFAbsoluteTimeGetCurrent() + timeoutS
         let cached = prefixCaches[style]
+        let hint = termsHint
 
         return try await container.perform { context in
-            var tokens = try await Self.renderTokens(context, text: text, style: style)
+            var tokens = try await Self.renderTokens(
+                context, text: text, style: style, termsHint: hint)
             // Reuse the prefilled static prefix: feed only the suffix tokens
             // with a copy of its KV cache (the deepcopy-per-request from
             // cleanup.py — `copy()` re-materializes, later updates never touch
@@ -194,9 +208,9 @@ actor CleanupEngine: CleanupCleaning {
     /// Qwen3 is a hybrid-thinking model: without enable_thinking=false it
     /// emits <think> blocks and blows the latency budget.
     private static func renderTokens(
-        _ context: ModelContext, text: String, style: String
+        _ context: ModelContext, text: String, style: String, termsHint: String
     ) async throws -> [Int] {
-        let chat = toChat(CleanupLogic.buildMessages(text: text, style: style))
+        let chat = toChat(CleanupLogic.buildMessages(text: text, style: style, termsHint: termsHint))
         let lmInput = try await context.processor.prepare(
             input: UserInput(chat: chat, additionalContext: ["enable_thinking": false]))
         return lmInput.text.tokens.asArray(Int.self)

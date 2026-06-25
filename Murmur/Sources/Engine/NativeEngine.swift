@@ -59,6 +59,11 @@ final class NativeEngine: ObservableObject {
     private var historyRetentionDays = 7
     private var history: HistoryStore?
 
+    // [dictionary] snapshot (Phase 4), read at arm() like [cleanup]. `words`
+    // feed the cleanup prompt prefix (re-arm to apply); `replacements` post-fix
+    // the final text just before paste, even when cleanup is off/timed out.
+    private var dictionary = MurmurDictionary(words: [], replacements: [])
+
     // HUD + bus (the bus is thread-safe; its drain renders on the main actor).
     private let hud: HudController
     private nonisolated let bus: HudBus
@@ -160,7 +165,11 @@ final class NativeEngine: ObservableObject {
         // returns nil and the raw transcript pastes — Python's exact behavior.
         if cleanupEnabled {
             let modelID = cleanupModelID
-            Task { [cleanup] in await cleanup.prepare(modelID: modelID) }
+            let hint = dictionary.hint  // baked into the cached prefix — set before prepare
+            Task { [cleanup] in
+                await cleanup.setTermsHint(hint)
+                await cleanup.prepare(modelID: modelID)
+            }
         }
 
         // The audio callback posts mic level (waveform) and, when armed, drives
@@ -229,6 +238,12 @@ final class NativeEngine: ObservableObject {
 
         historyEnabled = doc.bool("history", "enabled") ?? true
         historyRetentionDays = doc.int("history", "retention_days") ?? 7
+
+        let dictEnabled = doc.bool("dictionary", "enabled") ?? true
+        dictionary = MurmurDictionary(
+            words: doc.stringArray("dictionary", "words") ?? [],
+            replacements: doc.stringTable("dictionary.replacements").map { ($0.key, $0.value) },
+            enabled: dictEnabled)
 
         vadEnabled = doc.bool("vad", "enabled") ?? true
         let detector = EndpointDetector(
@@ -350,6 +365,7 @@ final class NativeEngine: ObservableObject {
         let style = cleanupStyle
         let timeoutS = cleanupTimeoutS
         let store = history
+        let dict = dictionary
         let durationS = Double(samples.count) / 16000.0
         Task { [weak self] in
             guard let self else { return }
@@ -376,6 +392,10 @@ final class NativeEngine: ObservableObject {
                     NSLog("murmur-engine: cleanup %@ — pasting raw", status.rawValue)
                 }
             }
+            // Custom-word fixups run last so a misheard proper noun is corrected
+            // whether cleanup polished the text, fell back to raw, or is off
+            // (mirrors app.py). `final_text` stored in history reflects them.
+            text = dict.apply(text)
             let (appHint, pastedAt): (String?, Double?) = await MainActor.run {
                 guard !text.isEmpty else {
                     self.bus.post(.result("empty", ""))

@@ -21,6 +21,20 @@ final class CleanupLogicTests: XCTestCase {
         XCTAssertEqual(msgs.last, ChatMessage(role: "user", content: "hello world"))
     }
 
+    func testBuildMessagesInjectsTermsHint() {
+        let hint = "- Keep these terms spelled exactly: Salammagari.\n"
+        let system = CleanupLogic.buildMessages(text: "x", style: "polish", termsHint: hint)[0].content
+        XCTAssertTrue(system.contains("Salammagari"))
+        // The hint sits among the rules, before the final "Output only" line.
+        XCTAssertLessThan(system.range(of: "Salammagari")!.lowerBound,
+                          system.range(of: "Output only")!.lowerBound)
+    }
+
+    func testBuildMessagesTermsHintDefaultsEmpty() {
+        let system = CleanupLogic.buildMessages(text: "x", style: "light")[0].content
+        XCTAssertFalse(system.contains("{terms}"))  // placeholder fully resolved
+    }
+
     func testBuildMessagesStylesDiffer() {
         let light = CleanupLogic.buildMessages(text: "x", style: "light")[0].content.lowercased()
         let polish = CleanupLogic.buildMessages(text: "x", style: "polish")[0].content.lowercased()

@@ -105,4 +105,53 @@ final class ConfigDocumentTests: XCTestCase {
         let text = "[[products]]\nname = \"x\"\n\n[tool.black]\nline-length = 88\n"
         XCTAssertEqual(ConfigDocument(text: text).render(), text)
     }
+
+    // MARK: - Read-only array / table helpers (the custom dictionary)
+
+    func testStringArrayReadsInlineList() {
+        let doc = ConfigDocument(text: """
+            [dictionary]
+            enabled = true
+            words = ["Salammagari", "parakeet-mlx", "MLX"]
+            """)
+        XCTAssertEqual(doc.stringArray("dictionary", "words"),
+                       ["Salammagari", "parakeet-mlx", "MLX"])
+    }
+
+    func testStringArrayEmptyAndMissing() {
+        let doc = ConfigDocument(text: "[dictionary]\nwords = []\n")
+        XCTAssertEqual(doc.stringArray("dictionary", "words"), [])
+        XCTAssertNil(doc.stringArray("dictionary", "absent"))
+        XCTAssertNil(ConfigDocument(text: "").stringArray("dictionary", "words"))
+    }
+
+    func testStringTableReadsQuotedKeyValuePairs() {
+        let doc = ConfigDocument(text: """
+            [dictionary.replacements]
+            "salam mcgarry" = "Salammagari"
+            "para keet" = "parakeet"
+            """)
+        let pairs = doc.stringTable("dictionary.replacements")
+        XCTAssertEqual(pairs.count, 2)
+        XCTAssertEqual(pairs.first { $0.key == "salam mcgarry" }?.value, "Salammagari")
+        XCTAssertEqual(pairs.first { $0.key == "para keet" }?.value, "parakeet")
+    }
+
+    func testStringTableStopsAtNextHeaderAndIgnoresComments() {
+        let doc = ConfigDocument(text: """
+            [dictionary.replacements]
+            # a comment
+            "a" = "b"
+
+            [other]
+            "c" = "d"
+            """)
+        let pairs = doc.stringTable("dictionary.replacements")
+        XCTAssertEqual(pairs.map(\.key), ["a"])  // not "c" from [other]
+    }
+
+    func testStringTableMissingSectionIsEmpty() {
+        XCTAssertTrue(
+            ConfigDocument(text: "[dictionary]\n").stringTable("dictionary.replacements").isEmpty)
+    }
 }

@@ -203,22 +203,26 @@ cleanup prompt/guard. The `Murmur/Tests` XCTest suites reproduce
 `tests/test_*.py` vector-for-vector; `uv run pytest` and `xcodebuild test` both
 gate every change.
 
-## Custom dictionary (`dictionary.py`, SPEC Phase 4)
+## Custom dictionary (SPEC Phase 4)
 
-Implemented in the **Python reference engine** (`src/murmur/dictionary.py`); the
-native-app port is pending, so `[dictionary]` is read by `uv run murmur` and
-ignored by `Murmur.app` for now. Two pure-logic mechanisms, both config-driven
-(`[dictionary]`) and Linux-tested like the other ports:
+Implemented in **both engines** (`src/murmur/dictionary.py`,
+`Murmur/Sources/Engine/MurmurDictionary.swift`), pure-logic and vector-parity
+tested against `tests/test_dictionary.py`. Two config-driven (`[dictionary]`)
+mechanisms:
 
 - **`words`** — proper nouns / jargon injected as one extra rule into the
   cleanup system prompt so the LLM spells them the user's way. It is constant
   for the engine's lifetime, so it rides inside the cached prompt prefix and
-  costs nothing per utterance (changing it is restart-required).
+  costs nothing per utterance (changing it is re-arm/restart-required). The
+  Swift and Python prompt hints are byte-identical, so the cached prefix the two
+  engines build matches.
 - **`replacements`** — literal misheard→correct fixups (whole-word,
   case-insensitive, longest-key-first) applied to the final text just before
   insertion. Because it runs *after* cleanup, a name comes out right whether
   cleanup polished the text, fell back to raw, timed out, or is off — the
-  never-lose-words contract holds. Hot-applies on config reload.
+  never-lose-words contract holds. (`ConfigDocument` grows read-only
+  `stringArray` / `stringTable` helpers for `words` and the
+  `[dictionary.replacements]` sub-table; the scalar write path is unchanged.)
 
 ## Stubs (planned phases)
 
