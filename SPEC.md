@@ -1,228 +1,201 @@
-# Murmur — Claude Code Build Brief
+# Murmur — product spec & roadmap
 
-> Paste this whole file into Claude Code as the opening prompt, or save it as
-> `SPEC.md` at the repo root and tell Claude Code: "Read SPEC.md and start on
-> Phase 1." It is written to be self-contained.
+This is the product specification and roadmap: what Murmur is, the principles it
+holds to, and where it's going. [ARCHITECTURE.md](ARCHITECTURE.md) documents the
+system **as implemented** (and carries the measured numbers); when the two
+disagree about the present, ARCHITECTURE wins.
 
----
-
-## 0. What you're building
+## What Murmur is
 
 **Murmur** is a fully local, open-source, privacy-first voice dictation app for
 macOS on Apple Silicon — an alternative to Wispr Flow. The user holds a global
-hotkey, speaks, and clean, formatted text is inserted into whatever text field
-is focused, in any app. No audio ever leaves the machine.
+hotkey, speaks, and clean, formatted text is inserted into whatever text field is
+focused, in any app. No audio ever leaves the machine.
 
-The thing that makes Murmur more than "press a key and get raw transcript" is a
-**two-stage pipeline**: a fast streaming speech-to-text model produces the raw
-transcript, then a small local LLM cleans it up — strips filler words ("um",
-"uh", "like"), fixes punctuation and casing, formats lists, and resolves spoken
-self-corrections (e.g. "let's meet Tuesday, wait no, Friday" → "Let's meet
-Friday"). Both stages run on-device via Apple's MLX framework.
+What makes Murmur more than "press a key and get a raw transcript" is a
+**two-stage pipeline**: a fast speech-to-text model produces the raw transcript,
+then a small local LLM cleans it up — strips filler words ("um", "uh", "like"),
+fixes punctuation and casing, formats lists, and resolves spoken self-corrections
+(e.g. "let's meet Tuesday, wait no, Friday" → "Let's meet Friday"). Both stages
+run on-device.
 
-Target hardware: Apple Silicon (M1 or later). Primary dev/test machine is a Mac
-Studio M3 Ultra with 512 GB unified memory, so memory is not a constraint — but
-keep the default config runnable on a 16–32 GB MacBook.
+Reference hardware is an Apple Silicon Mac (M1, 16 GB); the default config is
+tuned to run there. Larger machines can swap in bigger models for quality (models
+are config values).
 
----
+## Status
 
-## 1. Non-negotiable principles
+The core product is built and is the daily driver — a native SwiftUI menu-bar app
+(`Murmur.app`):
 
-1. **Local-only by default.** No network calls in the hot path. No telemetry.
-   This is the product's reason to exist; do not add a cloud fallback unless it
-   is explicitly opt-in, off by default, and clearly labeled.
-2. **Latency is a feature.** Treat this like a real-time system. From hotkey
-   release to inserted text should feel instant. Instrument and log timings.
-3. **Works everywhere.** Insertion must land in arbitrary native and Electron
-   apps (Mail, Slack, Notes, Chrome, VS Code, Cursor, Terminal).
-4. **Degrade gracefully.** If the LLM cleanup stage is slow or fails, fall back
-   to inserting the raw STT transcript rather than blocking.
+- ✅ Hold-hotkey dictation (push-to-talk + hands-free), insertion into any app via
+  the pasteboard + ⌘V.
+- ✅ Live HUD with a two-tone draft as you speak; VAD auto-stop on a natural
+  pause; Esc-cancel.
+- ✅ Local LLM cleanup (Qwen3 on the GPU) with a deadline and raw-text fallback.
+- ✅ Speech-to-text on the **Neural Engine** (FluidAudio / Parakeet), leaving the
+  GPU free for cleanup.
+- ✅ Hub window (dashboard, searchable history, settings), native onboarding /
+  permission walkthrough, launch-at-login.
+- ✅ Bounded, transcripts-only history (sqlite, default 7-day retention).
 
----
+What's next:
 
-## 2. Reference architecture (the pipeline)
+- **Distribution** — Developer ID + notarization, a signed download, and a
+  Homebrew cask (today the app is built from source).
+- **Context-aware tone + custom dictionary** (Phase 4 below) — `context.py` /
+  `dictionary.py` are docstring-only seams.
+- **Command Mode** (Phase 5, stretch).
+
+The project began as a Python app; that engine still ships in the repo as a
+runnable reference and the cross-checked test spec (see
+[ARCHITECTURE.md](ARCHITECTURE.md)).
+
+## Principles
+
+1. **Local-only by default.** No network calls in the hot path, no telemetry. The
+   only network operation is the one-time model download. This is the product's
+   reason to exist; any cloud feature would have to be explicitly opt-in, off by
+   default, and clearly labeled.
+2. **Latency is a feature.** Treat it like a real-time system — from hotkey
+   release to inserted text should feel instant. Every stage is instrumented and
+   logged per utterance.
+3. **Works everywhere.** Insertion lands in arbitrary native and Electron apps
+   (Mail, Slack, Notes, Chrome, VS Code, Cursor, Terminal).
+4. **Degrade gracefully.** If the cleanup stage is slow or fails, fall back to
+   inserting the raw transcript rather than blocking. Never lose the user's words.
+
+## Pipeline
 
 ```
-[Global hotkey]
-   │  (push-to-talk: hold to record / toggle mode optional)
-   ▼
-[Mic capture] ──16kHz mono PCM──► [Ring buffer]
+[Global hotkey]  push-to-talk (hold) or hands-free (toggle)
    │
    ▼
-[VAD / endpointing]  ── detect speech start + end-of-utterance silence
+[Mic capture] ──16 kHz mono──► [buffer]
    │
    ▼
-[STT: parakeet-mlx streaming]  ── transcribe_stream(), emits finalized + draft tokens
-   │        (live HUD shows draft text as you speak)
-   ▼  (on hotkey release OR end-of-utterance)
-[LLM cleanup: mlx-lm]  ── strip fillers, punctuate, format, resolve corrections,
-   │                        tone profile chosen from frontmost app
+[VAD / endpointing]  speech start + end-of-utterance silence (hands-free)
+   │
    ▼
-[Text insertion]  ── pasteboard + synthesized ⌘V into focused field
+[STT]  Parakeet on the Neural Engine; a live HUD shows the draft as you speak
+   │   (on hotkey release OR end-of-utterance)
+   ▼
+[LLM cleanup]  Qwen3 on the GPU — strip fillers, punctuate, format, resolve
+   │           self-corrections; deadline + raw-text fallback
+   ▼
+[Text insertion]  pasteboard + synthesized ⌘V into the focused field
+   │
+   ▼
+[History]  transcripts-only sqlite row, off the latency path
 ```
 
-A small always-on-top **HUD** shows recording state and the live draft
-transcript. A **menu-bar app** owns settings, model selection, and history.
+A never-steals-focus **HUD** shows recording state and the live draft; the
+**menu-bar app** owns state, settings, and the Hub window.
 
----
+## Tech stack
 
-## 3. Tech stack (pinned decisions — don't re-litigate these in Phase 1)
+**Native app (`Murmur/`, the daily driver)** — Swift + SwiftUI, macOS 14+:
 
-- **Language:** Python 3.11+, managed with `uv`.
-- **STT:** [`parakeet-mlx`](https://github.com/senstella/parakeet-mlx),
-  model `mlx-community/parakeet-tdt-0.6b-v3` (multilingual, ~25 langs, SOTA WER,
-  faster-than-realtime). Use its `transcribe_stream(context_size=(256, 256))`
-  streaming context; read `transcriber.result`, `finalized_tokens`, and
-  `draft_tokens`.
-- **Cleanup LLM:** [`mlx-lm`](https://github.com/ml-explore/mlx-lm). Default to a
-  small fast instruct model (e.g. a 3–4B class model at 4-bit) so latency stays
-  low. Make the model id a config value; on the 512 GB box the user may swap in
-  something larger for quality. Keep `max_tokens` tight and stream the output.
-- **Audio capture:** `sounddevice` (PortAudio), 16 kHz mono, small block size.
-- **VAD / endpointing:** `webrtcvad` for the MVP; leave a clean seam to swap in
-  Silero VAD later.
-- **Global hotkey + keystroke synthesis + frontmost app + pasteboard:** `pyobjc`
-  (Quartz `CGEventTap` for the hotkey and ⌘V synthesis, `AppKit`
-  `NSWorkspace.frontmostApplication` for app context, `NSPasteboard` for
-  insertion). Use `pynput` only if `pyobjc` event taps prove painful — prefer
-  pyobjc for reliability under macOS permissions.
-- **Menu-bar app:** `rumps`.
-- **HUD overlay:** a small borderless always-on-top `NSPanel` via pyobjc
-  (non-activating, so it doesn't steal focus from the target text field).
+- **STT:** [FluidAudio](https://github.com/FluidInference/FluidAudio) running
+  Parakeet TDT (`mlx-community/parakeet-tdt-0.6b-v3`) as CoreML on the Neural
+  Engine.
+- **Cleanup LLM:** [mlx-swift](https://github.com/ml-explore/mlx-swift) running a
+  small 4-bit instruct model (default Qwen3-4B-4bit) on the GPU. Model ids are
+  config values.
+- **App shell:** SwiftUI `MenuBarExtra` + a `Window` Hub; a non-activating
+  `NSPanel` HUD; CGEventTap hotkey; `NSPasteboard` + synthesized ⌘V; SMAppService
+  launch-at-login.
 
-> Reasoning notes for context (do not need to act on these in Phase 1):
-> Parakeet on MLX runs on the **GPU**, which is fine here but monopolizes it.
-> The eventual "real app" path (see §8) is a native Swift menu-bar app using
-> `FluidAudio` / `swift-parakeet-mlx` to run Parakeet on the **Neural Engine**
-> via CoreML, leaving the GPU free. We are deliberately starting in Python for
-> speed of iteration.
+**Python reference engine (`src/murmur/`)** — the original implementation, frozen
+as a runnable reference and the spec the Swift ports are checked against:
+`parakeet-mlx` (STT on the GPU), `mlx-lm` (cleanup), `sounddevice`, `webrtcvad`,
+`pyobjc`, `rumps`. Its pure-logic modules are Linux-tested and gate the Swift
+behavior vector-for-vector.
 
----
+## macOS permissions
 
-## 4. macOS permissions (handle these explicitly)
+The app needs, and guides the user to grant (via the in-app Setup walkthrough):
 
-The app needs, and must guide the user to grant:
-- **Microphone** (capture).
-- **Accessibility** (synthesize the ⌘V keystroke / read focus).
-- **Input Monitoring** (global hotkey via event tap).
+- **Microphone** — capture.
+- **Accessibility** — synthesize the ⌘V keystroke / read focus.
+- **Input Monitoring** — the global hotkey event tap.
 
-On first run, detect missing permissions and show a clear, actionable prompt
-(open the right System Settings pane via the
-`x-apple.systempreferences:` URL scheme). Do not crash or silently no-op when a
-permission is missing — surface it in the menu bar.
+Missing permissions are detected and surfaced (with deep links into the right
+System Settings pane via the `x-apple.systempreferences:` URL scheme), never
+crashed or silently no-op'd. macOS keys these grants to the app's code identity,
+so the build uses a stable signing certificate (see CONTRIBUTING).
 
----
+## Roadmap
 
-## 5. Build plan (phased, with acceptance criteria)
+The phases below are the product definition; their acceptance criteria are the
+spec each stage is held to. Phases 0–3 and the native rewrite are shipped; the
+acceptance criteria remain the regression bar.
 
-Work phase by phase. Do not start a phase until the previous one's acceptance
-criteria pass. Commit at the end of each phase with a clear message.
+### Phase 0 — Scaffold ✅
+Config (`~/.murmur/config.toml`: hotkey, models, cleanup, insertion), structured
+logging with millisecond timings.
 
-### Phase 0 — Scaffold
-- `uv` project, `pyproject.toml`, pinned deps, `README.md`, `SPEC.md`.
-- Config module reading a `~/.murmur/config.toml` (hotkey, STT model, LLM model,
-  cleanup on/off, insertion method).
-- Structured logging with millisecond timestamps.
-- **Acceptance:** `uv run murmur --version` works; config loads; logs write.
+### Phase 1 — Core dictation loop ✅
+Hold-hotkey → capture → STT → insert into the focused field via pasteboard + ⌘V;
+menu-bar state. **Acceptance:** in Notes, TextEdit, and Slack, holding the hotkey
+and speaking a sentence inserts the correct transcript within ~300 ms of release
+(cleanup off); logs show per-stage timings.
 
-### Phase 1 — Core dictation loop (the MVP that already beats raw OS dictation)
-- Hold-hotkey → capture mic → stream into `parakeet-mlx` → on release, insert
-  the transcript into the focused field via pasteboard + ⌘V.
-- Cleanup LLM **off** in this phase — prove the transcription + insertion path.
-- Menu-bar icon shows idle / recording / transcribing states.
-- **Acceptance:** In Notes, TextEdit, and Slack, holding the hotkey and speaking
-  a sentence inserts the correct transcript within ~300 ms of release. Logs show
-  per-stage timings.
+### Phase 2 — Live HUD + endpointing ✅
+A never-steals-focus HUD showing a live two-tone draft; VAD endpointing so
+hands-free mode auto-finalizes on silence. **Acceptance:** draft updates visibly
+while speaking; HUD never steals focus; toggle mode finalizes on a natural pause.
 
-### Phase 2 — Live HUD + endpointing
-- Borderless always-on-top HUD near the cursor/bottom of screen showing a
-  recording animation and the live draft transcript (`draft_tokens`).
-- `webrtcvad` endpointing so hands-free/toggle mode can auto-finalize on silence.
-- **Acceptance:** Draft text updates visibly while speaking; HUD never steals
-  focus; toggle mode finalizes on a natural pause.
+### Phase 3 — LLM cleanup ✅
+Finalized transcript through the local LLM: remove fillers, fix punctuation/
+casing, format lists, resolve self-corrections — **without** changing meaning or
+adding content; deadline + raw-text fallback; toggleable. **Acceptance:** "um so
+the three things are uh first do the thing wait no two things first do the thing
+and second ship it" → "The two things: first, do the thing; second, ship it."
+Raw-fallback works when the LLM is killed mid-request.
 
-### Phase 3 — LLM cleanup layer
-- Pipe finalized transcript through `mlx-lm` with a cleanup system prompt that:
-  removes fillers, fixes punctuation/casing, formats obvious lists, and resolves
-  self-corrections — **without** changing meaning or adding content.
-- Stream tokens; enforce a latency budget; on timeout/error, insert raw text.
-- Make cleanup toggleable from the menu bar.
-- **Acceptance:** "um so the three things are uh first do the thing wait no two
-  things first do the thing and second ship it" →
-  "The two things: first, do the thing; second, ship it." Raw-fallback works
-  when the LLM is killed mid-request.
+### Phase 4 — Context-aware tone + custom dictionary (next)
+Read `NSWorkspace.frontmostApplication`; map bundle IDs to tone profiles (Mail →
+formal, Slack/Messages → casual, editors/terminals → verbatim). User dictionary
+(proper nouns, jargon, spellings) injected into the cleanup prompt and applied as
+post-replacements. **Acceptance:** same spoken input yields a formal version in
+Mail and a casual one in Slack; "Salammagari" / "parakeet-mlx" come out spelled
+right. (`context.py` / `dictionary.py` are docstring-only seams today.)
 
-### Phase 4 — Context-aware tone + custom dictionary
-- Read `NSWorkspace.frontmostApplication`; map bundle IDs to tone profiles
-  (Mail → polished/formal, Slack/Messages → casual, VS Code/Cursor/Terminal →
-  verbatim/code-aware, minimal rewriting). Profile selects the cleanup prompt.
-- User dictionary in config (proper nouns, jargon, spellings) injected into the
-  cleanup prompt and applied as post-replacements.
-- **Acceptance:** Same spoken input yields a formal version in Mail and a casual
-  one in Slack; dictating "Salammagari" / "parakeet-mlx" comes out spelled right.
+### Phase 5 — Command Mode (stretch)
+Select text in any app, press a second hotkey, speak a transform ("make this more
+concise", "turn this into bullet points"); Murmur reads the selection, runs it
+through the LLM, and replaces it in place.
 
-### Phase 5 (stretch) — Command Mode
-- Select text in any app, press a second hotkey, speak a transform
-  ("make this more concise", "turn this into bullet points"); Murmur reads the
-  selection (Accessibility API / copy), runs it through the LLM, replaces it.
-- **Acceptance:** Selecting a paragraph and saying "make this concise" replaces
-  it with a shorter version in place.
+## Performance budgets
 
----
+Targets the system is instrumented against (per-utterance `bench:` / `cleanup:
+gen` log lines and the `timings_json` history column carry the live numbers; the
+**measured** M1 figures live in [ARCHITECTURE.md](ARCHITECTURE.md)):
 
-## 6. Performance budgets (instrument and report against these)
+- Hotkey release → STT finalized: fast (one transcribe of the buffered tail).
+- Total release → inserted text, **cleanup OFF: < 300 ms**.
+- Cleanup ON: bounded by the configurable deadline, with raw-text fallback so the
+  paste is never held hostage.
+- Idle footprint and model load time reported at startup.
 
-Log each stage and surface a `--bench` mode that prints a summary table. Targets
-on M3-class hardware:
-- Hotkey release → STT finalized: **< 150 ms** after last audio.
-- Cleanup LLM (3–4B, 4-bit), typical 1–2 sentence utterance: **< 600 ms**.
-- Total release → inserted text, cleanup ON: **< 900 ms**; cleanup OFF: **< 300 ms**.
-- Idle memory footprint and model load time reported at startup.
-
-(These numbers map nicely onto a benchmark write-up later — keep the timing
-collection clean and exportable to JSON/CSV.)
-
----
-
-## 7. Repo layout (suggested)
+## Repo layout
 
 ```
 murmur/
-  pyproject.toml
-  README.md
-  SPEC.md
-  config.example.toml
-  src/murmur/
-    __main__.py          # entrypoint / CLI
-    config.py
-    audio.py             # capture + ring buffer
-    vad.py               # endpointing
-    stt.py               # parakeet-mlx streaming wrapper
-    cleanup.py           # mlx-lm cleanup + tone profiles
-    insert.py            # pasteboard + CGEvent ⌘V
-    context.py           # frontmost app → tone profile
-    hud.py               # NSPanel overlay
-    menubar.py           # rumps app
-    permissions.py       # detect + guide
-    bench.py             # timing + report
-    dictionary.py
-  tests/
+  Murmur/                 # native Swift app (daily driver)
+    project.yml           #   XcodeGen spec → Murmur.xcodeproj
+    Sources/              #   SwiftUI Hub + Engine/ (STT, cleanup, HUD, history…)
+    Tests/                #   XCTest ports of the pure-logic spec
+  src/murmur/             # Python reference engine + the pure-logic spec
+    audio · stt · cleanup · insert · hud · vad · history · onboarding · …
+  tests/                  # Linux-testable spec suite (the Swift ports' vectors)
+  scripts/                # dev signing cert, preflight, benches
+  docs/                   # design + native-swift-path notes
 ```
 
-## 8. Out of scope for now (document, don't build)
+## Out of scope (documented, not built)
 
-- iOS/Windows. macOS Apple Silicon only.
-- A native **Swift** rewrite that runs Parakeet on the **Neural Engine** via
-  `FluidAudio` / `swift-parakeet-mlx` (keeps the GPU free, better battery, the
-  path to a notarized shippable `.app`). Add a `docs/native-swift-path.md` stub
-  describing this as the v2 so the architecture is captured, but do not build it.
+- iOS / Windows. macOS Apple Silicon only.
 - Speaker diarization, multi-speaker meeting transcription.
 - Any cloud sync, account system, or telemetry.
-
-## 9. Your first move
-
-Start with Phase 0, then Phase 1. Before writing code, confirm the dependency
-versions resolve under `uv` on macOS and that `parakeet-mlx` can load
-`mlx-community/parakeet-tdt-0.6b-v3` and transcribe a test WAV. Then build the
-hotkey→capture→STT→insert loop end to end. Show me the per-stage timing log when
-Phase 1's acceptance test passes.
