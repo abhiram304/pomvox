@@ -30,3 +30,6 @@ Murmur/*.xcodeproj
 Murmur/build/
 Murmur/.build/
 *.xcuserstate
+
+# Internal milestone build-prompts — not part of the published project
+docs/prompts/
