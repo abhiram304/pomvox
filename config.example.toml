@@ -20,12 +20,17 @@ timeout_s = 5.0   # hard deadline; on timeout the raw transcript is inserted
 [insert]
 method = "paste"
 
+[engine]
+native = false  # the native Swift app's dictation engine. The app owns this
+                # toggle (Settings → Native engine); the Python engine ignores it.
+
 [log]
 file = true  # also write ~/.murmur/murmur.log
 
 [vad]
 enabled = true          # hands-free auto-stop on a natural pause
-aggressiveness = 2      # webrtcvad mode 0-3 (3 = strictest about non-speech)
+aggressiveness = 2      # webrtcvad mode 0-3 (Python engine only; the native app
+                        # uses the energy gate below)
 silence_ms = 2000       # pause length that ends the utterance
 min_speech_ms = 250     # debounce before "speech started"
 energy_gate_dbfs = -45.0 # frames quieter than this never count as speech

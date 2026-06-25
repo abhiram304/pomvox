@@ -24,24 +24,32 @@ pieces fit), and [SPEC.md](SPEC.md) (where the project is going).
 
 ## Development setup
 
+Murmur is two codebases that share `config.toml` and `history.db`: the native
+Swift app (`Murmur/`, the daily driver) and the Python reference engine
+(`src/murmur/`, whose pure-logic modules are the cross-checked test spec). Build
+the app from source per [README → Install](README.md#install-build-from-source).
+
+The Python side drives the spec suite and is runnable as a reference engine:
+
 ```sh
 uv sync
-uv run pytest                        # pure-logic tests, run anywhere
+uv run pytest                        # pure-logic spec suite, runs anywhere (incl. Linux)
 uv run python scripts/preflight.py   # macOS only: STT model end-to-end check
-uv run murmur                        # macOS only: the app
+uv run murmur                        # macOS only: the Python reference engine
 ```
 
-- **Apple Silicon Mac** is required to run the app and anything touching
-  `mlx`/`parakeet-mlx`/`pyobjc`.
-- **Any platform (including Linux)** can work on pure-logic modules —
-  `config`, `hotkey` state machine, `bench`, and the prompt/guard half of
-  `cleanup` — the test suite covers them without mlx installed.
-- Permissions while developing: TCC grants attach to your *terminal app*, not
-  Murmur. See the dev note in README.
+- **Apple Silicon Mac** is required to run either engine and anything touching
+  `mlx`/`parakeet-mlx`/`pyobjc` or FluidAudio/mlx-swift.
+- **Any platform (including Linux)** can work on pure-logic modules — `config`,
+  the `hotkey`/`hud`/`vad` state machines, `bench`, `history`, `onboarding`, and
+  the prompt/guard half of `cleanup` — the test suite covers them without mlx
+  installed, and the Swift ports are checked against the same vectors.
+- Permissions: the native app keys TCC grants to its own code identity (see
+  below); under `uv run`, grants attach to your *terminal app* instead.
 
-### Building the native Hub / engine (Swift)
+### Building the native app (Swift)
 
-The Hub (`Murmur/`) is a SwiftUI app generated with XcodeGen:
+The app (`Murmur/`) is a SwiftUI menu-bar app generated with XcodeGen:
 
 ```sh
 brew install xcodegen                                 # one-time
@@ -51,11 +59,11 @@ xcodebuild test -scheme Murmur -derivedDataPath /tmp/murmur-hub-dd \
   -destination 'platform=macOS'                       # build to /tmp, never iCloud Desktop
 ```
 
-From M4, the Hub carries an off-by-default **Native engine (beta)** toggle
-(Settings ▸ General) that uses the Microphone, Input Monitoring, and
-Accessibility TCC permissions. macOS keys those grants to the app's *code
-identity*, so the build is signed with a stable, free, self-signed certificate
-rather than ad-hoc — otherwise every rebuild resets the grants. Create it once:
+The native engine (Settings ▸ *Native engine*, off by default) uses the
+Microphone, Input Monitoring, and Accessibility TCC permissions. macOS keys those
+grants to the app's *code identity*, so the build is signed with a stable, free,
+self-signed certificate rather than ad-hoc — otherwise every rebuild resets the
+grants. Create it once:
 
 ```sh
 scripts/dev-signing-cert.sh          # makes the "Murmur Dev" Code Signing cert
@@ -99,12 +107,10 @@ notarization) is a later milestone.
 
 ## Good first areas
 
-- The Phase 2/4 stubs: `vad.py` (auto-stop endpointing), `hud.py` (live draft
-  overlay), `context.py` (per-app tone profiles), `dictionary.py` (custom
-  words).
-- Cleanup quality: the few-shot examples and guards in `cleanup.py` are
-  data-driven — failing transcripts make great issues, with the raw text and
-  what you expected.
+- The Phase 4 stubs: `context.py` (per-app tone profiles) and `dictionary.py`
+  (custom words) — docstring-only seams waiting to be built on both sides.
+- Cleanup quality: the few-shot examples and guards in `cleanup.py` /
+  `CleanupLogic.swift` are data-driven — failing transcripts make great issues,
+  with the raw text and what you expected.
 - Latency: speculative decoding for the cleanup model is measured-but-unbuilt
-  territory; the STT `add_audio` fixed cost is an upstream (parakeet-mlx)
-  conversation.
+  territory.
