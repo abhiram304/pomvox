@@ -123,6 +123,19 @@ func pillFrame(
     return (x, y, pw, ph)
 }
 
+/// Whether the controller should (re)show the panel for `state`, given the
+/// previously presented `prevState`. Shows on the hidden→visible transition AND
+/// at the start of a fresh recording even when a prior flash (done/error/
+/// cancelled) hasn't auto-hidden yet — without the second clause a quick
+/// re-record while the flash lingers is gated out and its HUD never reappears
+/// (the panel is meanwhile mid hide-fade; re-showing re-asserts alpha=1 +
+/// orderFront, defeating that fade). Continuations (recording→transcribing→
+/// polishing) and the flashes themselves keep the existing panel as-is.
+func hudShouldShow(state: String, prevState: String) -> Bool {
+    if prevState == "hidden" { return true }
+    return state == "recording" && prevState != "recording"
+}
+
 /// Ring buffer of recent mic levels for the waveform bars. Port of `LevelHistory`.
 final class LevelHistory {
     private let n: Int

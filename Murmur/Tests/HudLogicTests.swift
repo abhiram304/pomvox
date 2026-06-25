@@ -238,4 +238,34 @@ final class HudLogicTests: XCTestCase {
         let vm = m.apply([.state: .state("idle", "ready")], now: 0.5)
         XCTAssertFalse(vm.visible)
     }
+
+    // MARK: - hudShouldShow (panel show-gate; regression for the intermittent HUD)
+
+    func testShowOnHiddenToRecording() {
+        XCTAssertTrue(hudShouldShow(state: "recording", prevState: "hidden"))
+    }
+
+    func testNoReshowWhileAlreadyRecording() {
+        // Per-level present ticks during a live recording must not re-show.
+        XCTAssertFalse(hudShouldShow(state: "recording", prevState: "recording"))
+    }
+
+    func testShowOnFreshRecordingWhilePriorFlashLingers() {
+        // The bug: re-record before the previous done/error/cancelled flash
+        // auto-hides. prevState is the flash, not "hidden" — the old
+        // `prevState == "hidden"` gate skipped show() and the HUD never
+        // reappeared. A fresh recording must re-show regardless.
+        for flash in ["done", "error", "cancelled"] {
+            XCTAssertTrue(hudShouldShow(state: "recording", prevState: flash),
+                          "recording after \(flash) flash must re-show the HUD")
+        }
+    }
+
+    func testNoShowForFinishingOrFlashStates() {
+        // Continuations/flashes never trigger a fresh show on their own; the
+        // panel is already up from the recording that preceded them.
+        XCTAssertFalse(hudShouldShow(state: "transcribing", prevState: "recording"))
+        XCTAssertFalse(hudShouldShow(state: "polishing", prevState: "transcribing"))
+        XCTAssertFalse(hudShouldShow(state: "done", prevState: "polishing"))
+    }
 }

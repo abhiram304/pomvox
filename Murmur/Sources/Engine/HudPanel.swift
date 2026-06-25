@@ -86,7 +86,7 @@ final class HudController {
             playSoundOnEntry(vm.state)
             updateModel(vm)
             updateWaveformTimer(recording: vm.state == "recording")
-            if prevState == "hidden" { show(panel) }
+            if hudShouldShow(state: vm.state, prevState: prevState) { show(panel) }
         } else {
             updateWaveformTimer(recording: false)
             if prevState != "hidden" { hide(panel) }
@@ -194,6 +194,8 @@ final class HudController {
             ctx.duration = 0.25
             panel.animator().alphaValue = 0.0
         }, completionHandler: {
+            // Only retire the panel if a re-show hasn't reclaimed it mid-fade
+            // (a quick re-record sets alpha back to 1.0 — see `hudShouldShow`).
             if panel.alphaValue == 0.0 { panel.orderOut(nil) }
         })
     }
