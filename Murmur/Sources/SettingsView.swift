@@ -119,6 +119,7 @@ private struct GeneralPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             NativeEngineGroup()
+            LoginItemGroup()
             SettingsGroup("Cleanup") {
                 SettingRow(title: "Clean up transcripts",
                            desc: "Run the local LLM pass after speech-to-text.") {
@@ -239,6 +240,26 @@ private struct NativeEngineGroup: View {
         case .failed:             Palette.ember
         default:                  Palette.muted
         }
+    }
+}
+
+/// Launch-at-login (M7a). SMAppService is the source of truth — no config key,
+/// no Save flow; the toggle registers/unregisters directly.
+private struct LoginItemGroup: View {
+    @StateObject private var loginItem = LoginItemModel()
+
+    var body: some View {
+        SettingsGroup("App") {
+            SettingRow(
+                title: "Launch at login",
+                desc: "Murmur starts in the menu bar — armed and ready to dictate, no window."
+            ) {
+                SettingToggle(isOn: loginItem.binding, label: "Launch at login")
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification)
+        ) { _ in loginItem.refresh() }  // System Settings can revoke it behind us
     }
 }
 
