@@ -52,6 +52,9 @@ final class NativeEngine: ObservableObject {
     private var cleanupStyle = "polish"
     private var cleanupTimeoutS = 5.0
     private var cleanupModelID = "mlx-community/Qwen3-4B-4bit"
+    // STT model id, snapshotted at arm() for the (anonymous) dictation_completed
+    // telemetry event — the basename only ever reaches the wire.
+    private var sttModelID = "mlx-community/parakeet-tdt-0.6b-v3"
 
     // [history] snapshot + store (M7a: the native engine writes the rows).
     // Opens at arm(), closes at disarm(); enabled=false writes nothing.
@@ -121,6 +124,7 @@ final class NativeEngine: ObservableObject {
             NSLog("murmur-engine: blocked by %@ engine", holder.name)
             status = .blocked(
                 "Murmur's \(holder.name) engine is running — quit it before enabling the native engine.")
+            TelemetryClient.shared.emit(.error, props: errorProps("engine_blocked"))
             return
         }
         if interactive {
@@ -132,6 +136,7 @@ final class NativeEngine: ObservableObject {
                 NSLog("murmur-engine: auto-arm skipped — permissions missing")
                 pidfile.release()
                 status = .failed("Permissions needed — open Setup to finish enabling Murmur.")
+                TelemetryClient.shared.emit(.error, props: errorProps("permissions_missing"))
                 return
             }
             NSLog("murmur-engine: auto-arm — all grants present")
@@ -157,6 +162,7 @@ final class NativeEngine: ObservableObject {
             pidfile.release()
             history?.close(); history = nil
             status = .failed("Speech model failed to load. \(error.localizedDescription)")
+            TelemetryClient.shared.emit(.error, props: errorProps("model_load_failed"))
             return
         }
 
@@ -193,12 +199,19 @@ final class NativeEngine: ObservableObject {
             status = .failed(
                 "Input Monitoring isn't granted. Enable Murmur in System Settings ▸ Privacy & "
                 + "Security ▸ Input Monitoring, then turn this on again.")
+            TelemetryClient.shared.emit(.error, props: errorProps("input_monitoring_denied"))
             return
         }
         self.tap = tap
         persist(true)
         NSLog("murmur-engine: ARMED — ready")
         status = .ready
+        TelemetryClient.shared.emit(.appLaunch)
+    }
+
+    /// One enum-shaped code, never a message (the contract forbids free text).
+    private nonisolated func errorProps(_ code: String) -> TelemetryProps {
+        var p = TelemetryProps(); p.errorCode = code; return p
     }
 
     func disarm() {
@@ -231,6 +244,7 @@ final class NativeEngine: ObservableObject {
             maxChars: doc.int("hud", "max_chars") ?? 120)
         hud.prepare()
 
+        sttModelID = doc.string("stt", "model") ?? "mlx-community/parakeet-tdt-0.6b-v3"
         cleanupEnabled = doc.bool("cleanup", "enabled") ?? true
         cleanupStyle = doc.string("cleanup", "style") ?? "polish"
         cleanupTimeoutS = doc.double("cleanup", "timeout_s") ?? 5.0
@@ -346,6 +360,7 @@ final class NativeEngine: ObservableObject {
             bus.post(.state("idle", "ready"))
             status = .failed(
                 "Microphone unavailable. Grant it in System Settings ▸ Privacy & Security ▸ Microphone.")
+            TelemetryClient.shared.emit(.error, props: errorProps("microphone_unavailable"))
             resetMachine()
         }
     }
@@ -367,6 +382,7 @@ final class NativeEngine: ObservableObject {
         let store = history
         let dict = dictionary
         let durationS = Double(samples.count) / 16000.0
+        let sttModel = sttModelID
         Task { [weak self] in
             guard let self else { return }
             // Stage timings mirror bench.py (t0 = key-up/auto-stop); they land
@@ -425,6 +441,24 @@ final class NativeEngine: ObservableObject {
                 self.status = .ready
                 return (hint, pastedAt)
             }
+            // Anonymous telemetry, emitted here for the same reason history is —
+            // strictly after the paste, off the latency path. Fire-and-forget;
+            // a true no-op unless the user opted in. Never any text.
+            if !text.isEmpty {
+                var props = TelemetryProps()
+                props.durationMs = Int(durationS * 1000)
+                props.sttModel = sttModel
+                props.cleanup = doCleanup
+                props.cleanupStatus = cleanupStatus?.rawValue ?? "off"
+                TelemetryClient.shared.emit(.dictationCompleted, props: props)
+                if doCleanup {
+                    var used = TelemetryProps()
+                    used.cleanup = true
+                    used.cleanupStatus = cleanupStatus?.rawValue ?? "off"
+                    TelemetryClient.shared.emit(.cleanupUsed, props: used)
+                }
+            }
+
             // History row, strictly after the paste and the ready flip — a
             // ~1 ms INSERT on this now-idle task, never on the latency path.
             // Python records even when the insert failed (the words must not

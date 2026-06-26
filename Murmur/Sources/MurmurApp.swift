@@ -7,6 +7,7 @@ struct MurmurApp: App {
     @StateObject private var settings = SettingsModel()
     @StateObject private var reinserter = ReinsertController()
     @StateObject private var engine = NativeEngine.shared
+    @StateObject private var telemetry = TelemetryModel()
 
     var body: some Scene {
         // A single Window (not WindowGroup): the Hub. The AppDelegate keeps it
@@ -17,6 +18,7 @@ struct MurmurApp: App {
                 .environmentObject(settings)
                 .environmentObject(reinserter)
                 .environmentObject(engine)
+                .environmentObject(telemetry)
                 .frame(minWidth: 920, minHeight: 600)
                 .onAppear { model.reload() }
         }
