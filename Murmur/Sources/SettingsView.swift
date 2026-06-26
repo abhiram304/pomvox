@@ -375,6 +375,7 @@ private struct VoicePane: View {
 private struct PrivacyPane: View {
     @EnvironmentObject var model: SettingsModel
     @EnvironmentObject var hub: HubModel
+    @EnvironmentObject var telemetry: TelemetryModel
     @State private var storage: [StorageItem] = []
     @State private var confirmingWipe = false
 
@@ -424,14 +425,53 @@ private struct PrivacyPane: View {
                     }
                 }
             }
+            SettingsGroup("Anonymous usage stats") {
+                SettingRow(title: "Send anonymous usage stats",
+                           desc: "Optional and off by default. Counters only — your voice and transcripts never leave this Mac.") {
+                    SettingToggle(isOn: telemetry.binding, label: "Send anonymous usage stats")
+                }
+                RowDivider()
+                UsageStatsDisclosure()
+            }
             SettingsGroup("Verifiably local") {
-                InfoRow(symbol: "lock.fill", text: "No account, no cloud, no telemetry.")
+                InfoRow(symbol: "lock.fill",
+                        text: "No account, no cloud. Your voice and transcripts never leave this Mac.")
                 RowDivider()
                 InfoRow(symbol: "antenna.radiowaves.left.and.right.slash",
-                        text: "Verify it yourself: Little Snitch or LuLu shows zero connections from Murmur.")
+                        text: "The only network calls are the one-time model download and — when you turn it on above — anonymous, content-free usage stats. Verify with Little Snitch or LuLu.")
             }
         }
         .onAppear { storage = StorageInspector.scan() }
+    }
+}
+
+/// The "here's exactly what we send" disclosure, shown beneath the toggle so the
+/// opt-in is informed. Copy is shared with the first-run sheet (`TelemetryCopy`).
+private struct UsageStatsDisclosure: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            column(title: "What it sends", symbol: "checkmark.circle.fill",
+                   tint: Palette.muted, lines: TelemetryCopy.sends)
+            column(title: "What it never sends", symbol: "lock.fill",
+                   tint: Palette.ember, lines: TelemetryCopy.neverSends)
+        }
+        .padding(.vertical, 12).padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func column(title: String, symbol: String, tint: Color, lines: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title.uppercased())
+                .font(Typo.ui(10.5, .semibold)).tracking(0.5).foregroundStyle(Palette.muted)
+            ForEach(lines, id: \.self) { line in
+                HStack(alignment: .top, spacing: 7) {
+                    Image(systemName: symbol).font(.system(size: 10)).foregroundStyle(tint)
+                        .padding(.top, 2)
+                    Text(line).font(Typo.ui(11.5)).foregroundStyle(Palette.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
     }
 }
 

@@ -19,7 +19,9 @@ enum NavItem: String, CaseIterable, Identifiable {
 
 struct RootView: View {
     @EnvironmentObject var model: HubModel
+    @EnvironmentObject var telemetry: TelemetryModel
     @State private var selection: NavItem = .home
+    @State private var showConsent = false
 
     var body: some View {
         NavigationSplitView {
@@ -40,6 +42,13 @@ struct RootView: View {
         // Menu bar "Open Setup…" deep link.
         .onReceive(NotificationCenter.default.publisher(for: .murmurShowSetup)) { _ in
             selection = .setup
+        }
+        // One-time, opt-in telemetry consent. Shows on the first manual open of
+        // the Hub; a login-item launch suppresses the window, so it simply
+        // defers to the next time the window appears.
+        .onAppear { showConsent = telemetry.needsConsentPrompt }
+        .sheet(isPresented: $showConsent) {
+            TelemetryConsentSheet().environmentObject(telemetry)
         }
     }
 

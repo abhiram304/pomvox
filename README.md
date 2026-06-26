@@ -3,9 +3,10 @@
 Fully local, privacy-first voice dictation for macOS on Apple Silicon. Hold a
 hotkey, speak, and the transcript is inserted into whatever text field is
 focused — in any app. Speech-to-text runs on the Neural Engine and an optional
-cleanup pass runs a local LLM on the GPU; **no audio or text ever leaves your
-machine** (the only network operation is the one-time model download from
-Hugging Face).
+cleanup pass runs a local LLM on the GPU. **Your voice and transcripts never
+leave your machine.** The only network calls are the one-time model download
+from Hugging Face and — if you opt in — anonymous, content-free usage stats
+(off by default; toggle in Settings → Privacy).
 
 Murmur is a native SwiftUI menu-bar app (`Murmur.app`): live two-tone draft as
 you speak, a Hub window with your dictation history and settings, and a Setup
@@ -111,6 +112,27 @@ Settings are edited in the Hub; everything also lives in `~/.murmur/config.toml`
 
 Anything model-shaped is a config value, never a constant — swap STT and cleanup
 models to trade speed for quality on your hardware.
+
+## Privacy
+
+Your voice and transcripts never leave this Mac — that's the whole point, and it
+isn't negotiable. The cleanup LLM and speech model both run on-device.
+
+The only network calls Murmur ever makes are:
+
+1. The one-time model download from Hugging Face.
+2. **Optional, anonymous usage stats** — off by default. On first run Murmur
+   shows a one-time prompt; you can also flip it anytime in **Settings →
+   Privacy**, which spells out exactly what's sent.
+
+If you turn the stats on, Murmur sends a random per-install ID (anonymous) plus
+content-free counters: app/OS version, that a dictation happened with its
+duration, which models ran, whether cleanup was used, and enum-only error codes.
+It **never** sends audio, transcripts, cleaned text, file paths, or any free
+text — there is no field in the payload that could carry them. Being opt-in,
+anonymous, and open source is the point: you can read exactly what leaves in
+[`Telemetry.swift`](Murmur/Sources/Telemetry.swift). The Python reference engine
+makes no network calls at all.
 
 ## Two engines
 

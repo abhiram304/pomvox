@@ -1,6 +1,12 @@
 # Murmur configuration.
 # Copy to ~/.murmur/config.toml — every key is optional and defaults to the
 # values shown here.
+#
+# Privacy: your voice and transcripts never leave this Mac. The only network
+# calls are the one-time model download (Hugging Face) and — only if you opt in —
+# anonymous, content-free usage stats (off by default). That toggle lives in the
+# native app (Settings → Privacy), not in this file, and the Python engine makes
+# no network calls at all.
 
 [hotkey]
 ptt = "fn"           # hold to talk; use "right_option" if Fn proves flaky

@@ -194,6 +194,8 @@ final class SettingsModel: ObservableObject {
         if SettingsIO.writeIfValid(values, path: path) {
             saved = values
             justSaved = true
+            // Anonymous: that *a* setting changed, never which one or its value.
+            TelemetryClient.shared.emit(.settingChanged)
         }
     }
 }

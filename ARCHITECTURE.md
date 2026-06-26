@@ -6,8 +6,10 @@ they disagree about the present, this file wins.
 
 Guiding constraints, in priority order:
 
-1. **Local-only.** Audio and text never leave the machine. The only network
-   operation is the one-time model download from Hugging Face.
+1. **Local-first.** Your voice and transcripts never leave the machine. The only
+   network calls are the one-time model download from Hugging Face and, when the
+   user opts in, anonymous content-free usage stats (off by default, native app
+   only — `Telemetry.swift`; the Python engine makes no network calls at all).
 2. **Latency is a feature.** Hotkey-release → inserted text is a real-time
    budget, instrumented per stage on every utterance.
 3. **Degrade gracefully.** Any failure in a quality stage (cleanup) falls back
