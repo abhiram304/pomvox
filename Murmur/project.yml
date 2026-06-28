@@ -68,6 +68,7 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_NAME: Murmur
         PRODUCT_BUNDLE_IDENTIFIER: app.murmur.hub
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Outbound network (model download + opt-in telemetry) and mic. Only
         # enforced under the Release hardened runtime; inert in Debug. No sandbox.
         CODE_SIGN_ENTITLEMENTS: Murmur.entitlements
