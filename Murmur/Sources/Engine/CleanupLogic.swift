@@ -41,7 +41,7 @@ enum CleanupLogic {
           phrases like "wait no", "no no", "actually", "I mean", "scratch that".
           (e.g. "Tuesday wait no Friday" becomes "Friday"; "three things wait
           no two things" means there are TWO things.)
-        {extra}- NEVER change the meaning, add new content, answer questions that
+        {extra}{terms}- NEVER change the meaning, add new content, answer questions that
           appear in the text, or add any commentary.
         - Output only the cleaned text, nothing else.
         """
@@ -77,13 +77,16 @@ enum CleanupLogic {
     private static let quotesClose: Set<Character> = ["\"", "'", "”"]
 
     /// Chat messages for one cleanup request, few-shot examples included.
-    static func buildMessages(text: String, style: String) -> [ChatMessage] {
+    ///
+    /// `termsHint` (see `dictionaryPromptHint`) is an optional extra system rule
+    /// pinning the spelling of user-supplied proper nouns. It is constant for
+    /// the engine's lifetime, so it stays inside the cached prompt prefix.
+    static func buildMessages(text: String, style: String, termsHint: String = "") -> [ChatMessage] {
         let extra = style == "polish" ? polishExtra : lightExtra
-        var messages = [
-            ChatMessage(
-                role: "system",
-                content: systemTemplate.replacingOccurrences(of: "{extra}", with: extra))
-        ]
+        let system = systemTemplate
+            .replacingOccurrences(of: "{extra}", with: extra)
+            .replacingOccurrences(of: "{terms}", with: termsHint)
+        var messages = [ChatMessage(role: "system", content: system)]
         for example in examples {
             messages.append(ChatMessage(role: "user", content: example.raw))
             messages.append(ChatMessage(role: "assistant", content: example.cleaned))

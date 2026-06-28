@@ -63,6 +63,87 @@ struct ConfigDocument {
         rawToken(section, key).flatMap(Double.init)
     }
 
+    // MARK: - Read-only array / table helpers
+    //
+    // The custom dictionary (`[dictionary] words = [...]` and the
+    // `[dictionary.replacements]` sub-table) needs shapes the surgical scalar
+    // editor doesn't write. These read them (single-line inline array of quoted
+    // strings; a table of quoted-string = quoted-string pairs) without changing
+    // the write path — the Hub still only ever rewrites scalar values.
+
+    /// An inline array of quoted strings on `key`'s line, e.g. `["a", "b"]`.
+    /// `nil` if the key is absent or isn't an array. Single-line only (matches
+    /// the dictionary config; a multi-line array reads as nil → defaults).
+    func stringArray(_ section: String, _ key: String) -> [String]? {
+        guard let i = find(section, key), let eq = lines[i].firstIndex(of: "=") else { return nil }
+        var body = String(lines[i][lines[i].index(after: eq)...]).trimmingCharacters(in: .whitespaces)
+        if let hash = body.firstIndex(of: "#") { body = String(body[..<hash]).trimmingCharacters(in: .whitespaces) }
+        guard body.hasPrefix("["), body.hasSuffix("]") else { return nil }
+        let inner = String(body.dropFirst().dropLast())
+        return Self.splitTopLevelStrings(inner)
+    }
+
+    /// All quoted-string key/value pairs under a `[section]` header, in file
+    /// order. Quoted keys (`"a b" = "c"`) are unquoted. Comments / blanks /
+    /// non-string values are skipped; scanning stops at the next header.
+    func stringTable(_ section: String) -> [(key: String, value: String)] {
+        guard let header = sectionHeaderIndex(section) else { return [] }
+        var out: [(key: String, value: String)] = []
+        var i = header + 1
+        while i < lines.count {
+            if Self.headerName(lines[i]) != nil { break }
+            if let pair = Self.stringPair(lines[i]) { out.append(pair) }
+            i += 1
+        }
+        return out
+    }
+
+    /// `"key" = "value"` (or bare `key = "value"`) → unquoted pair; nil otherwise.
+    private static func stringPair(_ line: String) -> (key: String, value: String)? {
+        let t = line.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty, !t.hasPrefix("#"), !t.hasPrefix("["),
+              let eq = line.firstIndex(of: "=") else { return nil }
+        let rawKey = String(line[..<eq]).trimmingCharacters(in: .whitespaces)
+        guard let r = tokenRange(in: line) else { return nil }
+        let rawVal = String(line[r])
+        guard rawVal.hasPrefix("\""), rawVal.hasSuffix("\""), rawVal.count >= 2 else { return nil }
+        let key = unquote(rawKey)
+        let value = unescape(String(rawVal.dropFirst().dropLast()))
+        return (key, value)
+    }
+
+    private static func unquote(_ s: String) -> String {
+        guard s.hasPrefix("\""), s.hasSuffix("\""), s.count >= 2 else { return s }
+        return unescape(String(s.dropFirst().dropLast()))
+    }
+
+    /// Split `"a", "b"` (the inside of an inline array) into unescaped strings,
+    /// respecting quotes so a comma inside a value isn't a separator.
+    private static func splitTopLevelStrings(_ inner: String) -> [String] {
+        var out: [String] = []
+        var i = inner.startIndex
+        while i < inner.endIndex {
+            while i < inner.endIndex, inner[i] != "\"" { i = inner.index(after: i) }
+            guard i < inner.endIndex else { break }
+            i = inner.index(after: i)  // past opening quote
+            var value = ""             // raw, escapes preserved for one unescape
+            while i < inner.endIndex {
+                let c = inner[i]
+                if c == "\\" {
+                    let n = inner.index(after: i)
+                    if n < inner.endIndex {
+                        value.append(c); value.append(inner[n]); i = inner.index(after: n); continue
+                    }
+                }
+                if c == "\"" { i = inner.index(after: i); break }
+                value.append(c)
+                i = inner.index(after: i)
+            }
+            out.append(unescape(value))
+        }
+        return out
+    }
+
     // MARK: - Writes (typed)
 
     mutating func set(_ section: String, _ key: String, string value: String) {
