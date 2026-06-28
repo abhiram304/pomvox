@@ -169,3 +169,19 @@ xcodebuild test -project Murmur/Murmur.xcodeproj -scheme Murmur \
 Latency and footprint claims in PRs come with numbers from a real Apple Silicon
 run, never assumed (CONTRIBUTING rule 4). The native-engine feasibility work and
 its measured gates are in [docs/native-swift-path.md](docs/native-swift-path.md).
+
+### Releasing a signed build
+
+Day-to-day builds use a free self-signed cert (`scripts/dev-signing-cert.sh`).
+Distribution uses **Developer ID + hardened runtime + notarization** — the
+`Release` config in `Murmur/project.yml`, driven by:
+
+```sh
+scripts/notarize-release.sh   # build → sign → notarize → staple → dist/Murmur.zip
+```
+
+One-time setup (Developer ID cert in Xcode + a `notarytool` keychain profile) is
+documented in the script header. Debug builds are untouched: same self-signed
+identity, hardened runtime off, so TCC grants survive iterative work. The first
+launch of a Release build re-prompts the three permissions once (the code
+identity changed).

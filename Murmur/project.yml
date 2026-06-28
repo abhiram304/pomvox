@@ -37,17 +37,25 @@ settings:
     SWIFT_VERSION: "5.10"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
-    # Stable self-signed identity (M4): the native engine uses Microphone /
-    # Input Monitoring / Accessibility, and macOS keys those TCC grants to the
-    # app's code identity. An ad-hoc signature ("-") changes identity every
-    # build, resetting the grants — fatal for iterative engine work. "Murmur Dev"
-    # is a free, local, self-signed Code Signing cert (scripts/dev-signing-cert.sh);
-    # grants then survive rebuilds. Developer ID + hardened runtime + notarization
-    # arrive with distribution (M7).
     CODE_SIGN_STYLE: Manual
-    CODE_SIGN_IDENTITY: "Murmur Dev"
-    DEVELOPMENT_TEAM: ""
-    ENABLE_HARDENED_RUNTIME: NO
+  configs:
+    # Debug = daily development (M4). The native engine uses Microphone / Input
+    # Monitoring / Accessibility, and macOS keys those TCC grants to the app's
+    # code identity. An ad-hoc signature ("-") changes identity every build,
+    # resetting the grants — fatal for iterative work. "Murmur Dev" is a free,
+    # local, self-signed cert (scripts/dev-signing-cert.sh); grants survive
+    # rebuilds. Hardened runtime stays OFF so the dev loop is unencumbered.
+    Debug:
+      CODE_SIGN_IDENTITY: "Murmur Dev"
+      DEVELOPMENT_TEAM: ""
+      ENABLE_HARDENED_RUNTIME: NO
+    # Release = distribution (M7b). Developer ID + hardened runtime + notarization
+    # (scripts/notarize-release.sh). First launch of a Release build re-prompts
+    # the three TCC grants once — the code identity changed from "Murmur Dev".
+    Release:
+      CODE_SIGN_IDENTITY: "Developer ID Application"
+      DEVELOPMENT_TEAM: "CT84AT52RS"
+      ENABLE_HARDENED_RUNTIME: YES
 
 targets:
   Murmur:
@@ -60,6 +68,9 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_NAME: Murmur
         PRODUCT_BUNDLE_IDENTIFIER: app.murmur.hub
+        # Outbound network (model download + opt-in telemetry) and mic. Only
+        # enforced under the Release hardened runtime; inert in Debug. No sandbox.
+        CODE_SIGN_ENTITLEMENTS: Murmur.entitlements
         INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Abhi Ram Salammagari · MIT"
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.productivity"
         INFOPLIST_KEY_CFBundleDisplayName: Murmur
