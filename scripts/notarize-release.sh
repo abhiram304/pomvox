@@ -4,8 +4,9 @@
 #
 # This is the M7b distribution pipeline. It builds the Release configuration
 # (Developer ID Application + hardened runtime + Murmur.entitlements, see
-# Murmur/project.yml), submits the app to Apple's notary service, and staples the
-# ticket so Gatekeeper accepts it offline. The result is a zip you can hand out.
+# Murmur/project.yml), notarizes + staples both the .app and a drag-to-Applications
+# .dmg, so the download clears Gatekeeper offline. The result is dist/Murmur.dmg
+# (primary) plus dist/Murmur.zip (the notarized .app).
 #
 # ── One-time setup ──────────────────────────────────────────────────────────
 #   1. Create the signing cert (once): Xcode ▸ Settings ▸ Accounts ▸ your Apple
@@ -43,6 +44,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJ_DIR="$REPO_ROOT/Murmur"
 APP="$DD/Build/Products/Release/Murmur.app"
 ZIP="$OUT/Murmur.zip"
+DMG="$OUT/Murmur.dmg"
 
 say() { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
@@ -101,10 +103,39 @@ say "Repackaging stapled app"
 rm -f "$ZIP"
 /usr/bin/ditto -c -k --keepParent "$APP" "$ZIP"
 
-# Final Gatekeeper assessment — what a downloader's Mac will actually decide.
-say "Gatekeeper assessment"
+# Gatekeeper assessment of the app itself — what a downloader's Mac decides.
+say "Gatekeeper assessment (app)"
 spctl --assess --type execute --verbose=2 "$APP" || true
 
-say "Done → $ZIP"
-echo "  Distribute this zip. To make a .dmg instead, staple the .dmg too:"
-echo "    xcrun stapler staple Murmur.dmg"
+# ── Build the distributable DMG (drag-to-Applications) ───────────────────────
+# The .app is already notarized + stapled above, so it works even dragged out of
+# the DMG. We then notarize + staple the DMG itself so the download clears
+# Gatekeeper directly.
+say "Building DMG"
+STAGE="$(mktemp -d)/Murmur"
+mkdir -p "$STAGE"
+cp -R "$APP" "$STAGE/"
+ln -s /Applications "$STAGE/Applications"   # drag-to-install affordance
+rm -f "$DMG"
+hdiutil create -volname "Murmur" -srcfolder "$STAGE" -ov -format UDZO "$DMG" | tail -1
+rm -rf "$(dirname "$STAGE")"
+
+say "Signing the DMG (Developer ID)"
+codesign --force --timestamp --sign "Developer ID Application" "$DMG"
+
+say "Notarizing the DMG (another few minutes)"
+xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait \
+  || die "DMG notarization failed. Inspect the log:
+     xcrun notarytool log <submission-id> --keychain-profile $NOTARY_PROFILE"
+
+say "Stapling the DMG"
+xcrun stapler staple "$DMG"
+xcrun stapler validate "$DMG"
+
+say "Gatekeeper assessment (DMG)"
+spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG" || true
+
+say "Done"
+echo "  Distribute → $DMG   (notarized + stapled, drag-to-Applications)"
+echo "  Also available → $ZIP   (notarized + stapled .app)"
+echo "  Publish: shasum -a 256 \"$DMG\""
