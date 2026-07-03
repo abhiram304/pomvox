@@ -1,0 +1,372 @@
+import Foundation
+
+/// Opt-in, anonymous, content-free usage telemetry — **native app only** (the
+/// Python reference engine stays no-network). The product's promise is unchanged
+/// for the things that matter: voice and transcripts never leave this Mac. What
+/// *can* leave, only after the user explicitly turns it on, is a handful of
+/// counters: a random per-install UUID and a constrained allowlist of scalars.
+///
+/// The "no content ever" rule is enforced *structurally*, not by discipline:
+/// `TelemetryProps` is a fixed set of typed scalars (there is no free-text field
+/// to misuse), and `TelemetryEncoder` runs every prop through `TelemetrySanitizer`
+/// at the wire boundary — a model id is reduced to its basename, anything that
+/// can't match the contract's regex/enum is dropped. Sending is gated on
+/// consent AND a configured endpoint, batched, fire-and-forget, and never on the
+/// dictation latency path.
+///
+/// Pure logic (store, sanitizer, encoder, queue, gate, env) is unit-tested in
+/// TelemetryTests; the URLSession POST is the thin side-effect shell.
+
+// MARK: - Consent + identity (UserDefaults-backed, native-only)
+
+/// The user's choice and the anonymous install id. UserDefaults is the right
+/// home: this is native-app state, not shared `config.toml` (which the Python
+/// engine reads and must never learn about telemetry).
+struct TelemetryStore {
+    static let enabledKey = "telemetry.enabled"
+    static let promptedKey = "telemetry.consentPrompted"
+    static let installIDKey = "telemetry.installID"
+
+    let defaults: UserDefaults
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+
+    /// Off until the user chooses (UserDefaults.bool defaults to false).
+    var enabled: Bool {
+        get { defaults.bool(forKey: Self.enabledKey) }
+        set { defaults.set(newValue, forKey: Self.enabledKey) }
+    }
+
+    /// Whether the one-time first-run consent prompt has been shown/answered.
+    var prompted: Bool {
+        get { defaults.bool(forKey: Self.promptedKey) }
+        set { defaults.set(newValue, forKey: Self.promptedKey) }
+    }
+
+    /// A random UUID v4, generated once and stable for the life of the install.
+    /// Anonymous — it ties events from one machine together, nothing more.
+    mutating func installID() -> String {
+        if let existing = defaults.string(forKey: Self.installIDKey), !existing.isEmpty {
+            return existing
+        }
+        let id = UUID().uuidString
+        defaults.set(id, forKey: Self.installIDKey)
+        return id
+    }
+}
+
+// MARK: - Events (typed, allowlisted scalars only — no free-text field exists)
+
+enum TelemetryEventName: String, Sendable {
+    case appLaunch = "app_launch"
+    case dictationCompleted = "dictation_completed"
+    case cleanupUsed = "cleanup_used"
+    case error
+    case settingChanged = "setting_changed"
+}
+
+/// The complete set of properties an event may carry. There is deliberately no
+/// `String: Any` here: a transcript, file path, or email has nowhere to go.
+struct TelemetryProps: Equatable, Sendable {
+    var durationMs: Int?
+    var sttModel: String?
+    var cleanup: Bool?
+    var cleanupStatus: String?   // ok | timeout | rejected | error | off
+    var errorCode: String?       // enum-shaped: ^[a-z0-9_]{1,40}$
+}
+
+struct TelemetryEvent: Equatable, Sendable {
+    let event: TelemetryEventName
+    let ts: Int                  // epoch milliseconds
+    var props: TelemetryProps = TelemetryProps()
+}
+
+/// The batch envelope's stable, per-install metadata.
+struct TelemetryEnv: Equatable, Sendable {
+    let schemaVersion: Int
+    let installID: String
+    let appVersion: String
+    let osVersion: String
+    let arch: String
+}
+
+// MARK: - Sanitizer (validate-or-drop; the last line against content leaking)
+
+enum TelemetrySanitizer {
+    /// `mlx-community/parakeet-tdt-0.6b-v3` → `parakeet-tdt-0.6b-v3`. The full id
+    /// is path-shaped (a slash); the contract's `stt_model` regex forbids it, so
+    /// we send only the basename — and drop it entirely if even that can't match.
+    static func sttModel(_ raw: String) -> String? {
+        let base = String(raw.split(separator: "/", omittingEmptySubsequences: false).last ?? "")
+        return matches(base, "^[A-Za-z0-9._-]{1,64}$") ? base : nil
+    }
+
+    /// Clamp into the contract's range rather than drop — a duration is always
+    /// meaningful; a nonsensical one just pins to a bound.
+    static func durationMs(_ ms: Int) -> Int { max(0, min(ms, 86_400_000)) }
+
+    static func cleanupStatus(_ s: String) -> String? {
+        ["ok", "timeout", "rejected", "error", "off"].contains(s) ? s : nil
+    }
+
+    static func errorCode(_ s: String) -> String? {
+        matches(s, "^[a-z0-9_]{1,40}$") ? s : nil
+    }
+
+    /// Every field validated-or-dropped. Idempotent, so encoding twice is safe.
+    static func clean(_ p: TelemetryProps) -> TelemetryProps {
+        var out = TelemetryProps()
+        if let d = p.durationMs { out.durationMs = durationMs(d) }
+        if let m = p.sttModel { out.sttModel = sttModel(m) }
+        out.cleanup = p.cleanup
+        if let c = p.cleanupStatus { out.cleanupStatus = cleanupStatus(c) }
+        if let e = p.errorCode { out.errorCode = errorCode(e) }
+        return out
+    }
+
+    private static func matches(_ s: String, _ pattern: String) -> Bool {
+        s.range(of: pattern, options: .regularExpression) != nil
+    }
+}
+
+// MARK: - Encoder (exact contract; sanitizes at the wire boundary)
+
+enum TelemetryEncoder {
+    static func batchObject(env: TelemetryEnv, events: [TelemetryEvent]) -> [String: Any] {
+        [
+            "schema_version": env.schemaVersion,
+            "install_id": env.installID,
+            "app_version": env.appVersion,
+            "os_version": env.osVersion,
+            "arch": env.arch,
+            "events": events.map(eventObject),
+        ]
+    }
+
+    private static func eventObject(_ e: TelemetryEvent) -> [String: Any] {
+        var o: [String: Any] = ["event": e.event.rawValue, "ts": e.ts]
+        // Sanitize here so content can never reach the wire, regardless of caller.
+        let p = propsObject(TelemetrySanitizer.clean(e.props))
+        if !p.isEmpty { o["props"] = p }   // events without props omit the key
+        return o
+    }
+
+    private static func propsObject(_ p: TelemetryProps) -> [String: Any] {
+        var o: [String: Any] = [:]
+        if let v = p.durationMs { o["duration_ms"] = v }
+        if let v = p.sttModel { o["stt_model"] = v }
+        if let v = p.cleanup { o["cleanup"] = v }
+        if let v = p.cleanupStatus { o["cleanup_status"] = v }
+        if let v = p.errorCode { o["error_code"] = v }
+        return o
+    }
+
+    static func encodeBatch(env: TelemetryEnv, events: [TelemetryEvent]) throws -> Data {
+        try JSONSerialization.data(
+            withJSONObject: batchObject(env: env, events: events), options: [.sortedKeys])
+    }
+}
+
+// MARK: - Bounded queue + 50-event chunking
+
+struct TelemetryQueue: Sendable {
+    private(set) var events: [TelemetryEvent] = []
+    let cap: Int
+    let maxBatch: Int
+
+    init(cap: Int = 200, maxBatch: Int = 50) {
+        self.cap = cap
+        self.maxBatch = maxBatch
+    }
+
+    var isEmpty: Bool { events.isEmpty }
+
+    mutating func enqueue(_ e: TelemetryEvent) {
+        events.append(e)
+        trim()
+    }
+
+    /// Up to `maxBatch` of the oldest events, removed from the queue.
+    mutating func nextBatch() -> [TelemetryEvent] {
+        let n = min(maxBatch, events.count)
+        guard n > 0 else { return [] }
+        let batch = Array(events.prefix(n))
+        events.removeFirst(n)
+        return batch
+    }
+
+    /// Put a batch back at the front after a retryable failure. Still bounded —
+    /// a server that's down can never make the queue grow without limit.
+    mutating func requeueFront(_ batch: [TelemetryEvent]) {
+        events.insert(contentsOf: batch, at: 0)
+        trim()
+    }
+
+    private mutating func trim() {
+        if events.count > cap { events.removeFirst(events.count - cap) }
+    }
+}
+
+// MARK: - Gate
+
+enum TelemetryGate {
+    /// Sends only when the user opted in AND an endpoint exists — so the whole
+    /// system no-ops cleanly even before an endpoint is configured.
+    static func shouldSend(enabled: Bool, endpoint: URL?) -> Bool {
+        enabled && endpoint != nil
+    }
+}
+
+// MARK: - Environment metadata
+
+enum TelemetryEnvBuilder {
+    static func current(installID: String) -> TelemetryEnv {
+        TelemetryEnv(schemaVersion: 1, installID: installID,
+                     appVersion: appVersion(), osVersion: osVersion(), arch: arch())
+    }
+
+    static func appVersion() -> String {
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.0.0"
+    }
+
+    static func osVersion() -> String {
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        return "macOS \(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
+    }
+
+    static func arch() -> String {
+        #if arch(arm64)
+        return "arm64"
+        #elseif arch(x86_64)
+        return "x86_64"
+        #else
+        return "unknown"
+        #endif
+    }
+}
+
+// MARK: - Send result (HTTP status → action)
+
+enum TelemetrySendResult: Equatable, Sendable {
+    case success            // 204 — drop the batch (done)
+    case permanentFailure   // 400/405/413 — drop the batch (re-sending won't help)
+    case retryableFailure   // 5xx / network — requeue (server dedupes, so safe)
+}
+
+// MARK: - Client (the thin side-effect shell over the pure pieces)
+
+actor TelemetryClient {
+    typealias Sender = @Sendable (URL, Data) async -> TelemetrySendResult
+
+    /// The Natter ingest endpoint (GCP Cloud Run → BigQuery, separate repo).
+    /// `nil` here would make the whole client no-op cleanly.
+    static let productionEndpoint = URL(string: "https://murmur-ingest-w5tvsus5ia-uc.a.run.app")
+
+    private var queue: TelemetryQueue
+    private let endpoint: URL?
+    private let isEnabled: @Sendable () -> Bool
+    private let env: TelemetryEnv
+    private let now: @Sendable () -> Int
+    private let sender: Sender
+    private var flushTask: Task<Void, Never>?
+
+    init(endpoint: URL?, enabled: @escaping @Sendable () -> Bool, env: TelemetryEnv,
+         now: @escaping @Sendable () -> Int, sender: @escaping Sender,
+         queue: TelemetryQueue = TelemetryQueue()) {
+        self.endpoint = endpoint
+        self.isEnabled = enabled
+        self.env = env
+        self.now = now
+        self.sender = sender
+        self.queue = queue
+    }
+
+    /// The process-wide client. Reads consent fresh from UserDefaults on every
+    /// flush, so turning the toggle off stops sending immediately.
+    static let shared: TelemetryClient = {
+        var store = TelemetryStore()
+        let id = store.installID()
+        return TelemetryClient(
+            endpoint: productionEndpoint,
+            enabled: { TelemetryStore().enabled },
+            env: TelemetryEnvBuilder.current(installID: id),
+            now: { Int(Date().timeIntervalSince1970 * 1000) },
+            sender: TelemetryClient.urlSessionSender)
+    }()
+
+    // MARK: enqueue
+
+    /// Pure enqueue (used by tests). Production uses `emit`, which also schedules
+    /// a debounced flush so back-to-back events batch into one POST.
+    func record(_ event: TelemetryEvent) { queue.enqueue(event) }
+
+    /// Fire-and-forget entry from any context. Never blocks the caller; the
+    /// gate makes it a true no-op when consent is off or no endpoint is set.
+    nonisolated func emit(_ name: TelemetryEventName, props: TelemetryProps = TelemetryProps()) {
+        Task { await self.ingest(name: name, props: props) }
+    }
+
+    private func ingest(name: TelemetryEventName, props: TelemetryProps) {
+        queue.enqueue(TelemetryEvent(event: name, ts: now(), props: props))
+        scheduleFlush()
+    }
+
+    private func scheduleFlush() {
+        guard flushTask == nil else { return }
+        flushTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)   // ~2 s debounce
+            await self?.runScheduledFlush()
+        }
+    }
+
+    private func runScheduledFlush() async {
+        flushTask = nil
+        await flush()
+    }
+
+    // MARK: flush
+
+    func flush() async {
+        guard TelemetryGate.shouldSend(enabled: isEnabled(), endpoint: endpoint),
+              let endpoint else { return }
+        while !queue.isEmpty {
+            let batch = queue.nextBatch()
+            guard !batch.isEmpty else { break }
+            guard let data = try? TelemetryEncoder.encodeBatch(env: env, events: batch),
+                  data.count <= 64_000 else {
+                continue   // unencodable or over the 64 KB limit → drop this batch
+            }
+            switch await sender(endpoint, data) {
+            case .success, .permanentFailure:
+                continue   // done, or unrecoverable — either way, drop it
+            case .retryableFailure:
+                queue.requeueFront(batch)
+                return     // stop now; a later flush retries (dedup makes it safe)
+            }
+        }
+    }
+
+    // MARK: side-effect shell
+
+    static func classify(status: Int) -> TelemetrySendResult {
+        switch status {
+        case 200..<300: return .success
+        case 500..<600: return .retryableFailure
+        default: return .permanentFailure   // 400/405/413/etc — must not retry
+        }
+    }
+
+    static let urlSessionSender: Sender = { url, data in
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("natter-macos", forHTTPHeaderField: "X-Natter-Client")
+        req.httpBody = data
+        do {
+            let (_, resp) = try await URLSession.shared.data(for: req)
+            guard let http = resp as? HTTPURLResponse else { return .retryableFailure }
+            return TelemetryClient.classify(status: http.statusCode)
+        } catch {
+            return .retryableFailure   // network error → retry; server dedupes
+        }
+    }
+}

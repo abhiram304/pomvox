@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from murmur.app import preview
+from natter.app import preview
 
 
 def test_short_text_passes_through():

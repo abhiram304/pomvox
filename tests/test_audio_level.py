@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from murmur.audio import block_dbfs
+from natter.audio import block_dbfs
 
 
 def test_silence_sits_at_the_floor():

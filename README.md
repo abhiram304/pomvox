@@ -1,4 +1,4 @@
-# Murmur
+# Natter
 
 Fully local, privacy-first voice dictation for macOS on Apple Silicon. Hold a
 hotkey, speak, and the transcript is inserted into whatever text field is
@@ -8,7 +8,7 @@ leave your machine.** The only network calls are the one-time model download
 from Hugging Face and — if you opt in — anonymous, content-free usage stats
 (off by default; toggle in Settings → Privacy).
 
-Murmur is a native SwiftUI menu-bar app (`Murmur.app`): live two-tone draft as
+Natter is a native SwiftUI menu-bar app (`Natter.app`): live two-tone draft as
 you speak, a Hub window with your dictation history and settings, and a Setup
 walkthrough for permissions. It runs from the menu bar, can launch at login, and
 keeps a bounded, transcripts-only history you can search and wipe.
@@ -17,10 +17,10 @@ See [SPEC.md](SPEC.md) for the full product spec,
 [ARCHITECTURE.md](ARCHITECTURE.md) for how the implemented system fits together,
 and [CONTRIBUTING.md](CONTRIBUTING.md) to get involved.
 
-> **Project status.** Murmur began as a Python menu-bar app and is now a native
+> **Project status.** Natter began as a Python menu-bar app and is now a native
 > Swift app. The native app is the daily driver; the original Python engine
 > still ships in this repo as a runnable reference and the cross-checked test
-> spec (see [Two engines](#two-engines)). Today you build `Murmur.app` from
+> spec (see [Two engines](#two-engines)). Today you build `Natter.app` from
 > source; a signed, notarized download (and Homebrew cask) is the next
 > milestone. The native engine is **off by default** until you enable it.
 
@@ -43,14 +43,14 @@ scripts/dev-signing-cert.sh
 # 2. Generate the Xcode project and build OUTSIDE iCloud (codesign rejects the
 #    extended attributes iCloud adds to a synced folder).
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-cd Murmur && xcodegen generate
-xcodebuild -project Murmur.xcodeproj -scheme Murmur \
-  -configuration Debug -derivedDataPath /tmp/murmur-hub-dd build
+cd Natter && xcodegen generate
+xcodebuild -project Natter.xcodeproj -scheme Natter \
+  -configuration Debug -derivedDataPath /tmp/natter-hub-dd build
 
 # 3. Install to a stable path (launch-at-login and TCC grants need this — not a
 #    DerivedData path).
-cp -R /tmp/murmur-hub-dd/Build/Products/Debug/Murmur.app ~/Applications/
-open ~/Applications/Murmur.app
+cp -R /tmp/natter-hub-dd/Build/Products/Debug/Natter.app ~/Applications/
+open ~/Applications/Natter.app
 ```
 
 ## First run
@@ -59,17 +59,17 @@ open ~/Applications/Murmur.app
    with a live checklist and deep links into System Settings:
    - **Microphone** — to hear you.
    - **Input Monitoring** — for the global hotkey (after granting, relaunch
-     Murmur once; macOS doesn't extend this grant to an already-running app).
+     Natter once; macOS doesn't extend this grant to an already-running app).
    - **Accessibility** — to paste via ⌘V. The Setup pane's *insertion self-test*
      confirms it end-to-end.
 2. **Set the Globe key to Do Nothing.** System Settings → Keyboard → "Press 🌐
-   key to" → **Do Nothing**, otherwise macOS intercepts Fn before Murmur sees
+   key to" → **Do Nothing**, otherwise macOS intercepts Fn before Natter sees
    it.
 3. **Enable the engine.** Settings → *Native engine* → on. It arms the hotkey,
    loads the speech model (first run downloads parakeet-tdt-0.6b-v3, ~1.2 GB),
    and is ready in a second or two.
 4. **(Optional) Launch at login.** Settings → General → *Launch at login*.
-   Murmur then comes up in the menu bar at login, already armed — zero clicks
+   Natter then comes up in the menu bar at login, already armed — zero clicks
    from login to dictating.
 
 ## Usage
@@ -90,7 +90,7 @@ The Hub window (menu bar → **Open Hub…**, or the Dock icon while it's open):
 - **Home** — words / dictations / average WPM, a 30-day activity strip, and your
   recent dictations as two-tone raw→clean pairs.
 - **History** — raw vs. cleaned side by side, search, copy / re-insert / delete /
-  delete-all. Local-only sqlite at `~/.murmur/history.db`: **transcripts only —
+  delete-all. Local-only sqlite at `~/.natter/history.db`: **transcripts only —
   audio is never stored** — rows auto-delete after `[history] retention_days`
   (default 7; `0` keeps nothing, `enabled = false` writes nothing).
 - **Settings** — models, hotkeys, cleanup, HUD, launch-at-login. Cleanup/HUD
@@ -99,13 +99,13 @@ The Hub window (menu bar → **Open Hub…**, or the Dock icon while it's open):
 
 ## Configuration
 
-Settings are edited in the Hub; everything also lives in `~/.murmur/config.toml`
+Settings are edited in the Hub; everything also lives in `~/.natter/config.toml`
 (comment-preserving — hand edits and unknown sections survive). Copy
 [`config.example.toml`](config.example.toml) for the full set. Highlights:
 
 - `[cleanup]` — `enabled`, `model`, `style` (`light` = fillers/punctuation only;
   `polish` also smooths rambles), `timeout_s` (on timeout the raw transcript is
-  inserted — Murmur never loses your words to a slow model).
+  inserted — Natter never loses your words to a slow model).
 - `[history]` — `retention_days`, `enabled`.
 - `[engine] native` — the native engine toggle (the app owns this; the Hub flips
   it).
@@ -118,40 +118,40 @@ models to trade speed for quality on your hardware.
 Your voice and transcripts never leave this Mac — that's the whole point, and it
 isn't negotiable. The cleanup LLM and speech model both run on-device.
 
-The only network calls Murmur ever makes are:
+The only network calls Natter ever makes are:
 
 1. The one-time model download from Hugging Face.
-2. **Optional, anonymous usage stats** — off by default. On first run Murmur
+2. **Optional, anonymous usage stats** — off by default. On first run Natter
    shows a one-time prompt; you can also flip it anytime in **Settings →
    Privacy**, which spells out exactly what's sent.
 
-If you turn the stats on, Murmur sends a random per-install ID (anonymous) plus
+If you turn the stats on, Natter sends a random per-install ID (anonymous) plus
 content-free counters: app/OS version, that a dictation happened with its
 duration, which models ran, whether cleanup was used, and enum-only error codes.
 It **never** sends audio, transcripts, cleaned text, file paths, or any free
 text — there is no field in the payload that could carry them. Being opt-in,
 anonymous, and open source is the point: you can read exactly what leaves in
-[`Telemetry.swift`](Murmur/Sources/Telemetry.swift). The Python reference engine
+[`Telemetry.swift`](Natter/Sources/Telemetry.swift). The Python reference engine
 makes no network calls at all.
 
 ## Two engines
 
-This repo contains two implementations that share `~/.murmur/config.toml` and
-`~/.murmur/history.db`:
+This repo contains two implementations that share `~/.natter/config.toml` and
+`~/.natter/history.db`:
 
-- **Native Swift engine** (`Murmur.app`, `Murmur/`) — the daily driver. STT on
+- **Native Swift engine** (`Natter.app`, `Natter/`) — the daily driver. STT on
   the Neural Engine ([FluidAudio](https://github.com/FluidInference/FluidAudio)),
   cleanup on the GPU ([mlx-swift](https://github.com/ml-explore/mlx-swift)).
-- **Python engine** (`src/murmur/`, `uv run murmur`) — the original app, now
+- **Python engine** (`src/natter/`, `uv run natter`) — the original app, now
   frozen as a runnable reference. Its pure-logic modules (state machines,
   endpointer, history, onboarding) are Linux-tested and remain the **spec** the
   Swift port is checked against, vector for vector.
 
-Only one engine runs at a time — a pidfile (`~/.murmur/engine.pid`) enforces
+Only one engine runs at a time — a pidfile (`~/.natter/engine.pid`) enforces
 mutual exclusion, so the single writer to `history.db` is guaranteed. Run the
-Python engine with `uv run murmur` (see `uv run murmur --check` for a permission
+Python engine with `uv run natter` (see `uv run natter --check` for a permission
 report); note that under `uv run` the TCC grants attach to your terminal app,
-not to Murmur.
+not to Natter.
 
 ## Development
 
@@ -162,8 +162,8 @@ checked against the same vectors.
 ```sh
 uv run pytest                                              # Python spec suite
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-xcodebuild test -project Murmur/Murmur.xcodeproj -scheme Murmur \
-  -derivedDataPath /tmp/murmur-hub-dd -destination 'platform=macOS'
+xcodebuild test -project Natter/Natter.xcodeproj -scheme Natter \
+  -derivedDataPath /tmp/natter-hub-dd -destination 'platform=macOS'
 ```
 
 Latency and footprint claims in PRs come with numbers from a real Apple Silicon
@@ -174,10 +174,10 @@ its measured gates are in [docs/native-swift-path.md](docs/native-swift-path.md)
 
 Day-to-day builds use a free self-signed cert (`scripts/dev-signing-cert.sh`).
 Distribution uses **Developer ID + hardened runtime + notarization** — the
-`Release` config in `Murmur/project.yml`, driven by:
+`Release` config in `Natter/project.yml`, driven by:
 
 ```sh
-scripts/notarize-release.sh   # build → sign → notarize → staple → dist/Murmur.zip
+scripts/notarize-release.sh   # build → sign → notarize → staple → dist/Natter.zip
 ```
 
 One-time setup (Developer ID cert in Xcode + a `notarytool` keychain profile) is

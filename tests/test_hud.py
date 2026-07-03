@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from murmur.hud import (
+from natter.hud import (
     HudStateMachine,
     LevelHistory,
     level01,
@@ -10,7 +10,7 @@ from murmur.hud import (
     split_stable_prefix,
     truncate_head,
 )
-from murmur.uibus import UiEvent
+from natter.uibus import UiEvent
 
 
 def test_split_stable_prefix_marks_the_new_chunk():

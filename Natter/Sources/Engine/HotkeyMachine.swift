@@ -1,0 +1,166 @@
+import Foundation
+
+/// Hotkey handling: a pure state machine that consumes (keycode, down) events
+/// and emits a `Decision` per event. Platform-free and unit-tested — the
+/// CGEventTap that feeds it lives in `EventTap.swift`.
+///
+/// Faithful port of `src/natter/hotkey.py` (the Linux-tested spec); the test
+/// vectors in `tests/test_hotkey_machine.py` are reproduced 1:1 in
+/// `HotkeyMachineTests.swift`. Scheme (config-driven, defaults shown):
+/// - push-to-talk: hold `fn` → record while held; release → stop.
+/// - toggle: `fn+space` while recording switches to hands-free; a second
+///   `fn+space`, a tap of the PTT key, or the optional `stop` key stops.
+/// - cancel: `esc` while recording discards the utterance.
+/// Toggle/stop/cancel keypresses are swallowed; everything else passes through.
+enum HotkeyError: Error, Equatable {
+    case unknownKey(String)
+    case badToggle(String)
+}
+
+final class HotkeyMachine {
+    /// What the controller should do in response to an event.
+    enum Action {
+        case none
+        case startPTT
+        case enterToggle  // ptt → hands-free; recording continues
+        case stop         // finalize: transcribe + insert
+        case cancel       // discard: nothing transcribed, nothing inserted
+    }
+
+    /// The caller (EventTap) swallows the OS event when `swallow`, and forwards
+    /// non-`.none` actions to the controller.
+    struct Decision: Equatable {
+        var action: Action = .none
+        var swallow: Bool = false
+    }
+
+    enum State {
+        case idle
+        case ptt
+        case toggle
+        case busy  // transcribing; hotkeys inert until done()
+    }
+
+    /// Virtual keycodes for the remappable keys (HIToolbox Events.h).
+    static let keycodes: [String: Int] = [
+        "fn": 63,
+        "space": 49,
+        "esc": 53,
+        "right_option": 61,
+        "left_option": 58,
+        "right_command": 54,
+        "right_shift": 60,
+        "right_control": 62,
+    ]
+
+    /// Keycodes that arrive as flagsChanged rather than keyDown (used by EventTap).
+    static let modifierKeycodes: Set<Int> = [63, 61, 58, 54, 55, 60, 56, 62, 59]
+
+    static let pass = Decision()
+
+    let pttKey: Int
+    let toggleMod: Int
+    let toggleKey: Int
+    let stopKey: Int?
+    let cancelKey: Int?
+
+    private(set) var state: State = .idle
+    private var modsDown: Set<Int> = []
+
+    init(ptt: String = "fn", toggle: String = "fn+space",
+         stop: String = "", cancel: String = "esc") throws {
+        self.pttKey = try Self.keycode(ptt)
+        // Python uses str.partition('+'); a missing separator is an error.
+        guard let plus = toggle.firstIndex(of: "+") else {
+            throw HotkeyError.badToggle(toggle)
+        }
+        let mod = String(toggle[..<plus])
+        let key = String(toggle[toggle.index(after: plus)...])
+        self.toggleMod = try Self.keycode(mod)
+        self.toggleKey = try Self.keycode(key)
+        // Both optional: fn tap / fn+space already stop hands-free, and
+        // cancel="" disables the discard gesture entirely.
+        self.stopKey = stop.isEmpty ? nil : try Self.keycode(stop)
+        self.cancelKey = cancel.isEmpty ? nil : try Self.keycode(cancel)
+    }
+
+    private static func keycode(_ name: String) throws -> Int {
+        let key = name.trimmingCharacters(in: .whitespaces).lowercased()
+        guard let code = keycodes[key] else { throw HotkeyError.unknownKey(name) }
+        return code
+    }
+
+    /// A flagsChanged event (modifier key went down or up).
+    func onModifier(_ keycode: Int, _ isDown: Bool) -> Decision {
+        if isDown { modsDown.insert(keycode) } else { modsDown.remove(keycode) }
+
+        if state == .idle, keycode == pttKey, isDown {
+            state = .ptt
+            return Decision(action: .startPTT)
+        }
+        if state == .ptt, keycode == pttKey, !isDown {
+            state = .busy
+            return Decision(action: .stop)
+        }
+        if state == .toggle, keycode == pttKey, isDown {
+            // Tapping the PTT key again is the most discoverable way out of
+            // hands-free mode (Esc and the toggle combo also work).
+            state = .busy
+            return Decision(action: .stop)
+        }
+        return Self.pass
+    }
+
+    func onKeyDown(_ keycode: Int) -> Decision {
+        switch state {
+        case .ptt:
+            if keycode == toggleKey, modsDown.contains(toggleMod) {
+                state = .toggle
+                return Decision(action: .enterToggle, swallow: true)
+            }
+            if let cancelKey, keycode == cancelKey {
+                state = .busy
+                return Decision(action: .cancel, swallow: true)
+            }
+            return Self.pass
+        case .toggle:
+            if let cancelKey, keycode == cancelKey {
+                state = .busy
+                return Decision(action: .cancel, swallow: true)
+            }
+            if (stopKey != nil && keycode == stopKey!)
+                || (keycode == toggleKey && modsDown.contains(toggleMod)) {
+                state = .busy
+                return Decision(action: .stop, swallow: true)
+            }
+            return Self.pass
+        case .busy:
+            // The PTT key already stopped the recording on its way down; eat
+            // the trailing toggle key of a fn+space stop so it isn't typed.
+            if keycode == toggleKey, modsDown.contains(toggleMod) {
+                return Decision(swallow: true)
+            }
+            return Self.pass
+        case .idle:
+            return Self.pass
+        }
+    }
+
+    /// Stop initiated by something other than a key (VAD endpoint). Valid only
+    /// while hands-free: PTT's endpoint is the user's finger, and a stale
+    /// endpoint arriving in BUSY/IDLE must be a no-op.
+    @discardableResult
+    func externalStop() -> Bool {
+        if state == .toggle {
+            state = .busy
+            return true
+        }
+        return false
+    }
+
+    /// Transcription + insertion finished; accept hotkeys again.
+    func done() { state = .idle }
+
+    /// Abort whatever is in flight (e.g. recording failed to start).
+    func reset() { state = .idle }
+}

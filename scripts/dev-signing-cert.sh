@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Create a stable, free, self-signed "Murmur Dev" code-signing identity.
 #
-# Why: from M4 on, Murmur.app uses the Microphone, Input Monitoring, and
+# Why: from M4 on, Natter.app uses the Microphone, Input Monitoring, and
 # Accessibility TCC permissions. macOS keys those grants to the app's *code
 # identity*. An ad-hoc signature ("-") changes identity on every rebuild, so the
 # grants reset each build — fatal for iterative engine work. A stable signing
@@ -50,7 +50,7 @@ openssl req -x509 -newkey rsa:2048 -nodes \
 #     non-empty one (it's only the transport password for the import).
 LEGACY=""
 if openssl version | grep -q "^OpenSSL 3"; then LEGACY="-legacy"; fi
-P12PASS="murmur-dev"
+P12PASS="natter-dev"
 openssl pkcs12 -export $LEGACY -inkey "$WORK/dev.key" -in "$WORK/dev.crt" \
   -out "$WORK/dev.p12" -passout "pass:$P12PASS" -name "$NAME"
 

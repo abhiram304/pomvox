@@ -1,4 +1,4 @@
-# Contributing to Murmur
+# Contributing to Natter
 
 Thanks for helping build local, privacy-first dictation. Start with
 [README.md](README.md) (setup), [ARCHITECTURE.md](ARCHITECTURE.md) (how the
@@ -14,7 +14,7 @@ pieces fit), and [SPEC.md](SPEC.md) (where the project is going).
    content, and clearly disclosed in-app.
 2. **Models are config, not constants.** Anything model-shaped (STT model,
    cleanup model, prompts' tunables, deadlines) must be reachable from
-   `~/.murmur/config.toml`. Hard-coding a model id outside `config.py`
+   `~/.natter/config.toml`. Hard-coding a model id outside `config.py`
    defaults will be asked to change in review.
 3. **Never lose the user's words.** New pipeline stages must fall back to the
    previous stage's output on any failure, bounded by a deadline. See
@@ -27,9 +27,9 @@ pieces fit), and [SPEC.md](SPEC.md) (where the project is going).
 
 ## Development setup
 
-Murmur is two codebases that share `config.toml` and `history.db`: the native
-Swift app (`Murmur/`, the daily driver) and the Python reference engine
-(`src/murmur/`, whose pure-logic modules are the cross-checked test spec). Build
+Natter is two codebases that share `config.toml` and `history.db`: the native
+Swift app (`Natter/`, the daily driver) and the Python reference engine
+(`src/natter/`, whose pure-logic modules are the cross-checked test spec). Build
 the app from source per [README → Install](README.md#install-build-from-source).
 
 The Python side drives the spec suite and is runnable as a reference engine:
@@ -38,7 +38,7 @@ The Python side drives the spec suite and is runnable as a reference engine:
 uv sync
 uv run pytest                        # pure-logic spec suite, runs anywhere (incl. Linux)
 uv run python scripts/preflight.py   # macOS only: STT model end-to-end check
-uv run murmur                        # macOS only: the Python reference engine
+uv run natter                        # macOS only: the Python reference engine
 ```
 
 - **Apple Silicon Mac** is required to run either engine and anything touching
@@ -52,13 +52,13 @@ uv run murmur                        # macOS only: the Python reference engine
 
 ### Building the native app (Swift)
 
-The app (`Murmur/`) is a SwiftUI menu-bar app generated with XcodeGen:
+The app (`Natter/`) is a SwiftUI menu-bar app generated with XcodeGen:
 
 ```sh
 brew install xcodegen                                 # one-time
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer  # not CommandLineTools
-cd Murmur && xcodegen generate                        # after editing project.yml / adding files
-xcodebuild test -scheme Murmur -derivedDataPath /tmp/murmur-hub-dd \
+cd Natter && xcodegen generate                        # after editing project.yml / adding files
+xcodebuild test -scheme Natter -derivedDataPath /tmp/natter-hub-dd \
   -destination 'platform=macOS'                       # build to /tmp, never iCloud Desktop
 ```
 
@@ -74,8 +74,8 @@ scripts/dev-signing-cert.sh          # makes the "Murmur Dev" Code Signing cert
 
 `project.yml` then signs with `CODE_SIGN_IDENTITY: "Murmur Dev"`. The native and
 Python engines never hold the event tap / mic at the same time — a pidfile
-(`~/.murmur/engine.pid`, see `src/murmur/pidfile.py` and
-`Murmur/Sources/Engine/Pidfile.swift`) enforces it; arming one while the other
+(`~/.natter/engine.pid`, see `src/natter/pidfile.py` and
+`Natter/Sources/Engine/Pidfile.swift`) enforces it; arming one while the other
 runs is refused with a message. Distribution signing (Developer ID +
 notarization) is a later milestone.
 

@@ -6,7 +6,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "murmur-native",
+    name: "natter-native",
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.15.0"),
@@ -19,7 +19,7 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "murmur-bench",
+            name: "natter-bench",
             dependencies: [
                 .product(name: "FluidAudio", package: "FluidAudio"),
             ]
@@ -27,7 +27,7 @@ let package = Package(
         // Separate target: needs the Metal toolchain (full Xcode), unlike the
         // STT harness which builds with Command Line Tools alone.
         .executableTarget(
-            name: "murmur-bench-llm",
+            name: "natter-bench-llm",
             dependencies: [
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),

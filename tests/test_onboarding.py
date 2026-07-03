@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from murmur.onboarding import OnboardingFlow
+from natter.onboarding import OnboardingFlow
 
 ALL_GRANTED = {"microphone": True, "input_monitoring": True, "accessibility": True}
 

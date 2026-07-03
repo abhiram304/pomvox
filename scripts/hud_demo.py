@@ -13,8 +13,8 @@ import logging
 
 from PyObjCTools import AppHelper
 
-from murmur.hud import Hud
-from murmur.uibus import UiEvent
+from natter.hud import Hud
+from natter.uibus import UiEvent
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger("hud_demo")

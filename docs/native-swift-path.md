@@ -1,6 +1,6 @@
 # Native Swift path (SPEC §8) — M0 feasibility spike results
 
-The endgame is a native Swift `Murmur.app`: SwiftUI menu bar + Hub window,
+The endgame is a native Swift `Natter.app`: SwiftUI menu bar + Hub window,
 Parakeet STT on the **Neural Engine** via
 [FluidAudio](https://github.com/FluidInference/FluidAudio) (CoreML), Qwen3
 cleanup on the GPU via [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm),
@@ -10,7 +10,7 @@ modules (`HudStateMachine`, `EndpointDetector`, `HotkeyMachine`,
 test suites are the acceptance criteria.
 
 This document records the M0 spike: measured evidence for/against the port,
-gathered with `native/` (the `murmur-bench` harness) and
+gathered with `native/` (the `natter-bench` harness) and
 `scripts/native_baseline.py` before any app code. Per CONTRIBUTING rule 4,
 trust these numbers only for the machine below; rerun both harnesses to
 refresh.
@@ -21,7 +21,7 @@ Identical synthetic WAVs (16 kHz mono, `say` + `afconvert`, see
 `native/scripts/make-fixtures.sh`): 4.6 s / 9.6 s / 20.2 s utterances with
 fillers and self-corrections. 3 runs per measurement, run sequentially (never
 both stacks at once — 16 GB). Swift harness: `swift run -c release
-murmur-bench`. Python harness: `uv run python scripts/native_baseline.py`,
+natter-bench`. Python harness: `uv run python scripts/native_baseline.py`,
 driving the production code paths (`parakeet_mlx.from_pretrained().transcribe`,
 `CleanupEngine` with prefix KV caches).
 
@@ -79,8 +79,8 @@ Python decode rate is ~21 tok/s (ARCHITECTURE.md). Swift must match or beat
 these (M6 gate).
 
 **Swift-side status: MEASURED in the Xcode target (M6) — gate PASS.** As
-planned, the benchmark moved inside `Murmur.app` (`CleanupBenchTests`, gated
-on `MURMUR_LLM_BENCH=1`), where mlx-swift's metallib is a standard build
+planned, the benchmark moved inside `Natter.app` (`CleanupBenchTests`, gated
+on `NATTER_LLM_BENCH=1`), where mlx-swift's metallib is a standard build
 phase. Same machine, light style, 3 runs (2026-06-12):
 
 | | Python (gate) | Swift no prefix cache | Swift + prefix cache |
@@ -125,7 +125,7 @@ both load-bearing for the plan:
    for exactly this reason.
 
 **Implication for the plan, and why it favors (b):** the real app (M1's
-`Murmur.app`) is an **Xcode app target**, where Metal-shader compilation and
+`Natter.app`) is an **Xcode app target**, where Metal-shader compilation and
 metallib bundling are a standard build phase — so the cleanup LLM (M6) builds
 and ships correctly there. The CLI-only spike harness is the awkward case, not
 the app. The equivalent Python-MLX problem (recon: nobody has shipped an
@@ -148,11 +148,11 @@ native/scripts/make-fixtures.sh                          # regenerate WAVs
 uv run python scripts/native_baseline.py --out /tmp/python.json   # repo root
 
 cd native
-swift run -c release murmur-bench fixtures --out /tmp/swift-stt.json   # STT — runs from CLI
+swift run -c release natter-bench fixtures --out /tmp/swift-stt.json   # STT — runs from CLI
 ```
 
-The STT harness (`murmur-bench`, FluidAudio/CoreML) runs from a plain SwiftPM
-build. The cleanup harness (`murmur-bench-llm`, mlx-swift) **compiles** the
+The STT harness (`natter-bench`, FluidAudio/CoreML) runs from a plain SwiftPM
+build. The cleanup harness (`natter-bench-llm`, mlx-swift) **compiles** the
 same way but cannot run from the CLI — MLX's metallib is an Xcode build-rule
 artifact (toolchain note above), so its benchmark moves into M1's Xcode app
 target. Both Swift harness and the Python baseline write JSON with per-run

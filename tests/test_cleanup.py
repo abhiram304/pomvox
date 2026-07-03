@@ -1,6 +1,6 @@
 """Pure-logic tests for the cleanup pass (no mlx required)."""
 
-from murmur.cleanup import (
+from natter.cleanup import (
     accept_output,
     build_messages,
     common_prefix_len,

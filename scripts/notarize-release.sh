@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# notarize-release.sh — build, sign, notarize, and staple a distributable Murmur.app.
+# notarize-release.sh — build, sign, notarize, and staple a distributable Natter.app.
 #
 # This is the M7b distribution pipeline. It builds the Release configuration
-# (Developer ID Application + hardened runtime + Murmur.entitlements, see
-# Murmur/project.yml), notarizes + staples both the .app and a drag-to-Applications
-# .dmg, so the download clears Gatekeeper offline. The result is dist/Murmur.dmg
-# (primary) plus dist/Murmur.zip (the notarized .app).
+# (Developer ID Application + hardened runtime + Natter.entitlements, see
+# Natter/project.yml), notarizes + staples both the .app and a drag-to-Applications
+# .dmg, so the download clears Gatekeeper offline. The result is dist/Natter.dmg
+# (primary) plus dist/Natter.zip (the notarized .app).
 #
 # ── One-time setup ──────────────────────────────────────────────────────────
 #   1. Create the signing cert (once): Xcode ▸ Settings ▸ Accounts ▸ your Apple
@@ -15,7 +15,7 @@
 #   2. Create an app-specific password at appleid.apple.com ▸ Sign-In & Security
 #      ▸ App-Specific Passwords, then store a notarytool keychain profile (once):
 #
-#        xcrun notarytool store-credentials "murmur-notary" \
+#        xcrun notarytool store-credentials "natter-notary" \
 #          --apple-id "you@example.com" --team-id "CT84AT52RS" \
 #          --password "abcd-efgh-ijkl-mnop"
 #
@@ -27,24 +27,24 @@
 #
 # Override any of these via the environment:
 #   TEAM_ID        Apple Developer team id            (default: CT84AT52RS)
-#   NOTARY_PROFILE notarytool keychain profile name   (default: murmur-notary)
+#   NOTARY_PROFILE notarytool keychain profile name   (default: natter-notary)
 #   DEVELOPER_DIR  Xcode.app developer dir            (default: /Applications/Xcode.app/...)
-#   DD             derived-data path (keep OFF iCloud) (default: /tmp/murmur-release-dd)
+#   DD             derived-data path (keep OFF iCloud) (default: /tmp/natter-release-dd)
 #   OUT            output dir for the zip             (default: ./dist)
 #
 set -euo pipefail
 
 TEAM_ID="${TEAM_ID:-CT84AT52RS}"
-NOTARY_PROFILE="${NOTARY_PROFILE:-murmur-notary}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-natter-notary}"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
-DD="${DD:-/tmp/murmur-release-dd}"           # never build on the iCloud Desktop —
+DD="${DD:-/tmp/natter-release-dd}"           # never build on the iCloud Desktop —
 OUT="${OUT:-$(pwd)/dist}"                     # codesign rejects iCloud xattrs.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROJ_DIR="$REPO_ROOT/Murmur"
-APP="$DD/Build/Products/Release/Murmur.app"
-ZIP="$OUT/Murmur.zip"
-DMG="$OUT/Murmur.dmg"
+PROJ_DIR="$REPO_ROOT/Natter"
+APP="$DD/Build/Products/Release/Natter.app"
+ZIP="$OUT/Natter.zip"
+DMG="$OUT/Natter.dmg"
 
 say() { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
@@ -68,8 +68,8 @@ say "Generating project"
 
 say "Building Release"
 xcodebuild \
-  -project "$PROJ_DIR/Murmur.xcodeproj" \
-  -scheme Murmur \
+  -project "$PROJ_DIR/Natter.xcodeproj" \
+  -scheme Natter \
   -configuration Release \
   -derivedDataPath "$DD" \
   -destination 'generic/platform=macOS' \
@@ -112,12 +112,12 @@ spctl --assess --type execute --verbose=2 "$APP" || true
 # the DMG. We then notarize + staple the DMG itself so the download clears
 # Gatekeeper directly.
 say "Building DMG"
-STAGE="$(mktemp -d)/Murmur"
+STAGE="$(mktemp -d)/Natter"
 mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"   # drag-to-install affordance
 rm -f "$DMG"
-hdiutil create -volname "Murmur" -srcfolder "$STAGE" -ov -format UDZO "$DMG" | tail -1
+hdiutil create -volname "Natter" -srcfolder "$STAGE" -ov -format UDZO "$DMG" | tail -1
 rm -rf "$(dirname "$STAGE")"
 
 say "Signing the DMG (Developer ID)"
