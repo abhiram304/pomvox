@@ -20,9 +20,10 @@ and [CONTRIBUTING.md](CONTRIBUTING.md) to get involved.
 > **Project status.** Pomvox began as a Python menu-bar app and is now a native
 > Swift app. The native app is the daily driver; the original Python engine
 > still ships in this repo as a runnable reference and the cross-checked test
-> spec (see [Two engines](#two-engines)). Today you build `Pomvox.app` from
-> source; a signed, notarized download (and Homebrew cask) is the next
-> milestone. The native engine is **off by default** until you enable it.
+> spec (see [Two engines](#two-engines)). A signed, notarized download is
+> available on the [Releases page](https://github.com/abhiram304/pomvox/releases/latest);
+> you can also build from source. The native engine is **off by default** until
+> you enable it.
 
 ## Requirements
 
@@ -31,6 +32,16 @@ and [CONTRIBUTING.md](CONTRIBUTING.md) to get involved.
   Tools) and [`xcodegen`](https://github.com/yonsm/XcodeGen) — `brew install xcodegen`
 - [`uv`](https://docs.astral.sh/uv/) — only for the Python reference engine and
   the test suite
+
+## Download
+
+Grab the latest **notarized** `Pomvox.dmg` from the
+[Releases page](https://github.com/abhiram304/pomvox/releases/latest), open it,
+and drag **Pomvox** to Applications. It's signed with a Developer ID and notarized
+by Apple, so it opens with no right-click dance. Then launch it and grant the
+three permissions in **Setup** (Microphone, Input Monitoring, Accessibility).
+
+Requires an Apple Silicon Mac on macOS 14+.
 
 ## Install (build from source)
 
