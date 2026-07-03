@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-make-app-icon.py — generate Natter's app icon from the app's own theme.
+make-app-icon.py — generate Pomvox's app icon from the app's own theme.
 
 The icon is the brand in one glance: a warm espresso squircle (the dark `pane`)
 with a glowing ember waveform (Palette.ember → gold), echoing the in-app Waveform
@@ -10,7 +10,7 @@ every macOS icon size — crisp at 16 px and 1024 px alike.
 
     python3 scripts/make-app-icon.py
 
-Writes the full AppIcon set into Natter/Sources/Assets.xcassets/AppIcon.appiconset/
+Writes the full AppIcon set into Pomvox/Sources/Assets.xcassets/AppIcon.appiconset/
 and a preview PNG next to this script's output dir.
 """
 import json
@@ -33,7 +33,7 @@ R = S * SS          # render size
 def px(v): return int(round(v * SS))   # nominal → render px
 
 OUT = os.path.join(os.path.dirname(__file__), "..",
-                   "Natter", "Sources", "Assets.xcassets", "AppIcon.appiconset")
+                   "Pomvox", "Sources", "Assets.xcassets", "AppIcon.appiconset")
 OUT = os.path.normpath(OUT)
 
 
@@ -143,9 +143,9 @@ def main():
         with open(cat_contents, "w") as f:
             json.dump({"info": {"version": 1, "author": "xcode"}}, f, indent=2)
 
-    master.save("/tmp/natter-icon-preview.png")
+    master.save("/tmp/pomvox-icon-preview.png")
     print(f"wrote {len(sizes)} pngs + Contents.json → {OUT}")
-    print("preview → /tmp/natter-icon-preview.png")
+    print("preview → /tmp/pomvox-icon-preview.png")
 
 
 if __name__ == "__main__":

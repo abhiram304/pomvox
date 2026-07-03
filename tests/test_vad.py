@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from natter.vad import Endpointer, EndpointDetector, FrameSlicer, frame_dbfs
+from pomvox.vad import Endpointer, EndpointDetector, FrameSlicer, frame_dbfs
 
 FRAME_MS = 30  # 480 samples at 16 kHz
 

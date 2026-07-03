@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 
-from natter.uibus import Coalescer, Throttle, UiEvent, MainThreadBus
+from pomvox.uibus import Coalescer, Throttle, UiEvent, MainThreadBus
 
 
 class TestCoalescer:

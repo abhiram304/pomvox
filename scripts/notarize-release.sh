@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# notarize-release.sh — build, sign, notarize, and staple a distributable Natter.app.
+# notarize-release.sh — build, sign, notarize, and staple a distributable Pomvox.app.
 #
 # This is the M7b distribution pipeline. It builds the Release configuration
-# (Developer ID Application + hardened runtime + Natter.entitlements, see
-# Natter/project.yml), notarizes + staples both the .app and a drag-to-Applications
-# .dmg, so the download clears Gatekeeper offline. The result is dist/Natter.dmg
-# (primary) plus dist/Natter.zip (the notarized .app).
+# (Developer ID Application + hardened runtime + Pomvox.entitlements, see
+# Pomvox/project.yml), notarizes + staples both the .app and a drag-to-Applications
+# .dmg, so the download clears Gatekeeper offline. The result is dist/Pomvox.dmg
+# (primary) plus dist/Pomvox.zip (the notarized .app).
 #
 # ── One-time setup ──────────────────────────────────────────────────────────
 #   1. Create the signing cert (once): Xcode ▸ Settings ▸ Accounts ▸ your Apple
@@ -29,7 +29,7 @@
 #   TEAM_ID        Apple Developer team id            (default: CT84AT52RS)
 #   NOTARY_PROFILE notarytool keychain profile name   (default: natter-notary)
 #   DEVELOPER_DIR  Xcode.app developer dir            (default: /Applications/Xcode.app/...)
-#   DD             derived-data path (keep OFF iCloud) (default: /tmp/natter-release-dd)
+#   DD             derived-data path (keep OFF iCloud) (default: /tmp/pomvox-release-dd)
 #   OUT            output dir for the zip             (default: ./dist)
 #
 set -euo pipefail
@@ -37,14 +37,14 @@ set -euo pipefail
 TEAM_ID="${TEAM_ID:-CT84AT52RS}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-natter-notary}"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
-DD="${DD:-/tmp/natter-release-dd}"           # never build on the iCloud Desktop —
+DD="${DD:-/tmp/pomvox-release-dd}"           # never build on the iCloud Desktop —
 OUT="${OUT:-$(pwd)/dist}"                     # codesign rejects iCloud xattrs.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROJ_DIR="$REPO_ROOT/Natter"
-APP="$DD/Build/Products/Release/Natter.app"
-ZIP="$OUT/Natter.zip"
-DMG="$OUT/Natter.dmg"
+PROJ_DIR="$REPO_ROOT/Pomvox"
+APP="$DD/Build/Products/Release/Pomvox.app"
+ZIP="$OUT/Pomvox.zip"
+DMG="$OUT/Pomvox.dmg"
 
 say() { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
@@ -68,8 +68,8 @@ say "Generating project"
 
 say "Building Release"
 xcodebuild \
-  -project "$PROJ_DIR/Natter.xcodeproj" \
-  -scheme Natter \
+  -project "$PROJ_DIR/Pomvox.xcodeproj" \
+  -scheme Pomvox \
   -configuration Release \
   -derivedDataPath "$DD" \
   -destination 'generic/platform=macOS' \
@@ -112,12 +112,12 @@ spctl --assess --type execute --verbose=2 "$APP" || true
 # the DMG. We then notarize + staple the DMG itself so the download clears
 # Gatekeeper directly.
 say "Building DMG"
-STAGE="$(mktemp -d)/Natter"
+STAGE="$(mktemp -d)/Pomvox"
 mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"   # drag-to-install affordance
 rm -f "$DMG"
-hdiutil create -volname "Natter" -srcfolder "$STAGE" -ov -format UDZO "$DMG" | tail -1
+hdiutil create -volname "Pomvox" -srcfolder "$STAGE" -ov -format UDZO "$DMG" | tail -1
 rm -rf "$(dirname "$STAGE")"
 
 say "Signing the DMG (Developer ID)"
