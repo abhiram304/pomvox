@@ -3,7 +3,7 @@
 # voice — same recipe as scripts/preflight.py. Output: native/fixtures/*.wav
 # (gitignored; regenerate anywhere with this script).
 #
-# Three lengths bracket Natter's typical dictations: ~3 s (one sentence),
+# Three lengths bracket Pomvox's typical dictations: ~3 s (one sentence),
 # ~8 s (a few sentences), ~15 s (long-form), matching the M0 spike's
 # volatile/confirmed promotion probe.
 set -eu
@@ -25,7 +25,7 @@ synth medium_8s "um so the three things are uh first do the thing wait no two th
 first do the thing and second ship it. also remind me to email the team about \
 the quarterly numbers before the end of the week"
 
-synth long_15s "okay so here's the plan for the natter project. first we benchmark \
+synth long_15s "okay so here's the plan for the pomvox project. first we benchmark \
 the new speech model on the neural engine and compare it against the current \
 pipeline. then if the numbers hold up we port the hotkey state machine and the \
 endpoint detector, keeping the python tests as the specification. finally we wire \

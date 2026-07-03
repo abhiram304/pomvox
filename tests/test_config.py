@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from natter import config
+from pomvox import config
 
 
 def write(tmp_path: Path, text: str) -> Path:
@@ -192,7 +192,7 @@ def test_bad_dictionary_words_fall_back(tmp_path, caplog):
 
 def test_restart_required_flags_dictionary_words_change():
     old = config.Config()
-    new = config.Config(dictionary=config.DictionaryConfig(words=["Natter"]))
+    new = config.Config(dictionary=config.DictionaryConfig(words=["Pomvox"]))
     assert config.restart_required(old, new) == ["dictionary.words"]
 
 

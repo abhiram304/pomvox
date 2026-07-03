@@ -1,6 +1,6 @@
 """Pure-logic tests for the cleanup pass (no mlx required)."""
 
-from natter.cleanup import (
+from pomvox.cleanup import (
     accept_output,
     build_messages,
     common_prefix_len,

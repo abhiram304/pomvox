@@ -1,6 +1,6 @@
 import pytest
 
-from natter.hotkey import KEYCODES, Action, HotkeyMachine, State
+from pomvox.hotkey import KEYCODES, Action, HotkeyMachine, State
 
 FN = KEYCODES["fn"]
 SPACE = KEYCODES["space"]

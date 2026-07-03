@@ -1,0 +1,125 @@
+# XcodeGen spec for Pomvox.app — the native Hub (M1).
+# Regenerate the .xcodeproj with:  cd Pomvox && xcodegen generate
+# The generated Pomvox.xcodeproj is gitignored; this file is the source of truth.
+name: Pomvox
+options:
+  bundleIdPrefix: app.pomvox
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+packages:
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio.git
+    from: "0.15.0"
+  # Cleanup LLM (M6): Qwen3 on the GPU via mlx-swift-lm. Same pins as the M0
+  # spike harness (native/Package.swift); mlx-swift's default.metallib is an
+  # Xcode build phase, which is why cleanup lives in this target, not a CLI.
+  mlx-swift-lm:
+    url: https://github.com/ml-explore/mlx-swift-lm.git
+    from: "3.31.0"
+  swift-huggingface-mlx:
+    url: https://github.com/DePasqualeOrg/swift-huggingface-mlx.git
+    from: "0.2.0"
+  swift-tokenizers-mlx:
+    url: https://github.com/DePasqualeOrg/swift-tokenizers-mlx.git
+    from: "0.3.0"
+  # Transitive pin: swift-tokenizers 0.6+ made encode/decode throwing, which
+  # swift-tokenizers-mlx 0.3.0 doesn't compile against yet.
+  swift-tokenizers:
+    url: https://github.com/DePasqualeOrg/swift-tokenizers.git
+    minVersion: "0.5.0"
+    maxVersion: "0.6.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Manual
+  configs:
+    # Debug = daily development (M4). The native engine uses Microphone / Input
+    # Monitoring / Accessibility, and macOS keys those TCC grants to the app's
+    # code identity. An ad-hoc signature ("-") changes identity every build,
+    # resetting the grants — fatal for iterative work. "Murmur Dev" is a free,
+    # local, self-signed cert (scripts/dev-signing-cert.sh); grants survive
+    # rebuilds. Hardened runtime stays OFF so the dev loop is unencumbered.
+    Debug:
+      CODE_SIGN_IDENTITY: "Murmur Dev"
+      DEVELOPMENT_TEAM: ""
+      ENABLE_HARDENED_RUNTIME: NO
+    # Release = distribution (M7b). Developer ID + hardened runtime + notarization
+    # (scripts/notarize-release.sh). First launch of a Release build re-prompts
+    # the three TCC grants once — the code identity changed from "Murmur Dev".
+    Release:
+      CODE_SIGN_IDENTITY: "Developer ID Application"
+      DEVELOPMENT_TEAM: "CT84AT52RS"
+      ENABLE_HARDENED_RUNTIME: YES
+      # Notarization requires a secure timestamp (a plain `xcodebuild build`
+      # signs with --timestamp=none) and forbids the get-task-allow debug
+      # entitlement (Xcode injects it unless base-entitlement injection is off).
+      OTHER_CODE_SIGN_FLAGS: "--timestamp"
+      CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+
+targets:
+  Pomvox:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_NAME: Pomvox
+        PRODUCT_BUNDLE_IDENTIFIER: app.pomvox.hub
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Outbound network (model download + opt-in telemetry) and mic. Only
+        # enforced under the Release hardened runtime; inert in Debug. No sandbox.
+        CODE_SIGN_ENTITLEMENTS: Pomvox.entitlements
+        INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Abhi Ram Salammagari · MIT"
+        INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.productivity"
+        INFOPLIST_KEY_CFBundleDisplayName: Pomvox
+        # Native engine (M4): shown when macOS prompts for the microphone.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Pomvox transcribes your speech on-device. Audio never leaves this Mac."
+        ENABLE_PREVIEWS: YES
+    dependencies:
+      - sdk: libsqlite3.tbd
+      - package: FluidAudio
+      - package: mlx-swift-lm
+        product: MLXLLM
+      - package: mlx-swift-lm
+        product: MLXLMCommon
+      - package: swift-huggingface-mlx
+        product: MLXLMHuggingFace
+      - package: swift-tokenizers-mlx
+        product: MLXLMTokenizers
+      # Linked transitively anyway; an explicit product keeps xcodegen from
+      # pruning the version-pinned package reference.
+      - package: swift-tokenizers
+        product: Tokenizers
+
+  PomvoxTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: app.pomvox.hub.tests
+    dependencies:
+      - target: Pomvox
+      - sdk: libsqlite3.tbd
+
+schemes:
+  Pomvox:
+    build:
+      targets:
+        Pomvox: all
+        PomvoxTests: [test]
+    run:
+      config: Debug
+    test:
+      targets:
+        - PomvoxTests

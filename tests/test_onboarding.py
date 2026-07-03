@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from natter.onboarding import OnboardingFlow
+from pomvox.onboarding import OnboardingFlow
 
 ALL_GRANTED = {"microphone": True, "input_monitoring": True, "accessibility": True}
 

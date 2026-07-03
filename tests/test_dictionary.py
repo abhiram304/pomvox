@@ -1,6 +1,6 @@
 """Pure-logic tests for the user dictionary (no mlx required)."""
 
-from natter.dictionary import (
+from pomvox.dictionary import (
     Dictionary,
     compile_replacements,
     prompt_hint,
@@ -29,8 +29,8 @@ def test_prompt_hint_empty_when_no_terms():
 
 
 def test_prompt_hint_strips_and_skips_blanks():
-    hint = prompt_hint(["  MLX  ", "", "Natter"])
-    assert "MLX, Natter" in hint
+    hint = prompt_hint(["  MLX  ", "", "Pomvox"])
+    assert "MLX, Pomvox" in hint
 
 
 # --- substitute -------------------------------------------------------------
@@ -79,13 +79,13 @@ def test_compile_replacements_skips_empty_key(caplog):
 
 
 def test_dictionary_applies_replacements_and_exposes_hint():
-    d = Dictionary(["Natter"], {"mur mur": "Natter"})
-    assert "Natter" in d.hint
-    assert d.apply("open mur mur now") == "open Natter now"
+    d = Dictionary(["Pomvox"], {"mur mur": "Pomvox"})
+    assert "Pomvox" in d.hint
+    assert d.apply("open mur mur now") == "open Pomvox now"
 
 
 def test_dictionary_disabled_is_a_passthrough():
-    d = Dictionary(["Natter"], {"mur mur": "Natter"}, enabled=False)
+    d = Dictionary(["Pomvox"], {"mur mur": "Pomvox"}, enabled=False)
     assert d.hint == ""
     assert d.apply("open mur mur now") == "open mur mur now"
 
@@ -96,5 +96,5 @@ def test_dictionary_empty_text_passthrough():
 
 
 def test_dictionary_no_replacements_returns_text_unchanged():
-    d = Dictionary(["Natter"], {})
+    d = Dictionary(["Pomvox"], {})
     assert d.apply("nothing to change here") == "nothing to change here"

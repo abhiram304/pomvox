@@ -1,6 +1,6 @@
 import json
 
-from natter.bench import BenchLog, Timings
+from pomvox.bench import BenchLog, Timings
 
 
 class FakeClock:

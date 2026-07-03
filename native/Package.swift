@@ -6,7 +6,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "natter-native",
+    name: "pomvox-native",
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.15.0"),
@@ -19,7 +19,7 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "natter-bench",
+            name: "pomvox-bench",
             dependencies: [
                 .product(name: "FluidAudio", package: "FluidAudio"),
             ]
@@ -27,7 +27,7 @@ let package = Package(
         // Separate target: needs the Metal toolchain (full Xcode), unlike the
         // STT harness which builds with Command Line Tools alone.
         .executableTarget(
-            name: "natter-bench-llm",
+            name: "pomvox-bench-llm",
             dependencies: [
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),

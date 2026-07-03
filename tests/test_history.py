@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from natter.history import HistoryStore
+from pomvox.history import HistoryStore
 
 
 def store(tmp_path, **kw):

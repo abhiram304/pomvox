@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from natter.app import preview
+from pomvox.app import preview
 
 
 def test_short_text_passes_through():

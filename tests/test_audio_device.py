@@ -6,7 +6,7 @@ Wrong-mic is the #1 "it doesn't work" cause; a name that no longer resolves
 must degrade to the system default, never crash.
 """
 
-from natter.audio import resolve_input_device
+from pomvox.audio import resolve_input_device
 
 DEVICES = [
     {"name": "MacBook Pro Microphone", "max_input_channels": 1},
