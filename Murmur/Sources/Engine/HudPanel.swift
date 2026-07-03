@@ -34,6 +34,10 @@ final class HudController {
 
     private var displayedDraft = ""
     private var prevState = "hidden"
+    // Bumped on every show(); a hide() fade started before the latest show must
+    // not retire the panel that show reclaimed (guards the re-record-during-fade
+    // race — the intermittent HUD-no-show).
+    private var showGeneration = 0
 
     init(position: String = "bottom-center", showDraft: Bool = true,
          sounds: Bool = true, maxChars: Int = 120) {
@@ -185,17 +189,27 @@ final class HudController {
                                          Double(vf.size.width), Double(vf.size.height)),
                           position: position)
         panel.setFrame(NSRect(x: f.x, y: f.y, width: f.w, height: f.h), display: true)
-        panel.alphaValue = 1.0
+        showGeneration &+= 1
+        // Cancel any in-flight fade-out: a re-record that lands inside hide()'s
+        // 0.25 s fade would otherwise keep animating alpha back to 0 and the HUD
+        // never appears. Re-assigning alpha through a zero-duration animation
+        // replaces the running animation instead of racing it; a bare
+        // `alphaValue = 1.0` does not, which was the intermittent no-show.
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0
+            panel.animator().alphaValue = 1.0
+        }
         panel.orderFrontRegardless()           // never makeKeyAndOrderFront
     }
 
     private func hide(_ panel: NSPanel) {
+        let gen = showGeneration
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.25
             panel.animator().alphaValue = 0.0
-        }, completionHandler: {
-            // Only retire the panel if a re-show hasn't reclaimed it mid-fade
-            // (a quick re-record sets alpha back to 1.0 — see `hudShouldShow`).
+        }, completionHandler: { [weak self] in
+            // Only retire the panel if no show() reclaimed it during the fade.
+            guard let self, self.showGeneration == gen else { return }
             if panel.alphaValue == 0.0 { panel.orderOut(nil) }
         })
     }
