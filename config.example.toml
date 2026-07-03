@@ -1,5 +1,5 @@
-# Murmur configuration.
-# Copy to ~/.murmur/config.toml — every key is optional and defaults to the
+# Natter configuration.
+# Copy to ~/.natter/config.toml — every key is optional and defaults to the
 # values shown here.
 #
 # Privacy: your voice and transcripts never leave this Mac. The only network
@@ -31,7 +31,7 @@ native = false  # the native Swift app's dictation engine. The app owns this
                 # toggle (Settings → Native engine); the Python engine ignores it.
 
 [log]
-file = true  # also write ~/.murmur/murmur.log
+file = true  # also write ~/.natter/natter.log
 
 [vad]
 enabled = true          # hands-free auto-stop on a natural pause
@@ -61,7 +61,7 @@ sounds = true              # start/stop cues for eyes-off dictation
 enabled = true
 # `words`: proper nouns / jargon the LLM should spell your way. Injected into
 # the cleanup prompt (restart required to change). Example:
-# words = ["Salammagari", "parakeet-mlx", "MLX", "Murmur"]
+# words = ["Salammagari", "parakeet-mlx", "MLX", "Natter"]
 #
 # `replacements`: literal misheard → correct fixups applied to the final text,
 # even when cleanup is off or times out (hot-applies on save). Whole-word,

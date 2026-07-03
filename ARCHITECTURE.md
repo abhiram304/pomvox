@@ -1,4 +1,4 @@
-# Murmur architecture
+# Natter architecture
 
 This documents the system **as implemented**. [SPEC.md](SPEC.md) is the product
 spec and phased roadmap; when they disagree about the future, SPEC wins — when
@@ -17,17 +17,17 @@ Guiding constraints, in priority order:
    arrive late-forever or not at all. The HUD and history are best-effort and
    can never block or break dictation.
 4. **Open-source first.** Anything model-shaped is a config value
-   (`~/.murmur/config.toml`), not a constant. Users swap STT and cleanup models
+   (`~/.natter/config.toml`), not a constant. Users swap STT and cleanup models
    to trade speed for quality on their hardware.
 
 ## Two implementations, one contract
 
-Murmur exists twice in this repo:
+Natter exists twice in this repo:
 
-- **`Murmur.app`** (`Murmur/`, Swift + SwiftUI) — the daily driver. A menu-bar
+- **`Natter.app`** (`Natter/`, Swift + SwiftUI) — the daily driver. A menu-bar
   app that is both the dictation **engine** and the **Hub** (history, settings,
   setup) in one process.
-- **The Python engine** (`src/murmur/`) — the original app, now frozen as a
+- **The Python engine** (`src/natter/`) — the original app, now frozen as a
   runnable reference. Its **pure-logic** modules (the state machines, endpoint
   detector, history store, onboarding flow, config schema, cleanup prompt/guard)
   are Linux-tested and are the **spec**: each was ported to Swift vector-for-
@@ -35,16 +35,16 @@ Murmur exists twice in this repo:
 
 The two share two files as their only contract — no IPC:
 
-- `~/.murmur/config.toml` — comment-preserving TOML; both read it, the Hub
+- `~/.natter/config.toml` — comment-preserving TOML; both read it, the Hub
   writes only UI-owned keys.
-- `~/.murmur/history.db` — WAL sqlite, `PRAGMA user_version = 1`. Schema changes
+- `~/.natter/history.db` — WAL sqlite, `PRAGMA user_version = 1`. Schema changes
   require touching both sides in one PR (the contract is frozen at v1).
 
-Only one engine runs at a time. A pidfile (`~/.murmur/engine.pid`, line 1 = pid,
+Only one engine runs at a time. A pidfile (`~/.natter/engine.pid`, line 1 = pid,
 line 2 = owner) enforces mutual exclusion, so there is always a single writer to
 `history.db` and a single owner of the event tap.
 
-## Native pipeline (`Murmur/Sources/Engine/`)
+## Native pipeline (`Natter/Sources/Engine/`)
 
 ```
 [Fn held / Fn+Space]                      EventTap (CGEventTap, flagsChanged)
@@ -86,7 +86,7 @@ reacts to its decisions.
 
 ## App shape: menu-bar first
 
-`MurmurApp` is a `MenuBarExtra` + a single `Window` (the Hub), wired through an
+`NatterApp` is a `MenuBarExtra` + a single `Window` (the Hub), wired through an
 `AppDelegate`:
 
 - **Launch posture.** A login-item launch (detected via the
@@ -188,7 +188,7 @@ never cost a word.
 ## Permissions & code identity
 
 The engine needs Microphone, Input Monitoring, and Accessibility. macOS keys
-those TCC grants to the app's **code identity**, so `Murmur.app` is built with a
+those TCC grants to the app's **code identity**, so `Natter.app` is built with a
 stable self-signed "Murmur Dev" certificate (`scripts/dev-signing-cert.sh`) —
 grants then survive rebuilds. Input Monitoring and Accessibility only take effect
 after a relaunch (a running process is denied at launch), which is why the Setup
@@ -201,14 +201,14 @@ Each engine stage splits Linux-testable pure logic from a thin platform shell,
 and the Python tests are the source of truth the Swift ports are measured
 against: `HotkeyMachine`, `EndpointDetector`/`LevelHistory`, `HudStateMachine` +
 `splitStablePrefix`, `OnboardingFlow`, `HistoryStore`, the config schema, and the
-cleanup prompt/guard. The `Murmur/Tests` XCTest suites reproduce
+cleanup prompt/guard. The `Natter/Tests` XCTest suites reproduce
 `tests/test_*.py` vector-for-vector; `uv run pytest` and `xcodebuild test` both
 gate every change.
 
 ## Custom dictionary (SPEC Phase 4)
 
-Implemented in **both engines** (`src/murmur/dictionary.py`,
-`Murmur/Sources/Engine/MurmurDictionary.swift`), pure-logic and vector-parity
+Implemented in **both engines** (`src/natter/dictionary.py`,
+`Natter/Sources/Engine/NatterDictionary.swift`), pure-logic and vector-parity
 tested against `tests/test_dictionary.py`. Two config-driven (`[dictionary]`)
 mechanisms:
 

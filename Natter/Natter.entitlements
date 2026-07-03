@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Natter entitlements (M7b distribution).
+
+  Deliberately minimal, and deliberately NOT sandboxed: the App Sandbox would
+  break the two things that make Natter work — the global CGEventTap (the hotkey
+  in every app) and synthesized ⌘V into arbitrary apps. Developer ID + notarized
+  distribution does not require the sandbox (only the App Store does).
+
+  - network.client: outbound connections only — the one-time model download from
+    Hugging Face and the opt-in, content-free telemetry POST. No server entitlement.
+  - device.audio-input: the microphone, paired with NSMicrophoneUsageDescription.
+
+  Input Monitoring and Accessibility are TCC grants, not entitlements, and work
+  under the hardened runtime without anything declared here.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+</dict>
+</plist>

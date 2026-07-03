@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from murmur.history import HistoryStore
+from natter.history import HistoryStore
 
 
 def store(tmp_path, **kw):

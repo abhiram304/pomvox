@@ -8,7 +8,7 @@ that an edit actually fires the callback. Both are Linux-safe (os.stat only).
 import threading
 from pathlib import Path
 
-from murmur.watcher import ConfigWatcher, ConfigWatchThread
+from natter.watcher import ConfigWatcher, ConfigWatchThread
 
 
 def test_unchanged_mtime_never_fires():

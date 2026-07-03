@@ -4,7 +4,7 @@ import pytest
 
 np = pytest.importorskip("numpy")
 
-from murmur.stt import Chunker
+from natter.stt import Chunker
 
 
 def blocks(n_blocks, block_len=1600):

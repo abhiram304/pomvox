@@ -1,6 +1,6 @@
 import os
 
-from murmur import pidfile
+from natter import pidfile
 
 DEAD = 999_999  # a pid that won't exist (macOS default pid_max is ~99999)
 

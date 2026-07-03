@@ -1,6 +1,6 @@
 import pytest
 
-from murmur.hotkey import KEYCODES, Action, HotkeyMachine, State
+from natter.hotkey import KEYCODES, Action, HotkeyMachine, State
 
 FN = KEYCODES["fn"]
 SPACE = KEYCODES["space"]

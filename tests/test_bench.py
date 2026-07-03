@@ -1,6 +1,6 @@
 import json
 
-from murmur.bench import BenchLog, Timings
+from natter.bench import BenchLog, Timings
 
 
 class FakeClock:

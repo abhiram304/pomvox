@@ -1,18 +1,18 @@
-# Murmur — product spec & roadmap
+# Natter — product spec & roadmap
 
-This is the product specification and roadmap: what Murmur is, the principles it
+This is the product specification and roadmap: what Natter is, the principles it
 holds to, and where it's going. [ARCHITECTURE.md](ARCHITECTURE.md) documents the
 system **as implemented** (and carries the measured numbers); when the two
 disagree about the present, ARCHITECTURE wins.
 
-## What Murmur is
+## What Natter is
 
-**Murmur** is a fully local, open-source, privacy-first voice dictation app for
+**Natter** is a fully local, open-source, privacy-first voice dictation app for
 macOS on Apple Silicon — an alternative to Wispr Flow. The user holds a global
 hotkey, speaks, and clean, formatted text is inserted into whatever text field is
 focused, in any app. No audio ever leaves the machine.
 
-What makes Murmur more than "press a key and get a raw transcript" is a
+What makes Natter more than "press a key and get a raw transcript" is a
 **two-stage pipeline**: a fast speech-to-text model produces the raw transcript,
 then a small local LLM cleans it up — strips filler words ("um", "uh", "like"),
 fixes punctuation and casing, formats lists, and resolves spoken self-corrections
@@ -26,7 +26,7 @@ are config values).
 ## Status
 
 The core product is built and is the daily driver — a native SwiftUI menu-bar app
-(`Murmur.app`):
+(`Natter.app`):
 
 - ✅ Hold-hotkey dictation (push-to-talk + hands-free), insertion into any app via
   the pasteboard + ⌘V.
@@ -98,7 +98,7 @@ A never-steals-focus **HUD** shows recording state and the live draft; the
 
 ## Tech stack
 
-**Native app (`Murmur/`, the daily driver)** — Swift + SwiftUI, macOS 14+:
+**Native app (`Natter/`, the daily driver)** — Swift + SwiftUI, macOS 14+:
 
 - **STT:** [FluidAudio](https://github.com/FluidInference/FluidAudio) running
   Parakeet TDT (`mlx-community/parakeet-tdt-0.6b-v3`) as CoreML on the Neural
@@ -110,7 +110,7 @@ A never-steals-focus **HUD** shows recording state and the live draft; the
   `NSPanel` HUD; CGEventTap hotkey; `NSPasteboard` + synthesized ⌘V; SMAppService
   launch-at-login.
 
-**Python reference engine (`src/murmur/`)** — the original implementation, frozen
+**Python reference engine (`src/natter/`)** — the original implementation, frozen
 as a runnable reference and the spec the Swift ports are checked against:
 `parakeet-mlx` (STT on the GPU), `mlx-lm` (cleanup), `sounddevice`, `webrtcvad`,
 `pyobjc`, `rumps`. Its pure-logic modules are Linux-tested and gate the Swift
@@ -136,7 +136,7 @@ spec each stage is held to. Phases 0–3 and the native rewrite are shipped; the
 acceptance criteria remain the regression bar.
 
 ### Phase 0 — Scaffold ✅
-Config (`~/.murmur/config.toml`: hotkey, models, cleanup, insertion), structured
+Config (`~/.natter/config.toml`: hotkey, models, cleanup, insertion), structured
 logging with millisecond timings.
 
 ### Phase 1 — Core dictation loop ✅
@@ -172,7 +172,7 @@ same spoken input yields a formal version in Mail and a casual one in Slack.
 
 ### Phase 5 — Command Mode (stretch)
 Select text in any app, press a second hotkey, speak a transform ("make this more
-concise", "turn this into bullet points"); Murmur reads the selection, runs it
+concise", "turn this into bullet points"); Natter reads the selection, runs it
 through the LLM, and replaces it in place.
 
 ## Performance budgets
@@ -190,12 +190,12 @@ gen` log lines and the `timings_json` history column carry the live numbers; the
 ## Repo layout
 
 ```
-murmur/
-  Murmur/                 # native Swift app (daily driver)
-    project.yml           #   XcodeGen spec → Murmur.xcodeproj
+natter/
+  Natter/                 # native Swift app (daily driver)
+    project.yml           #   XcodeGen spec → Natter.xcodeproj
     Sources/              #   SwiftUI Hub + Engine/ (STT, cleanup, HUD, history…)
     Tests/                #   XCTest ports of the pure-logic spec
-  src/murmur/             # Python reference engine + the pure-logic spec
+  src/natter/             # Python reference engine + the pure-logic spec
     audio · stt · cleanup · insert · hud · vad · history · onboarding · …
   tests/                  # Linux-testable spec suite (the Swift ports' vectors)
   scripts/                # dev signing cert, preflight, benches

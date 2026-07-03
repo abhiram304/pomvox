@@ -2,12 +2,12 @@
 
 Times the current stack — parakeet-mlx STT (GPU) and mlx-lm Qwen3 cleanup —
 over the fixture WAVs in native/fixtures/, emitting JSON shaped to line up
-with `murmur-bench` (the Swift/FluidAudio harness). Run on the Mac:
+with `natter-bench` (the Swift/FluidAudio harness). Run on the Mac:
 
     native/scripts/make-fixtures.sh
     uv run python scripts/native_baseline.py --out /tmp/baseline.json
 
-Models come from config defaults (~/.murmur/config.toml overrides apply),
+Models come from config defaults (~/.natter/config.toml overrides apply),
 per the models-are-config rule. Each measurement is 3 runs; the first run
 is reported separately (buffer-pool / warmup effects are real, see
 ARCHITECTURE.md).
@@ -47,7 +47,7 @@ def main() -> int:
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--fixtures", default="native/fixtures")
-    ap.add_argument("--out", default="/tmp/murmur-native-baseline.json")
+    ap.add_argument("--out", default="/tmp/natter-native-baseline.json")
     args = ap.parse_args()
 
     wavs = sorted(Path(args.fixtures).glob("*.wav"))
@@ -55,7 +55,7 @@ def main() -> int:
         print(f"no WAVs in {args.fixtures} — run native/scripts/make-fixtures.sh", file=sys.stderr)
         return 1
 
-    from murmur.config import load as load_config
+    from natter.config import load as load_config
 
     cfg = load_config()
     report: dict = {"machine": _machine(), "stt_model": cfg.stt.model, "cleanup_model": cfg.cleanup.model}
@@ -77,7 +77,7 @@ def main() -> int:
     report["stt"] = stt
 
     # --- Cleanup: mlx-lm Qwen3 with the production prefix-cache path ---
-    from murmur.cleanup import CleanupEngine, run_cleanup
+    from natter.cleanup import CleanupEngine, run_cleanup
 
     engine = CleanupEngine(cfg.cleanup.model)
     load_s, _ = _timed(engine.load)

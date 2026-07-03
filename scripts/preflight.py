@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 
 MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
-TEST_PHRASE = "this is a test of murmur dictation"
+TEST_PHRASE = "this is a test of natter dictation"
 
 
 def generate_test_wav(directory: Path) -> Path:
@@ -41,7 +41,7 @@ def main() -> int:
     if len(sys.argv) > 1:
         wav = Path(sys.argv[1])
     else:
-        tmp = Path(tempfile.mkdtemp(prefix="murmur-preflight-"))
+        tmp = Path(tempfile.mkdtemp(prefix="natter-preflight-"))
         print(f"generating test audio ({TEST_PHRASE!r}) …")
         wav = generate_test_wav(tmp)
 
