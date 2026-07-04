@@ -1,5 +1,10 @@
 # Pomvox
 
+[![Latest release](https://img.shields.io/github/v/release/abhiram304/pomvox?color=e2543a)](https://github.com/abhiram304/pomvox/releases/latest)
+[![Platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20Apple%20Silicon-informational)](#requirements)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/abhiram304/pomvox/total?color=555)](https://github.com/abhiram304/pomvox/releases)
+
 Fully local, privacy-first voice dictation for macOS on Apple Silicon. Hold a
 hotkey, speak, and the transcript is inserted into whatever text field is
 focused — in any app. Speech-to-text runs on the Neural Engine and an optional
@@ -7,6 +12,11 @@ cleanup pass runs a local LLM on the GPU. **Your voice and transcripts never
 leave your machine.** The only network calls are the one-time model download
 from Hugging Face and — if you opt in — anonymous, content-free usage stats
 (off by default; toggle in Settings → Privacy).
+
+<p align="center">
+  <img src="docs/design/hub-real-home.png" width="820"
+       alt="The Pomvox Hub — Home view showing dictation stats, a 30-day activity strip, and recent raw→clean transcripts">
+</p>
 
 Pomvox is a native SwiftUI menu-bar app (`Pomvox.app`): live two-tone draft as
 you speak, a Hub window with your dictation history and settings, and a Setup
