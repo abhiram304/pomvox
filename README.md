@@ -45,13 +45,26 @@ and [CONTRIBUTING.md](CONTRIBUTING.md) to get involved.
 
 ## Download
 
+### Homebrew
+
+```sh
+brew install --cask abhiram304/pomvox/pomvox
+```
+
+This taps [`abhiram304/homebrew-pomvox`](https://github.com/abhiram304/homebrew-pomvox)
+and installs the same notarized `Pomvox.app` into `/Applications`. Upgrade later
+with `brew upgrade --cask pomvox`.
+
+### Direct download
+
 Grab the latest **notarized** `Pomvox.dmg` from the
 [Releases page](https://github.com/abhiram304/pomvox/releases/latest), open it,
 and drag **Pomvox** to Applications. It's signed with a Developer ID and notarized
-by Apple, so it opens with no right-click dance. Then launch it and grant the
-three permissions in **Setup** (Microphone, Input Monitoring, Accessibility).
+by Apple, so it opens with no right-click dance.
 
-Requires an Apple Silicon Mac on macOS 14+.
+Either way, launch Pomvox and grant the three permissions in **Setup**
+(Microphone, Input Monitoring, Accessibility). Requires an Apple Silicon Mac on
+macOS 14+.
 
 ## Install (build from source)
 
