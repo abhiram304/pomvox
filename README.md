@@ -219,3 +219,8 @@ documented in the script header. Debug builds are untouched: same self-signed
 identity, hardened runtime off, so TCC grants survive iterative work. The first
 launch of a Release build re-prompts the three permissions once (the code
 identity changed).
+
+---
+
+Built by [Abhi Ram Salammagari](https://www.abhiramsalammagari.com). Licensed
+under the [MIT License](LICENSE).
