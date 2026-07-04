@@ -5,6 +5,11 @@ description = "Fully local, privacy-first voice dictation for macOS on Apple Sil
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    # numpy backs the pure-logic vad / audio-level math, imported by vad.py and
+    # stt.py. It's cross-platform (unlike the macOS stack below) so the Linux
+    # spec suite resolves it too — otherwise it's only present transitively on
+    # macOS and `pytest` fails to collect test_vad / test_audio_level elsewhere.
+    "numpy",
     "parakeet-mlx>=0.5; sys_platform == 'darwin'",
     "mlx-lm; sys_platform == 'darwin'",
     "sounddevice; sys_platform == 'darwin'",

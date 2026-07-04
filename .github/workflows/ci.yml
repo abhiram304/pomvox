@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same ref (e.g. rapid pushes to a PR).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python-spec:
+    name: Python spec suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      # The pure-logic modules (config, hotkey/hud/vad state machines, bench,
+      # history, onboarding, cleanup prompts/guards) are platform-independent and
+      # are the cross-checked spec the Swift ports are verified against. The
+      # macOS-only deps (mlx, parakeet-mlx, pyobjc, ...) are gated behind
+      # sys_platform markers, so they aren't installed here and the suite runs on
+      # Linux. The native Swift build/tests need a Mac and are not run in CI.
+      - name: Run the Python spec suite
+        run: uv run --frozen pytest -q
