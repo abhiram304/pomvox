@@ -30,6 +30,61 @@ jobs:
       # are the cross-checked spec the Swift ports are verified against. The
       # macOS-only deps (mlx, parakeet-mlx, pyobjc, ...) are gated behind
       # sys_platform markers, so they aren't installed here and the suite runs on
-      # Linux. The native Swift build/tests need a Mac and are not run in CI.
+      # Linux. The native Swift app is exercised by the swift-tests job below.
       - name: Run the Python spec suite
         run: uv run --frozen pytest -q
+
+  swift-tests:
+    name: Swift tests (macOS)
+    runs-on: macos-14
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Print toolchain
+        run: xcodebuild -version && swift --version
+
+      - name: Install XcodeGen + xcbeautify
+        run: brew install xcodegen xcbeautify
+
+      - name: Generate the Xcode project
+        working-directory: Pomvox
+        run: xcodegen generate
+
+      # Cache the resolved Swift packages (mlx-swift, swift-syntax, FluidAudio, …)
+      # keyed on the committed Package.resolved — the first build is the slow one.
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: .spm
+          key: spm-${{ runner.os }}-${{ hashFiles('Pomvox/Pomvox.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      # Unit tests are pure logic, but the test host links the full app (FluidAudio
+      # + mlx-swift), so the build is heavy. The CI runner has no code-signing
+      # identity ("Murmur Dev" is a local self-signed cert), so signing is disabled
+      # — the unit tests don't exercise entitlement-gated paths (mic/TCC/hotkey).
+      - name: Build & test
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Pomvox/Pomvox.xcodeproj \
+            -scheme Pomvox \
+            -destination 'platform=macOS' \
+            -clonedSourcePackagesDirPath .spm \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            | xcbeautify --renderer github-actions || exit 1
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-test-results
+          path: TestResults.xcresult
+          if-no-files-found: ignore
