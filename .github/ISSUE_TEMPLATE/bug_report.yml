@@ -1,0 +1,82 @@
+name: Bug report
+description: Something in Pomvox isn't working the way it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. A few notes first:
+
+        - **Never paste transcripts, audio, or anything you dictated** unless
+          it's essential to the report — Pomvox is a privacy tool and your issue
+          is public.
+        - For **security vulnerabilities**, don't use this form — see
+          [SECURITY.md](https://github.com/abhiram304/pomvox/blob/main/SECURITY.md)
+          and report privately.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: I held Fn and spoke, but nothing was inserted at the cursor…
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence that triggers it.
+      placeholder: |
+        1. Launch Pomvox and enable the native engine
+        2. Focus a text field in <app>
+        3. Hold Fn, say "<a short phrase>", release
+        4. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Pomvox version
+      description: From the Hub, or the DMG/release you installed.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Which engine?
+      options:
+        - Native Swift app (Pomvox.app)
+        - Python reference engine (uv run pomvox)
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and chip
+      placeholder: "macOS 14.5, M1"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: >
+        Any log lines around the failure. Redact transcripts and personal data —
+        code output rendered in a fenced block will not be formatted, so no need
+        to worry about markdown.
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I granted all three permissions (Microphone, Input Monitoring, Accessibility) and set the Globe key to "Do Nothing".
+          required: false
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: This report contains no private transcripts or audio.
+          required: true
