@@ -1,5 +1,10 @@
 # Pomvox
 
+[![Latest release](https://img.shields.io/github/v/release/abhiram304/pomvox?color=e2543a)](https://github.com/abhiram304/pomvox/releases/latest)
+[![Platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20Apple%20Silicon-informational)](#requirements)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/abhiram304/pomvox/total?color=555)](https://github.com/abhiram304/pomvox/releases)
+
 Fully local, privacy-first voice dictation for macOS on Apple Silicon. Hold a
 hotkey, speak, and the transcript is inserted into whatever text field is
 focused — in any app. Speech-to-text runs on the Neural Engine and an optional
@@ -7,6 +12,11 @@ cleanup pass runs a local LLM on the GPU. **Your voice and transcripts never
 leave your machine.** The only network calls are the one-time model download
 from Hugging Face and — if you opt in — anonymous, content-free usage stats
 (off by default; toggle in Settings → Privacy).
+
+<p align="center">
+  <img src="docs/design/hub-real-home.png" width="820"
+       alt="The Pomvox Hub — Home view showing dictation stats, a 30-day activity strip, and recent raw→clean transcripts">
+</p>
 
 Pomvox is a native SwiftUI menu-bar app (`Pomvox.app`): live two-tone draft as
 you speak, a Hub window with your dictation history and settings, and a Setup
@@ -35,13 +45,26 @@ and [CONTRIBUTING.md](CONTRIBUTING.md) to get involved.
 
 ## Download
 
+### Homebrew
+
+```sh
+brew install --cask abhiram304/pomvox/pomvox
+```
+
+This taps [`abhiram304/homebrew-pomvox`](https://github.com/abhiram304/homebrew-pomvox)
+and installs the same notarized `Pomvox.app` into `/Applications`. Upgrade later
+with `brew upgrade --cask pomvox`.
+
+### Direct download
+
 Grab the latest **notarized** `Pomvox.dmg` from the
 [Releases page](https://github.com/abhiram304/pomvox/releases/latest), open it,
 and drag **Pomvox** to Applications. It's signed with a Developer ID and notarized
-by Apple, so it opens with no right-click dance. Then launch it and grant the
-three permissions in **Setup** (Microphone, Input Monitoring, Accessibility).
+by Apple, so it opens with no right-click dance.
 
-Requires an Apple Silicon Mac on macOS 14+.
+Either way, launch Pomvox and grant the three permissions in **Setup**
+(Microphone, Input Monitoring, Accessibility). Requires an Apple Silicon Mac on
+macOS 14+.
 
 ## Install (build from source)
 
@@ -196,3 +219,8 @@ documented in the script header. Debug builds are untouched: same self-signed
 identity, hardened runtime off, so TCC grants survive iterative work. The first
 launch of a Release build re-prompts the three permissions once (the code
 identity changed).
+
+---
+
+Built by [Abhi Ram Salammagari](https://www.abhiramsalammagari.com). Licensed
+under the [MIT License](LICENSE).
