@@ -1,10 +1,11 @@
 import Foundation
 
-/// On-by-default (opt-out), anonymous, content-free usage telemetry — **native
-/// app only** (the Python reference engine stays no-network). The product's
-/// promise is unchanged for the things that matter: voice and transcripts never
-/// leave this Mac. What *can* leave — after the first-run disclosure is shown and
-/// unless the user opts out — is a handful of counters: a random per-install
+/// Anonymous, content-free usage telemetry, gated on an explicit choice — **native
+/// app only** (the Python reference engine stays no-network). On first launch the
+/// user picks "Share anonymous stats" or "No thanks"; nothing sends unless they
+/// choose to share. The product's promise is unchanged for the things that
+/// matter: voice and transcripts never leave this Mac. What *can* leave — only
+/// once the user has granted — is a handful of counters: a random per-install
 /// UUID and a constrained allowlist of scalars.
 ///
 /// The "no content ever" rule is enforced *structurally*, not by discipline:
@@ -12,7 +13,7 @@ import Foundation
 /// to misuse), and `TelemetryEncoder` runs every prop through `TelemetrySanitizer`
 /// at the wire boundary — a model id is reduced to its basename, anything that
 /// can't match the contract's regex/enum is dropped. Sending is gated on
-/// `maySend` (on AND the first-run disclosure shown) AND a configured endpoint,
+/// `maySend` (consent == .granted) AND a configured endpoint,
 /// batched, fire-and-forget, and never on the dictation latency path.
 ///
 /// Pure logic (store, sanitizer, encoder, queue, gate, env) is unit-tested in
@@ -23,33 +24,33 @@ import Foundation
 /// The user's choice and the anonymous install id. UserDefaults is the right
 /// home: this is native-app state, not shared `config.toml` (which the Python
 /// engine reads and must never learn about telemetry).
+/// The user's explicit choice about telemetry. `.undecided` until they answer
+/// the first-run choice screen; nothing sends unless it is `.granted`.
+enum TelemetryConsent: String {
+    case undecided, granted, denied
+}
+
 struct TelemetryStore {
-    static let enabledKey = "telemetry.enabled"
-    static let promptedKey = "telemetry.consentPrompted"
+    static let consentKey = "telemetry.consent"
     static let installIDKey = "telemetry.installID"
 
     let defaults: UserDefaults
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
-    /// On by default; the user can turn it off (first-run disclosure or the
-    /// Privacy pane). `object(forKey:)` distinguishes "never set" (→ on) from an
-    /// explicit off the user chose.
-    var enabled: Bool {
-        get { defaults.object(forKey: Self.enabledKey) as? Bool ?? true }
-        set { defaults.set(newValue, forKey: Self.enabledKey) }
+    /// The user's explicit tri-state choice, set by the first-run choice screen
+    /// ("Share anonymous stats" / "No thanks") or Settings → Privacy. Default
+    /// `.undecided`. Existing installs have no key, so they read as `.undecided`
+    /// and are shown the choice screen again — the migration off the earlier
+    /// default-on behavior.
+    var consent: TelemetryConsent {
+        get { TelemetryConsent(rawValue: defaults.string(forKey: Self.consentKey) ?? "") ?? .undecided }
+        set { defaults.set(newValue.rawValue, forKey: Self.consentKey) }
     }
 
-    /// Whether the one-time first-run disclosure has been shown/answered.
-    var prompted: Bool {
-        get { defaults.bool(forKey: Self.promptedKey) }
-        set { defaults.set(newValue, forKey: Self.promptedKey) }
-    }
-
-    /// The true send-gate. On by default, but nothing leaves the machine until
-    /// the first-run disclosure has actually been shown — so a fresh install
-    /// never sends silently before the user has seen what's collected and can
-    /// opt out.
-    var maySend: Bool { enabled && prompted }
+    /// The send-gate: only an explicit `.granted` sends. `.undecided` and
+    /// `.denied` never send — and nothing is even queued while not granted, so no
+    /// buffered event can leak after a later choice.
+    var maySend: Bool { consent == .granted }
 
     /// A random UUID v4, generated once and stable for the life of the install.
     /// Anonymous — it ties events from one machine together, nothing more.
@@ -309,12 +310,16 @@ actor TelemetryClient {
     func record(_ event: TelemetryEvent) { queue.enqueue(event) }
 
     /// Fire-and-forget entry from any context. Never blocks the caller; the
-    /// gate makes it a true no-op when consent is off or no endpoint is set.
+    /// gate makes it a true no-op when consent isn't granted or no endpoint is set.
     nonisolated func emit(_ name: TelemetryEventName, props: TelemetryProps = TelemetryProps()) {
         Task { await self.ingest(name: name, props: props) }
     }
 
     private func ingest(name: TelemetryEventName, props: TelemetryProps) {
+        // Don't even buffer unless consent is granted — so an `.undecided` or
+        // `.denied` session never accumulates events that could leak on a later
+        // "Share". (flush() re-checks too, as defense in depth.)
+        guard isEnabled() else { return }
         queue.enqueue(TelemetryEvent(event: name, ts: now(), props: props))
         scheduleFlush()
     }
