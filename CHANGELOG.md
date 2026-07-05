@@ -9,6 +9,18 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 _Nothing yet._
 
+## [0.1.1] — 2026-07-04
+
+### Fixed
+
+- **Stuck recording across system sleep/wake.** After the Mac slept and woke,
+  the microphone could stay "recording" with no HUD, recoverable only by
+  restarting the app. macOS disables the global event tap across sleep and the
+  push-to-talk key-up that stops recording could be dropped, stranding the
+  hotkey state machine. Pomvox now resets to a clean armed-idle state around
+  sleep/wake (stopping any live capture and hiding the HUD) and re-asserts the
+  event tap on wake.
+
 ## [0.1.0] — 2026-07-03
 
 First public release. A fully local, privacy-first voice-dictation app for macOS
@@ -46,5 +58,6 @@ on Apple Silicon, shipping as a signed, notarized `Pomvox.dmg`.
 - **Python reference engine** (`src/pomvox/`) — the original app, now frozen as a
   runnable reference whose pure-logic modules are the cross-checked test spec.
 
-[Unreleased]: https://github.com/abhiram304/pomvox/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/abhiram304/pomvox/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/abhiram304/pomvox/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/abhiram304/pomvox/releases/tag/v0.1.0
