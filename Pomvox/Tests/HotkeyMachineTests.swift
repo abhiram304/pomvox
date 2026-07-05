@@ -165,6 +165,35 @@ final class HotkeyMachineTests: XCTestCase {
         XCTAssertEqual(m.state, .idle)
     }
 
+    // The sleep/wake panic reset (NativeEngine) unsticks a recording state that
+    // was stranded across sleep — e.g. a push-to-talk key-up dropped while the
+    // CGEventTap was disabled — by calling reset(). These guard the contract it
+    // relies on: reset() from any recording state leaves the machine able to
+    // dictate again, exactly like a fresh one.
+    func testResetFromPttRecoversToAFreshCycle() {
+        let m = make()
+        _ = m.onModifier(FN, true)          // stranded mid push-to-talk
+        XCTAssertEqual(m.state, .ptt)
+        m.reset()                           // panic reset
+        XCTAssertEqual(m.state, .idle)
+
+        XCTAssertEqual(m.onModifier(FN, true).action, .startPTT)
+        XCTAssertEqual(m.onModifier(FN, false).action, .stop)
+        m.done()
+        XCTAssertEqual(m.state, .idle)
+    }
+
+    func testResetFromToggleRecoversToAFreshCycle() {
+        let m = make()
+        _ = m.onModifier(FN, true)
+        _ = m.onKeyDown(SPACE)              // hands-free
+        _ = m.onModifier(FN, false)
+        XCTAssertEqual(m.state, .toggle)
+        m.reset()                           // panic reset from hands-free
+        XCTAssertEqual(m.state, .idle)
+        XCTAssertEqual(m.onModifier(FN, true).action, .startPTT)
+    }
+
     func testExternalStopOnlyFiresInToggle() {
         let m = make()
         // VAD endpoint while hands-free: stops exactly like the stop hotkey.
