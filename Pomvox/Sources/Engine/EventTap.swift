@@ -73,6 +73,14 @@ final class EventTap {
         thread.start()
     }
 
+    /// Force the tap back on. The system disables a session tap across sleep and
+    /// the automatic re-enable (via the `.tapDisabledByTimeout` event in
+    /// `handle`) isn't reliably delivered on wake, so the owner re-enables it
+    /// explicitly from the wake notification. Safe to call if already enabled.
+    func reEnable() {
+        if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+    }
+
     func stop() {
         if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
         if let rl = threadRunLoop {

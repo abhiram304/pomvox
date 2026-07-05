@@ -87,6 +87,13 @@ final class NativeEngine: ObservableObject {
     private var draftInFlight = false
     private var finishing = false
 
+    // System sleep/wake: macOS disables the CGEventTap across sleep and can drop
+    // the push-to-talk key-up, stranding the machine in a recording state (mic
+    // held open, no HUD, recoverable only by restart). Registered in arm(),
+    // removed in disarm(); see registerSleepWakeObservers().
+    private var sleepObserver: NSObjectProtocol?
+    private var wakeObserver: NSObjectProtocol?
+
     init(configPath: String = SettingsModel.defaultPath()) {
         self.configPath = configPath
         self.machine = try! HotkeyMachine()  // fixed Fn push-to-talk bindings
@@ -203,6 +210,7 @@ final class NativeEngine: ObservableObject {
             return
         }
         self.tap = tap
+        registerSleepWakeObservers()
         persist(true)
         NSLog("pomvox-engine: ARMED — ready")
         status = .ready
@@ -215,6 +223,7 @@ final class NativeEngine: ObservableObject {
     }
 
     func disarm() {
+        unregisterSleepWakeObservers()
         tap?.stop(); tap = nil
         draftTask?.cancel(); draftTask = nil
         endVadSession()
@@ -498,6 +507,55 @@ final class NativeEngine: ObservableObject {
             group.cancelAll()
             return first ?? (raw, .timeout)
         }
+    }
+
+    // MARK: - system sleep/wake
+
+    /// macOS disables the CGEventTap across sleep and can drop the push-to-talk
+    /// key-up, leaving the HotkeyMachine stuck in .ptt/.toggle — a mic held open
+    /// with no HUD, recoverable only by restarting the app. We reset to a clean
+    /// armed-idle state on the way into sleep (stops any live capture before the
+    /// machine freezes) and again on wake (belt-and-suspenders + re-assert the
+    /// event tap, whose re-enable event isn't always delivered on wake).
+    private func registerSleepWakeObservers() {
+        let nc = NSWorkspace.shared.notificationCenter
+        sleepObserver = nc.addObserver(
+            forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.panicReset(reason: "system will sleep") }
+        }
+        wakeObserver = nc.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.tap?.reEnable()
+                self?.panicReset(reason: "system did wake")
+            }
+        }
+    }
+
+    private func unregisterSleepWakeObservers() {
+        let nc = NSWorkspace.shared.notificationCenter
+        if let o = sleepObserver { nc.removeObserver(o); sleepObserver = nil }
+        if let o = wakeObserver { nc.removeObserver(o); wakeObserver = nil }
+    }
+
+    /// Force any in-flight recording back to armed-idle without transcribing —
+    /// used when the OS pulls the rug out (sleep/wake) and the key-up that would
+    /// normally stop push-to-talk may never arrive. A no-op when already idle.
+    private func panicReset(reason: String) {
+        guard isArmed else { return }
+        machineLock.lock(); let recording = machine.state != .idle; machineLock.unlock()
+        NSLog("pomvox-engine: sleep/wake reset (%@) — recording=%@",
+              reason, recording ? "yes" : "no")
+        guard recording else { return }
+        endVadSession()
+        draftTask?.cancel(); draftTask = nil
+        finishing = true
+        capture.stop()
+        bus.post(.state("idle", "ready"))   // hide the HUD if it was showing
+        resetMachine()
+        status = .ready
     }
 
     private func cancelRecording() {
