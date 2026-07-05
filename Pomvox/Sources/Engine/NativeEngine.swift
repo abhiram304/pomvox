@@ -87,12 +87,15 @@ final class NativeEngine: ObservableObject {
     private var draftInFlight = false
     private var finishing = false
 
-    // System sleep/wake: macOS disables the CGEventTap across sleep and can drop
-    // the push-to-talk key-up, stranding the machine in a recording state (mic
-    // held open, no HUD, recoverable only by restart). Registered in arm(),
-    // removed in disarm(); see registerSleepWakeObservers().
+    // System sleep/wake: macOS disables the CGEventTap across sleep and, after a
+    // deep sleep, silently stops delivering events to it even though it still
+    // reports enabled — only a *fresh* tap recovers (CGEventTapEnable is not
+    // enough). We also drop the push-to-talk key-up, stranding the machine in a
+    // recording state. Registered in arm(), removed in disarm().
     private var sleepObserver: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
+    private var screensWakeObserver: NSObjectProtocol?
+    private var wakeRecreateTask: Task<Void, Never>?
 
     init(configPath: String = SettingsModel.defaultPath()) {
         self.configPath = configPath
@@ -189,13 +192,7 @@ final class NativeEngine: ObservableObject {
         // the VAD endpointer. Set before any capture.start().
         capture.onBlock = { [weak self] block in self?.onAudioBlock(block) }
 
-        let tap = EventTap(
-            onModifier: { [weak self] keycode, isDown in
-                self?.decide { $0.onModifier(keycode, isDown) } ?? HotkeyMachine.Decision()
-            },
-            onKeyDown: { [weak self] keycode in
-                self?.decide { $0.onKeyDown(keycode) } ?? HotkeyMachine.Decision()
-            })
+        let tap = makeTap()
         do {
             try tap.start()
             NSLog("pomvox-engine: event tap installed")
@@ -511,12 +508,25 @@ final class NativeEngine: ObservableObject {
 
     // MARK: - system sleep/wake
 
-    /// macOS disables the CGEventTap across sleep and can drop the push-to-talk
-    /// key-up, leaving the HotkeyMachine stuck in .ptt/.toggle — a mic held open
-    /// with no HUD, recoverable only by restarting the app. We reset to a clean
-    /// armed-idle state on the way into sleep (stops any live capture before the
-    /// machine freezes) and again on wake (belt-and-suspenders + re-assert the
-    /// event tap, whose re-enable event isn't always delivered on wake).
+    /// Build the CGEventTap wired to the HotkeyMachine. Extracted so both arm()
+    /// and the wake path (which rebuilds it) use identical decision closures.
+    private func makeTap() -> EventTap {
+        EventTap(
+            onModifier: { [weak self] keycode, isDown in
+                self?.decide { $0.onModifier(keycode, isDown) } ?? HotkeyMachine.Decision()
+            },
+            onKeyDown: { [weak self] keycode in
+                self?.decide { $0.onKeyDown(keycode) } ?? HotkeyMachine.Decision()
+            })
+    }
+
+    /// On sleep we reset any in-flight recording (the push-to-talk key-up can be
+    /// dropped, otherwise stranding the mic open with no HUD). On wake we do that
+    /// AND rebuild the event tap from scratch: after a deep sleep macOS stops
+    /// delivering events to a session tap even though it still reports enabled,
+    /// and only a fresh tap recovers — confirmed on-device (CGEventTapEnable is
+    /// not enough). Both `didWake` and `screensDidWake` trigger it because the
+    /// former isn't always delivered on a deep-standby wake.
     private func registerSleepWakeObservers() {
         let nc = NSWorkspace.shared.notificationCenter
         sleepObserver = nc.addObserver(
@@ -527,17 +537,56 @@ final class NativeEngine: ObservableObject {
         wakeObserver = nc.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.tap?.reEnable()
-                self?.panicReset(reason: "system did wake")
-            }
+            MainActor.assumeIsolated { self?.onWake(reason: "did wake") }
+        }
+        screensWakeObserver = nc.addObserver(
+            forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.onWake(reason: "screens did wake") }
         }
     }
 
     private func unregisterSleepWakeObservers() {
         let nc = NSWorkspace.shared.notificationCenter
-        if let o = sleepObserver { nc.removeObserver(o); sleepObserver = nil }
-        if let o = wakeObserver { nc.removeObserver(o); wakeObserver = nil }
+        for o in [sleepObserver, wakeObserver, screensWakeObserver] {
+            if let o { nc.removeObserver(o) }
+        }
+        sleepObserver = nil; wakeObserver = nil; screensWakeObserver = nil
+        wakeRecreateTask?.cancel(); wakeRecreateTask = nil
+    }
+
+    /// Wake handling: clear any stranded recording, then rebuild the tap after a
+    /// short settle (the window server/event system may not be ready the instant
+    /// the notification fires, and a tap created too early can itself fail to
+    /// deliver). Debounced so overlapping wake signals rebuild once.
+    private func onWake(reason: String) {
+        panicReset(reason: "system \(reason)")
+        guard isArmed else { return }
+        wakeRecreateTask?.cancel()
+        wakeRecreateTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            guard !Task.isCancelled else { return }
+            self?.recreateTap()
+        }
+    }
+
+    /// Tear down the current tap and install a fresh one — the only reliable
+    /// recovery for a session tap that stopped delivering after deep sleep.
+    private func recreateTap() {
+        guard isArmed else { return }
+        tap?.stop()
+        let fresh = makeTap()
+        do {
+            try fresh.start()
+            tap = fresh
+            NSLog("pomvox-engine: wake — event tap recreated")
+        } catch {
+            tap = nil
+            NSLog("pomvox-engine: wake — event tap re-create FAILED: %@", String(describing: error))
+            status = .failed(
+                "The dictation hotkey stopped after sleep. Toggle the engine off and on to restore it.")
+            TelemetryClient.shared.emit(.error, props: errorProps("tap_recreate_failed"))
+        }
     }
 
     /// Force any in-flight recording back to armed-idle without transcribing —

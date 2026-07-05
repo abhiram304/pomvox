@@ -9,6 +9,18 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 _Nothing yet._
 
+## [0.1.2] — 2026-07-05
+
+### Fixed
+
+- **Dictation hotkey dead after a long sleep.** The 0.1.1 fix handled short
+  sleeps but not deep sleep/standby: macOS stops delivering events to the global
+  event tap even though it still reports "enabled", so re-enabling it wasn't
+  enough — the hotkey stayed dead (no HUD, no dictation) until the app was
+  restarted. Pomvox now **rebuilds the event tap from scratch on wake** (on both
+  `didWake` and `screensDidWake`, after a short settle), which is the only
+  reliable recovery. Verified on-device.
+
 ## [0.1.1] — 2026-07-04
 
 ### Fixed
@@ -58,6 +70,7 @@ on Apple Silicon, shipping as a signed, notarized `Pomvox.dmg`.
 - **Python reference engine** (`src/pomvox/`) — the original app, now frozen as a
   runnable reference whose pure-logic modules are the cross-checked test spec.
 
-[Unreleased]: https://github.com/abhiram304/pomvox/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/abhiram304/pomvox/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/abhiram304/pomvox/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/abhiram304/pomvox/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/abhiram304/pomvox/releases/tag/v0.1.0
