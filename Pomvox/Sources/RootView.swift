@@ -43,9 +43,10 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .pomvoxShowSetup)) { _ in
             selection = .setup
         }
-        // One-time, opt-in telemetry consent. Shows on the first manual open of
-        // the Hub; a login-item launch suppresses the window, so it simply
-        // defers to the next time the window appears.
+        // One-time telemetry disclosure (stats are on by default). Shows on the
+        // first manual open of the Hub; a login-item launch suppresses the
+        // window, so it defers to the next time the window appears — and the
+        // `maySend` gate means nothing is sent until it has been shown.
         .onAppear { showConsent = telemetry.needsConsentPrompt }
         .sheet(isPresented: $showConsent) {
             TelemetryConsentSheet().environmentObject(telemetry)

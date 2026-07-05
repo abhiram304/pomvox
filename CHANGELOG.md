@@ -9,6 +9,17 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 _Nothing yet._
 
+## [0.1.3] — 2026-07-05
+
+### Changed
+
+- **Anonymous usage stats are now on by default (opt-out).** Previously opt-in.
+  They remain anonymous and content-free (a random install ID plus counters —
+  never audio, transcripts, or any free text), and **nothing is sent until the
+  first-run disclosure has been shown** (the `maySend` gate). The disclosure has
+  an equal-weight one-tap **Turn off**, and you can turn it off anytime in
+  Settings → Privacy. Docs and the in-app copy updated to match.
+
 ## [0.1.2] — 2026-07-05
 
 ### Fixed
@@ -70,7 +81,8 @@ on Apple Silicon, shipping as a signed, notarized `Pomvox.dmg`.
 - **Python reference engine** (`src/pomvox/`) — the original app, now frozen as a
   runnable reference whose pure-logic modules are the cross-checked test spec.
 
-[Unreleased]: https://github.com/abhiram304/pomvox/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/abhiram304/pomvox/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/abhiram304/pomvox/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/abhiram304/pomvox/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/abhiram304/pomvox/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/abhiram304/pomvox/releases/tag/v0.1.0

@@ -35,10 +35,24 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(b.installID(), id)
     }
 
-    func testConsentDefaultsOffAndUnprompted() {
+    func testConsentDefaultsOnButUnprompted() {
         let store = TelemetryStore(defaults: freshDefaults())
-        XCTAssertFalse(store.enabled, "telemetry is off until the user chooses")
-        XCTAssertFalse(store.prompted, "the one-time prompt has not been shown yet")
+        XCTAssertTrue(store.enabled, "telemetry is on by default")
+        XCTAssertFalse(store.prompted, "the first-run disclosure hasn't been shown yet")
+    }
+
+    func testMaySendGateHoldsUntilDisclosureShown() {
+        let defaults = freshDefaults()
+        var store = TelemetryStore(defaults: defaults)
+        // On by default, but nothing may send until the disclosure has been shown.
+        XCTAssertTrue(store.enabled)
+        XCTAssertFalse(store.maySend, "no send before the first-run disclosure")
+
+        store.prompted = true                    // disclosure shown, kept on
+        XCTAssertTrue(store.maySend)
+
+        store.enabled = false                    // user opted out
+        XCTAssertFalse(store.maySend, "opting out stops sending even though prompted")
     }
 
     func testConsentPersists() {

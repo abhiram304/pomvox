@@ -1,9 +1,10 @@
 import SwiftUI
 
 /// Observable wrapper over `TelemetryStore` for the consent UI — the first-run
-/// sheet and the Privacy-pane toggle both drive this, so they always agree.
-/// Honest by construction: off until the user chooses, the choice is honored,
-/// and turning it off stops all sending immediately (the client re-reads consent
+/// disclosure and the Privacy-pane toggle both drive this, so they always agree.
+/// Honest by construction: on by default but nothing is sent until the first-run
+/// disclosure has been shown (the `maySend` gate), the choice is honored, and
+/// turning it off stops all sending immediately (the client re-reads consent
 /// from UserDefaults on every flush).
 @MainActor
 final class TelemetryModel: ObservableObject {
@@ -25,7 +26,8 @@ final class TelemetryModel: ObservableObject {
         Binding(get: { self.enabled }, set: { self.setEnabled($0) })
     }
 
-    /// First-run answer: record the choice and that the prompt was shown.
+    /// First-run answer: record that the disclosure was shown, and the choice
+    /// (keep on / turn off). Sending only begins once `prompted` is set here.
     func resolveConsent(enable: Bool) {
         prompted = true
         store.prompted = true
@@ -45,11 +47,12 @@ final class TelemetryModel: ObservableObject {
 /// The exact, plain-language "here's what we send" disclosure — shared by the
 /// first-run sheet and the Privacy pane so the two can never drift apart.
 enum TelemetryCopy {
-    static let headline = "Help improve Pomvox?"
+    static let headline = "Anonymous usage stats are on"
     static let blurb =
-        "Pomvox can send anonymous, content-free usage stats so the maintainer "
-        + "can see how it's used and what's breaking. It's optional and off "
-        + "unless you turn it on."
+        "Pomvox sends anonymous, content-free usage stats so the maintainer can "
+        + "see how it's used and what's breaking. It's on by default and never "
+        + "includes your voice or transcripts — you can turn it off right here, "
+        + "or anytime in Settings → Privacy."
 
     static let sends: [String] = [
         "A random install ID — anonymous, not tied to you or your Mac.",
@@ -65,11 +68,12 @@ enum TelemetryCopy {
         "No account, no name, no email, no file paths, no free text.",
     ]
 
-    static let footer = "Off by default. Change anytime in Settings → Privacy."
+    static let footer = "On by default. Turn it off anytime in Settings → Privacy."
 }
 
-/// One-time first-run consent sheet. Clear choice, no dark pattern: Enable or
-/// Not now, both honored, both dismiss for good.
+/// One-time first-run disclosure sheet. On by default, no dark pattern: the
+/// opt-out ("Turn off") is a plain, equal-weight button next to "Keep on", both
+/// honored, both dismiss for good. Nothing is sent until this has been shown.
 struct TelemetryConsentSheet: View {
     @EnvironmentObject var telemetry: TelemetryModel
     @Environment(\.dismiss) private var dismiss
@@ -100,12 +104,12 @@ struct TelemetryConsentSheet: View {
 
             HStack(spacing: 12) {
                 Spacer()
-                Button("Not now") { answer(false) }
+                Button("Turn off") { answer(false) }
                     .buttonStyle(.plain)
                     .font(Typo.ui(13, .medium)).foregroundStyle(Palette.inkSoft)
                     .padding(.horizontal, 16).padding(.vertical, 7)
                     .background(Capsule().fill(Palette.pane2))
-                Button("Enable") { answer(true) }
+                Button("Keep on") { answer(true) }
                     .buttonStyle(.plain)
                     .font(Typo.ui(13, .semibold)).foregroundStyle(.white)
                     .padding(.horizontal, 18).padding(.vertical, 7)
