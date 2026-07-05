@@ -1,18 +1,19 @@
 import Foundation
 
-/// Opt-in, anonymous, content-free usage telemetry — **native app only** (the
-/// Python reference engine stays no-network). The product's promise is unchanged
-/// for the things that matter: voice and transcripts never leave this Mac. What
-/// *can* leave, only after the user explicitly turns it on, is a handful of
-/// counters: a random per-install UUID and a constrained allowlist of scalars.
+/// On-by-default (opt-out), anonymous, content-free usage telemetry — **native
+/// app only** (the Python reference engine stays no-network). The product's
+/// promise is unchanged for the things that matter: voice and transcripts never
+/// leave this Mac. What *can* leave — after the first-run disclosure is shown and
+/// unless the user opts out — is a handful of counters: a random per-install
+/// UUID and a constrained allowlist of scalars.
 ///
 /// The "no content ever" rule is enforced *structurally*, not by discipline:
 /// `TelemetryProps` is a fixed set of typed scalars (there is no free-text field
 /// to misuse), and `TelemetryEncoder` runs every prop through `TelemetrySanitizer`
 /// at the wire boundary — a model id is reduced to its basename, anything that
 /// can't match the contract's regex/enum is dropped. Sending is gated on
-/// consent AND a configured endpoint, batched, fire-and-forget, and never on the
-/// dictation latency path.
+/// `maySend` (on AND the first-run disclosure shown) AND a configured endpoint,
+/// batched, fire-and-forget, and never on the dictation latency path.
 ///
 /// Pure logic (store, sanitizer, encoder, queue, gate, env) is unit-tested in
 /// TelemetryTests; the URLSession POST is the thin side-effect shell.
@@ -30,17 +31,25 @@ struct TelemetryStore {
     let defaults: UserDefaults
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
-    /// Off until the user chooses (UserDefaults.bool defaults to false).
+    /// On by default; the user can turn it off (first-run disclosure or the
+    /// Privacy pane). `object(forKey:)` distinguishes "never set" (→ on) from an
+    /// explicit off the user chose.
     var enabled: Bool {
-        get { defaults.bool(forKey: Self.enabledKey) }
+        get { defaults.object(forKey: Self.enabledKey) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Self.enabledKey) }
     }
 
-    /// Whether the one-time first-run consent prompt has been shown/answered.
+    /// Whether the one-time first-run disclosure has been shown/answered.
     var prompted: Bool {
         get { defaults.bool(forKey: Self.promptedKey) }
         set { defaults.set(newValue, forKey: Self.promptedKey) }
     }
+
+    /// The true send-gate. On by default, but nothing leaves the machine until
+    /// the first-run disclosure has actually been shown — so a fresh install
+    /// never sends silently before the user has seen what's collected and can
+    /// opt out.
+    var maySend: Bool { enabled && prompted }
 
     /// A random UUID v4, generated once and stable for the life of the install.
     /// Anonymous — it ties events from one machine together, nothing more.
@@ -287,7 +296,7 @@ actor TelemetryClient {
         let id = store.installID()
         return TelemetryClient(
             endpoint: productionEndpoint,
-            enabled: { TelemetryStore().enabled },
+            enabled: { TelemetryStore().maySend },
             env: TelemetryEnvBuilder.current(installID: id),
             now: { Int(Date().timeIntervalSince1970 * 1000) },
             sender: TelemetryClient.urlSessionSender)

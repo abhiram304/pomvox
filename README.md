@@ -10,8 +10,8 @@ hotkey, speak, and the transcript is inserted into whatever text field is
 focused — in any app. Speech-to-text runs on the Neural Engine and an optional
 cleanup pass runs a local LLM on the GPU. **Your voice and transcripts never
 leave your machine.** The only network calls are the one-time model download
-from Hugging Face and — if you opt in — anonymous, content-free usage stats
-(off by default; toggle in Settings → Privacy).
+from Hugging Face and anonymous, content-free usage stats (on by default,
+opt-out; turn off in Settings → Privacy).
 
 <p align="center">
   <img src="docs/design/hub-real-home.png" width="820"
@@ -155,16 +155,17 @@ isn't negotiable. The cleanup LLM and speech model both run on-device.
 The only network calls Pomvox ever makes are:
 
 1. The one-time model download from Hugging Face.
-2. **Optional, anonymous usage stats** — off by default. On first run Pomvox
-   shows a one-time prompt; you can also flip it anytime in **Settings →
-   Privacy**, which spells out exactly what's sent.
+2. **Anonymous usage stats** — **on by default, opt-out.** On first run Pomvox
+   shows a one-time disclosure of exactly what's sent, with a one-tap **Turn
+   off**; nothing is sent until you've seen it. You can turn it off anytime in
+   **Settings → Privacy**.
 
-If you turn the stats on, Pomvox sends a random per-install ID (anonymous) plus
+While the stats are on, Pomvox sends a random per-install ID (anonymous) plus
 content-free counters: app/OS version, that a dictation happened with its
 duration, which models ran, whether cleanup was used, and enum-only error codes.
 It **never** sends audio, transcripts, cleaned text, file paths, or any free
-text — there is no field in the payload that could carry them. Being opt-in,
-anonymous, and open source is the point: you can read exactly what leaves in
+text — there is no field in the payload that could carry them. Anonymous,
+content-free, and open source: you can read exactly what leaves in
 [`Telemetry.swift`](Pomvox/Sources/Telemetry.swift). The Python reference engine
 makes no network calls at all.
 
