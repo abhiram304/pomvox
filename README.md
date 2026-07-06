@@ -155,11 +155,11 @@ isn't negotiable. The cleanup LLM and speech model both run on-device.
 The only network calls Pomvox ever makes are:
 
 1. The one-time model download from Hugging Face.
-2. **Anonymous usage stats — your explicit choice.** On first launch Pomvox
-   shows a one-time screen with two equal buttons — **Share anonymous stats** or
-   **No thanks** — and nothing is sent unless you choose to share. There's no
-   default and no pre-checked box; change your mind anytime in **Settings →
-   Privacy**.
+2. **Anonymous usage stats — your explicit choice.** Nothing is sent until you
+   explicitly choose on first launch: a one-time screen offers two equal buttons
+   — **Share anonymous stats** or **No thanks** — with no default and no
+   pre-checked box, and a `maySend` gate holds all sending until you pick. Change
+   your mind anytime in **Settings → Privacy**.
 
 If you choose to share, Pomvox sends a random per-install ID (anonymous) plus
 content-free counters: app/OS version, that a dictation happened with its
@@ -221,6 +221,18 @@ documented in the script header. Debug builds are untouched: same self-signed
 identity, hardened runtime off, so TCC grants survive iterative work. The first
 launch of a Release build re-prompts the three permissions once (the code
 identity changed).
+
+## What's next
+
+Pomvox is chapter one of a public project on on-device speech inference for
+Apple Silicon. The hook: the same Parakeet TDT 0.6B weights score ~6.3% WER
+through one open-source runtime and ~2.5% through another — identical model, so
+the gap is the decoding implementation, not the weights. I'm tracing exactly
+where those 3.8 points go. Planned as I work through it: decoding-internals
+writeups, an iso-decoding eval harness (to compare runtimes on equal footing),
+and upstreamed fixes — Pomvox ships the wins first. Prior work in this vein is my
+[MLX Dense Bench series](https://abhiramsalammagari.com/writing). Star/watch the
+repo to follow the series.
 
 ---
 
