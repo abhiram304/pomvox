@@ -5,7 +5,10 @@ struct Sidebar: View {
     @EnvironmentObject var model: HubModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        // Flag the Setup row while any engine grant is still missing, so the
+        // checklist is discoverable even if the user has navigated to Home.
+        let setupNeeded = !Permissions.allGranted()
+        return VStack(alignment: .leading, spacing: 0) {
             // brand
             HStack(spacing: 9) {
                 Waveform()
@@ -16,7 +19,8 @@ struct Sidebar: View {
             // nav
             VStack(spacing: 2) {
                 ForEach(NavItem.allCases) { item in
-                    NavRow(item: item, selected: selection == item) { selection = item }
+                    NavRow(item: item, selected: selection == item,
+                           attention: item == .setup && setupNeeded) { selection = item }
                 }
             }
 
@@ -33,6 +37,7 @@ struct Sidebar: View {
 private struct NavRow: View {
     let item: NavItem
     let selected: Bool
+    var attention: Bool = false
     let action: () -> Void
     @State private var hovering = false
 
@@ -42,6 +47,11 @@ private struct NavRow: View {
                 Image(systemName: item.symbol).font(.system(size: 14, weight: .medium)).frame(width: 18)
                 Text(item.title).font(Typo.ui(13.5, .medium))
                 Spacer()
+                if attention {
+                    // Amber "action needed" dot — grants are still missing.
+                    Circle().fill(Palette.ember).frame(width: 7, height: 7)
+                        .accessibilityLabel("action needed")
+                }
             }
             .foregroundStyle(selected ? Palette.ember : Palette.inkSoft)
             .padding(.horizontal, 10).padding(.vertical, 7)
