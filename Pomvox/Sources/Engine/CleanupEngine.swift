@@ -50,7 +50,10 @@ actor CleanupEngine: CleanupCleaning {
     /// Download (first run, ~2.3 GB), load, and warm the model. Idempotent.
     /// Mirrors Python: a load failure leaves the engine unloaded (raw pastes,
     /// status timeout); a warmup failure still leaves it usable.
-    func prepare(modelID: String) async {
+    /// `onProgress` reports the download fraction [0, 1] while the ~2.3 GB
+    /// first-run fetch is in flight, so the background load can surface a note
+    /// instead of the first few dictations silently pasting raw.
+    func prepare(modelID: String, onProgress: (@Sendable (Double) -> Void)? = nil) async {
         guard container == nil, !preparing else { return }
         preparing = true
         defer { preparing = false }
@@ -60,7 +63,8 @@ actor CleanupEngine: CleanupCleaning {
             let loaded = try await LLMModelFactory.shared.loadContainer(
                 from: HubClient.default,
                 using: TokenizersLoader(),
-                configuration: ModelConfiguration(id: modelID))
+                configuration: ModelConfiguration(id: modelID),
+                progressHandler: { progress in onProgress?(progress.fractionCompleted) })
             NSLog("cleanup: loaded %@ in %.1fs", modelID, CFAbsoluteTimeGetCurrent() - t0)
             container = loaded
         } catch {

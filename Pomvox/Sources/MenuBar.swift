@@ -40,6 +40,11 @@ struct MenuBarContent: View {
 
     var body: some View {
         Text(statusLine)
+        // The background polish-model fetch: a note so the first raw-only
+        // dictations don't look like cleanup is broken.
+        if let polishLoad = engine.polishLoad {
+            Text(polishLoad)
+        }
         Button("Open Hub…") { openHub() }
         if needsAttention {
             Button("Open Setup…") {
@@ -78,7 +83,10 @@ struct MenuBarContent: View {
     }
 
     private var statusLine: String {
-        switch engine.status {
+        // While the speech model loads it stands in for the status — it's the
+        // one thing gating dictation, and a live percentage beats "Preparing…".
+        if let speechLoad = engine.speechLoad { return speechLoad }
+        return switch engine.status {
         case .off:          "Engine off"
         case .preparing:    "Preparing the speech model…"
         case .ready:        "Ready — hold Fn to dictate"

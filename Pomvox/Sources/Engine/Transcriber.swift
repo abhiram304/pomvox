@@ -17,9 +17,17 @@ actor Transcriber {
     var isLoaded: Bool { asr != nil }
 
     /// Download (first run only, ~97 s), load, and warm the model. Idempotent.
-    func prepare() async throws {
+    /// `onProgress` reports `(fraction, downloading)` while the ~460 MB first-run
+    /// fetch is in flight — `downloading` flips false once the bytes are down and
+    /// CoreML is compiling — so the UI can show a live percentage instead of a
+    /// silent "Preparing…".
+    func prepare(onProgress: (@Sendable (Double, Bool) -> Void)? = nil) async throws {
         if asr != nil { return }
-        let models = try await AsrModels.downloadAndLoad(version: .v3)
+        let models = try await AsrModels.downloadAndLoad(version: .v3) { progress in
+            let downloading: Bool
+            if case .downloading = progress.phase { downloading = true } else { downloading = false }
+            onProgress?(progress.fractionCompleted, downloading)
+        }
         let manager = AsrManager(config: .default)
         try await manager.loadModels(models)
         decoderLayers = await manager.decoderLayerCount

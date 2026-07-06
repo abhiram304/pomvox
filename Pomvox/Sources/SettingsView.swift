@@ -193,15 +193,25 @@ private struct NativeEngineGroup: View {
     }
 
     private var statusRow: some View {
-        HStack(spacing: 8) {
-            Image(systemName: statusSymbol).font(.system(size: 12)).foregroundStyle(statusColor)
-                .frame(width: 18)
-            Text(statusText).font(Typo.ui(12.5)).foregroundStyle(Palette.inkSoft)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
-            if let ms = engine.lastPasteMs {
-                Text(String(format: "last paste %.0f ms", ms))
-                    .font(Typo.ui(11.5, .medium)).monospacedDigit().foregroundStyle(Palette.muted)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Image(systemName: statusSymbol).font(.system(size: 12)).foregroundStyle(statusColor)
+                    .frame(width: 18)
+                Text(statusText).font(Typo.ui(12.5)).foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                if let ms = engine.lastPasteMs {
+                    Text(String(format: "last paste %.0f ms", ms))
+                        .font(Typo.ui(11.5, .medium)).monospacedDigit().foregroundStyle(Palette.muted)
+                }
+            }
+            // The polish model finishes downloading in the background after the
+            // engine is already usable — surfaced so raw-only early dictations
+            // read as expected, not broken.
+            if let polishLoad = engine.polishLoad {
+                Text(polishLoad)
+                    .font(Typo.ui(11.5)).foregroundStyle(Palette.muted)
+                    .padding(.leading, 26)
             }
         }
         .padding(.vertical, 11).padding(.horizontal, 16)
@@ -210,7 +220,8 @@ private struct NativeEngineGroup: View {
     }
 
     private var statusText: String {
-        switch engine.status {
+        if let speechLoad = engine.speechLoad { return speechLoad }
+        return switch engine.status {
         case .off:               "Off — the Python engine is your daily driver."
         case .preparing:         "Preparing the speech model… (first run downloads it)."
         case .ready:             "Ready — hold Fn, speak, then release."
