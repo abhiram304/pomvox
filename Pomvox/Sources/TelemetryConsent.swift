@@ -1,58 +1,50 @@
 import SwiftUI
 
 /// Observable wrapper over `TelemetryStore` for the consent UI — the first-run
-/// disclosure and the Privacy-pane toggle both drive this, so they always agree.
-/// Honest by construction: on by default but nothing is sent until the first-run
-/// disclosure has been shown (the `maySend` gate), the choice is honored, and
-/// turning it off stops all sending immediately (the client re-reads consent
-/// from UserDefaults on every flush).
+/// choice screen and the Privacy-pane toggle both drive this, so they always
+/// agree. Honest by construction: nothing sends until the user explicitly picks
+/// "Share" (the `maySend` gate, `.granted`); the choice is honored, and denying
+/// stops all sending immediately (the client re-reads consent on every flush).
 @MainActor
 final class TelemetryModel: ObservableObject {
-    @Published private(set) var enabled: Bool
-    @Published private(set) var prompted: Bool
+    @Published private(set) var consent: TelemetryConsent
     private var store: TelemetryStore
 
     init(store: TelemetryStore = TelemetryStore()) {
         self.store = store
-        self.enabled = store.enabled
-        self.prompted = store.prompted
+        self.consent = store.consent
     }
 
-    /// The one-time first-run prompt is owed until the user has answered it.
-    var needsConsentPrompt: Bool { !prompted }
+    /// The first-run choice screen is owed until the user has decided.
+    var needsConsentPrompt: Bool { consent == .undecided }
 
-    /// Privacy-pane toggle binding — persists + emits on change.
+    /// Privacy-pane toggle binding — on = granted, off = denied. Toggles either
+    /// direction at any time.
     var binding: Binding<Bool> {
-        Binding(get: { self.enabled }, set: { self.setEnabled($0) })
+        Binding(get: { self.consent == .granted },
+                set: { self.choose($0 ? .granted : .denied) })
     }
 
-    /// First-run answer: record that the disclosure was shown, and the choice
-    /// (keep on / turn off). Sending only begins once `prompted` is set here.
-    func resolveConsent(enable: Bool) {
-        prompted = true
-        store.prompted = true
-        setEnabled(enable)
-    }
-
-    private func setEnabled(_ on: Bool) {
-        guard on != store.enabled else { return }
-        store.enabled = on
-        enabled = on
-        // Record the change only when turning ON (an off→event would itself be a
-        // send the user just declined). The gate handles the off case: no send.
-        if on { TelemetryClient.shared.emit(.settingChanged) }
+    /// The user's explicit choice — from the first-run screen's two buttons or
+    /// the Privacy toggle. Nothing sends until this is `.granted`.
+    func choose(_ decision: TelemetryConsent) {
+        guard decision != store.consent else { return }
+        store.consent = decision
+        consent = decision
+        // Record the change only when granting (a denied→event would itself be a
+        // send the user just declined; the gate blocks it anyway).
+        if decision == .granted { TelemetryClient.shared.emit(.settingChanged) }
     }
 }
 
 /// The exact, plain-language "here's what we send" disclosure — shared by the
-/// first-run sheet and the Privacy pane so the two can never drift apart.
+/// first-run choice screen and the Privacy pane so the two can never drift apart.
 enum TelemetryCopy {
-    static let headline = "Anonymous usage stats are on"
+    static let headline = "Share anonymous usage stats?"
     static let blurb =
-        "Pomvox sends anonymous, content-free usage stats so the maintainer can "
-        + "see how it's used and what's breaking. It's on by default and never "
-        + "includes your voice or transcripts — you can turn it off right here, "
-        + "or anytime in Settings → Privacy."
+        "Pomvox can send anonymous usage events so the maintainer can see how it's "
+        + "used and what's breaking — never your audio, your transcribed text, or "
+        + "anything identifying. Your choice, changeable anytime in Settings → Privacy."
 
     static let sends: [String] = [
         "A random install ID — anonymous, not tied to you or your Mac.",
@@ -68,12 +60,13 @@ enum TelemetryCopy {
         "No account, no name, no email, no file paths, no free text.",
     ]
 
-    static let footer = "On by default. Turn it off anytime in Settings → Privacy."
+    static let footer = "Your choice — change it anytime in Settings → Privacy."
 }
 
-/// One-time first-run disclosure sheet. On by default, no dark pattern: the
-/// opt-out ("Turn off") is a plain, equal-weight button next to "Keep on", both
-/// honored, both dismiss for good. Nothing is sent until this has been shown.
+/// First-run choice screen. No pre-selected default and no dark pattern: "No
+/// thanks" and "Share anonymous stats" are visually identical buttons — neither
+/// is styled as the primary/destructive path. Nothing sends until one is pressed;
+/// dismissing without choosing leaves the choice `.undecided` (re-asked next time).
 struct TelemetryConsentSheet: View {
     @EnvironmentObject var telemetry: TelemetryModel
     @Environment(\.dismiss) private var dismiss
@@ -102,23 +95,27 @@ struct TelemetryConsentSheet: View {
             Text(TelemetryCopy.footer)
                 .font(Typo.ui(11.5)).foregroundStyle(Palette.muted)
 
+            // Equal-weight choice: same style, no pre-selected/primary button.
             HStack(spacing: 12) {
                 Spacer()
-                Button("Turn off") { answer(false) }
-                    .buttonStyle(.plain)
-                    .font(Typo.ui(13, .medium)).foregroundStyle(Palette.inkSoft)
-                    .padding(.horizontal, 16).padding(.vertical, 7)
-                    .background(Capsule().fill(Palette.pane2))
-                Button("Keep on") { answer(true) }
-                    .buttonStyle(.plain)
-                    .font(Typo.ui(13, .semibold)).foregroundStyle(.white)
-                    .padding(.horizontal, 18).padding(.vertical, 7)
-                    .background(Capsule().fill(Palette.ember))
+                choiceButton("No thanks") { answer(.denied) }
+                choiceButton("Share anonymous stats") { answer(.granted) }
             }
         }
         .padding(28)
         .frame(width: 560)
         .background(Palette.pane)
+        .interactiveDismissDisabled()   // the choice must be made explicitly
+    }
+
+    /// Both buttons share this style so neither reads as the default/primary path.
+    private func choiceButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .buttonStyle(.plain)
+            .font(Typo.ui(13, .semibold)).foregroundStyle(Palette.ink)
+            .padding(.horizontal, 18).padding(.vertical, 8)
+            .background(Capsule().fill(Palette.pane2))
+            .overlay(Capsule().stroke(Palette.hair, lineWidth: 0.5))
     }
 
     private func disclosure(title: String, symbol: String, tint: Color, lines: [String]) -> some View {
@@ -140,8 +137,8 @@ struct TelemetryConsentSheet: View {
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.hair, lineWidth: 0.5))
     }
 
-    private func answer(_ enable: Bool) {
-        telemetry.resolveConsent(enable: enable)
+    private func answer(_ decision: TelemetryConsent) {
+        telemetry.choose(decision)
         dismiss()
     }
 }

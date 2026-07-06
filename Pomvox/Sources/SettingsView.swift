@@ -427,7 +427,7 @@ private struct PrivacyPane: View {
             }
             SettingsGroup("Anonymous usage stats") {
                 SettingRow(title: "Send anonymous usage stats",
-                           desc: "On by default. Counters only — your voice and transcripts never leave this Mac. Turn it off here anytime.") {
+                           desc: "Your choice, set on first launch. Anonymous usage events only — your voice and transcripts never leave this Mac. Toggle it either way, anytime.") {
                     SettingToggle(isOn: telemetry.binding, label: "Send anonymous usage stats")
                 }
                 RowDivider()
@@ -438,7 +438,7 @@ private struct PrivacyPane: View {
                         text: "No account, no cloud. Your voice and transcripts never leave this Mac.")
                 RowDivider()
                 InfoRow(symbol: "antenna.radiowaves.left.and.right.slash",
-                        text: "The only network calls are the one-time model download and — unless you turn it off above — anonymous, content-free usage stats. Verify with Little Snitch or LuLu.")
+                        text: "The only network calls are the one-time model download and — when you turn the toggle above on — anonymous, content-free usage stats. Verify with Little Snitch or LuLu.")
             }
         }
         .onAppear { storage = StorageInspector.scan() }
@@ -446,7 +446,7 @@ private struct PrivacyPane: View {
 }
 
 /// The "here's exactly what we send" disclosure, shown beneath the toggle so the
-/// opt-out is informed. Copy is shared with the first-run sheet (`TelemetryCopy`).
+/// choice is informed. Copy is shared with the first-run screen (`TelemetryCopy`).
 private struct UsageStatsDisclosure: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

@@ -35,34 +35,41 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(b.installID(), id)
     }
 
-    func testConsentDefaultsOnButUnprompted() {
+    func testConsentDefaultsUndecided() {
         let store = TelemetryStore(defaults: freshDefaults())
-        XCTAssertTrue(store.enabled, "telemetry is on by default")
-        XCTAssertFalse(store.prompted, "the first-run disclosure hasn't been shown yet")
+        XCTAssertEqual(store.consent, .undecided, "no choice made yet on a fresh install")
+        XCTAssertFalse(store.maySend, "nothing sends until the user chooses to share")
     }
 
-    func testMaySendGateHoldsUntilDisclosureShown() {
+    func testMaySendOnlyWhenGranted() {
         let defaults = freshDefaults()
         var store = TelemetryStore(defaults: defaults)
-        // On by default, but nothing may send until the disclosure has been shown.
-        XCTAssertTrue(store.enabled)
-        XCTAssertFalse(store.maySend, "no send before the first-run disclosure")
+        XCTAssertFalse(store.maySend, "undecided → no send")
 
-        store.prompted = true                    // disclosure shown, kept on
-        XCTAssertTrue(store.maySend)
+        store.consent = .denied
+        XCTAssertFalse(store.maySend, "denied → no send")
 
-        store.enabled = false                    // user opted out
-        XCTAssertFalse(store.maySend, "opting out stops sending even though prompted")
+        store.consent = .granted
+        XCTAssertTrue(store.maySend, "granted → sends")
     }
 
     func testConsentPersists() {
         let defaults = freshDefaults()
         var a = TelemetryStore(defaults: defaults)
-        a.enabled = true
-        a.prompted = true
+        a.consent = .granted
         let b = TelemetryStore(defaults: defaults)
-        XCTAssertTrue(b.enabled)
-        XCTAssertTrue(b.prompted)
+        XCTAssertEqual(b.consent, .granted)
+    }
+
+    func testExistingInstallReadsAsUndecided() {
+        // Migration: an install carrying only the old on-by-default keys has no
+        // `telemetry.consent`, so it reads as undecided and is re-asked.
+        let defaults = freshDefaults()
+        defaults.set(true, forKey: "telemetry.enabled")        // legacy key
+        defaults.set(true, forKey: "telemetry.consentPrompted") // legacy key
+        let store = TelemetryStore(defaults: defaults)
+        XCTAssertEqual(store.consent, .undecided)
+        XCTAssertFalse(store.maySend)
     }
 
     // MARK: - prop sanitization (validate-or-drop; never reject the batch)

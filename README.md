@@ -10,8 +10,8 @@ hotkey, speak, and the transcript is inserted into whatever text field is
 focused — in any app. Speech-to-text runs on the Neural Engine and an optional
 cleanup pass runs a local LLM on the GPU. **Your voice and transcripts never
 leave your machine.** The only network calls are the one-time model download
-from Hugging Face and anonymous, content-free usage stats (on by default,
-opt-out; turn off in Settings → Privacy).
+from Hugging Face and — if you choose to share them on first launch — anonymous,
+content-free usage stats (change anytime in Settings → Privacy).
 
 <p align="center">
   <img src="docs/design/hub-real-home.png" width="820"
@@ -155,12 +155,13 @@ isn't negotiable. The cleanup LLM and speech model both run on-device.
 The only network calls Pomvox ever makes are:
 
 1. The one-time model download from Hugging Face.
-2. **Anonymous usage stats** — **on by default, opt-out.** On first run Pomvox
-   shows a one-time disclosure of exactly what's sent, with a one-tap **Turn
-   off**; nothing is sent until you've seen it. You can turn it off anytime in
-   **Settings → Privacy**.
+2. **Anonymous usage stats — your explicit choice.** On first launch Pomvox
+   shows a one-time screen with two equal buttons — **Share anonymous stats** or
+   **No thanks** — and nothing is sent unless you choose to share. There's no
+   default and no pre-checked box; change your mind anytime in **Settings →
+   Privacy**.
 
-While the stats are on, Pomvox sends a random per-install ID (anonymous) plus
+If you choose to share, Pomvox sends a random per-install ID (anonymous) plus
 content-free counters: app/OS version, that a dictation happened with its
 duration, which models ran, whether cleanup was used, and enum-only error codes.
 It **never** sends audio, transcripts, cleaned text, file paths, or any free

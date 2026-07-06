@@ -56,8 +56,9 @@ In scope:
 
 - The native app (`Pomvox.app`, `Pomvox/`) and its handling of permissions,
   clipboard/insertion, local history, and configuration.
-- The telemetry path (on by default, opt-out): what it sends, that it cannot
-  send content, and that nothing sends before the first-run disclosure.
+- The telemetry path (an explicit first-run choice — Share / No thanks): what it
+  sends, that it cannot send content, and that nothing sends unless the user
+  chose to share.
 - The Python reference engine (`src/pomvox/`).
 
 Out of scope:
@@ -70,8 +71,8 @@ Out of scope:
 ## A note on privacy
 
 Your voice and transcripts never leave your Mac by design. The only network
-calls Pomvox makes are the one-time model download from Hugging Face and, **unless
-you opt out**, anonymous content-free usage stats. If you believe you've found a
+calls Pomvox makes are the one-time model download from Hugging Face and, **if
+you choose to share them**, anonymous content-free usage stats. If you believe you've found a
 way that content *could* leave the device, that is exactly the kind of report I
 want to hear about — treat it as a security issue and use the private channels
 above.
