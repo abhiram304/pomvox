@@ -362,11 +362,16 @@ final class NativeEngine: ObservableObject {
             startDraftLoop()
             status = .recording
         } catch {
-            NSLog("pomvox-engine: capture FAILED (Microphone?): %@", String(describing: error))
+            // One opaque AVAudioEngine error covers every cause — reconstruct it
+            // so a Mac with no mic isn't told to grant a permission it can't use.
+            let failure = AudioCapture.StartFailure.classify(
+                hasInputDevice: AudioCapture.hasInputDevice(),
+                permissionGranted: Permissions.microphoneStatus() == true)
+            NSLog("pomvox-engine: capture FAILED (%@): %@",
+                  failure.errorCode, String(describing: error))
             bus.post(.state("idle", "ready"))
-            status = .failed(
-                "Microphone unavailable. Grant it in System Settings ▸ Privacy & Security ▸ Microphone.")
-            TelemetryClient.shared.emit(.error, props: errorProps("microphone_unavailable"))
+            status = .failed(failure.message)
+            TelemetryClient.shared.emit(.error, props: errorProps(failure.errorCode))
             resetMachine()
         }
     }
