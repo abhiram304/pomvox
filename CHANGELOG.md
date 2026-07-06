@@ -9,6 +9,15 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 _Nothing yet._
 
+## [0.1.5] — 2026-07-05
+
+### Fixed
+
+- **Home greeting showed a hardcoded name.** The Hub's greeting had the
+  maintainer's first name baked in, so every install read "Good morning, Abhi."
+  It now uses the Mac account's own name (`NSFullUserName`), falling back to a
+  name-less greeting when the account has no full name set.
+
 ## [0.1.4] — 2026-07-05
 
 ### Changed
@@ -93,7 +102,8 @@ on Apple Silicon, shipping as a signed, notarized `Pomvox.dmg`.
 - **Python reference engine** (`src/pomvox/`) — the original app, now frozen as a
   runnable reference whose pure-logic modules are the cross-checked test spec.
 
-[Unreleased]: https://github.com/abhiram304/pomvox/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/abhiram304/pomvox/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/abhiram304/pomvox/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/abhiram304/pomvox/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/abhiram304/pomvox/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/abhiram304/pomvox/compare/v0.1.1...v0.1.2

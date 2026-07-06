@@ -36,7 +36,7 @@ struct HomeView: View {
 
     private var greeting: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text("\(timeOfDayGreeting), Abhi.").font(Typo.display(30, .medium)).foregroundStyle(Palette.ink)
+            Text(greetingLine).font(Typo.display(30, .medium)).foregroundStyle(Palette.ink)
             Text(subtitleLine).font(Typo.ui(13.5)).foregroundStyle(Palette.muted)
         }
     }
@@ -76,6 +76,14 @@ struct HomeView: View {
         case 5..<12: "Good morning"; case 12..<17: "Good afternoon"
         case 17..<22: "Good evening"; default: "Still up"
         }
+    }
+
+    /// Greet by the Mac account's first name (`NSFullUserName`), never a
+    /// hardcoded name. Falls back to a name-less greeting if the account has no
+    /// full name set.
+    private var greetingLine: String {
+        let first = NSFullUserName().split(separator: " ").first.map(String.init) ?? ""
+        return first.isEmpty ? "\(timeOfDayGreeting)." : "\(timeOfDayGreeting), \(first)."
     }
     private var subtitleLine: String {
         let f = DateFormatter(); f.dateFormat = "EEEE, MMMM d"
