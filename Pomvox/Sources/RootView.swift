@@ -20,7 +20,12 @@ enum NavItem: String, CaseIterable, Identifiable {
 struct RootView: View {
     @EnvironmentObject var model: HubModel
     @EnvironmentObject var telemetry: TelemetryModel
-    @State private var selection: NavItem = .home
+    // Fresh installs land on Setup: Pomvox does nothing until Microphone,
+    // Input Monitoring, and Accessibility are granted, and a first-time user
+    // has no way to know that from an empty Home dashboard. Evaluated once at
+    // window creation; the user is free to navigate away afterward.
+    @State private var selection: NavItem = .firstRun(
+        allPermissionsGranted: Permissions.allGranted())
     @State private var showConsent = false
 
     var body: some View {

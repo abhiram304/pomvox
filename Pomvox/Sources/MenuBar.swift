@@ -46,8 +46,8 @@ struct MenuBarContent: View {
             Text(polishLoad)
         }
         Button("Open Hub…") { openHub() }
-        if needsAttention {
-            Button("Open Setup…") {
+        if setupNeeded {
+            Button(setupButtonLabel) {
                 openHub()
                 NotificationCenter.default.post(name: .pomvoxShowSetup, object: nil)
             }
@@ -75,11 +75,25 @@ struct MenuBarContent: View {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    private var needsAttention: Bool {
+    private var engineNeedsAttention: Bool {
         switch engine.status {
         case .blocked, .failed: true
         default: false
         }
+    }
+
+    /// Show a setup entry while any grant is missing (fresh install) or the
+    /// engine is reporting a problem it routes to Setup.
+    private var setupNeeded: Bool {
+        SetupNudge.needed(
+            engineNeedsAttention: engineNeedsAttention,
+            allPermissionsGranted: Permissions.allGranted())
+    }
+
+    /// A first-run user needs the stronger nudge; an already-set-up user hitting
+    /// an engine error just needs the door.
+    private var setupButtonLabel: String {
+        Permissions.allGranted() ? "Open Setup…" : "Finish setup — grant permissions…"
     }
 
     private var statusLine: String {
