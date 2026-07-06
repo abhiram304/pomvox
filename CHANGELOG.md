@@ -9,6 +9,30 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 _Nothing yet._
 
+## [0.1.6] — 2026-07-05
+
+### Added
+
+- **First-run model downloads now show progress.** The first time the native
+  engine turns on it fetches a ~460 MB speech model (and, in the background, a
+  larger cleanup model). Until now the menu bar just read a static
+  "Preparing…", so the first use looked like a hang. It now shows a live
+  "Downloading the speech model… NN%" in the menu bar and Settings, and a
+  background note while the cleanup model finishes.
+
+- **First launch guides you to Setup.** Pomvox needs Microphone, Input
+  Monitoring, and Accessibility before it can do anything, but a fresh install
+  opened to an empty dashboard with no hint. The Hub now opens straight to the
+  Setup checklist whenever a grant is still missing, the menu bar offers
+  "Finish setup — grant permissions…", and the sidebar flags the Setup row.
+
+### Fixed
+
+- **A Mac with no microphone got the wrong advice.** A capture failure always
+  suggested granting Microphone permission — useless on a machine with no input
+  device at all. Pomvox now tells those apart and shows "No microphone found —
+  connect one and try again." when no device is present.
+
 ## [0.1.5] — 2026-07-05
 
 ### Fixed
