@@ -34,6 +34,13 @@ final class NativeEngine: ObservableObject {
     @Published private(set) var lastTranscript = ""
     @Published private(set) var lastPasteMs: Double?
 
+    // First-run model-download progress (see ModelLoadStatus). `speechLoad` is
+    // non-nil while the speech model loads and stands in for the engine status
+    // (it gates dictation); `polishLoad` tracks the background cleanup-model
+    // fetch after the engine is already usable. Both clear to nil when loaded.
+    @Published private(set) var speechLoad: String?
+    @Published private(set) var polishLoad: String?
+
     // Hotkey path — touched on the event-tap thread, serialized by the lock.
     private nonisolated(unsafe) let machine: HotkeyMachine
     private nonisolated let machineLock = NSLock()
@@ -164,10 +171,21 @@ final class NativeEngine: ObservableObject {
             if history == nil { NSLog("history: store failed to open — history disabled") }
         }
 
+        // Live download percentage so the long first-run fetch (~460 MB) doesn't
+        // read as a hang. The FluidAudio handler fires on an arbitrary queue and
+        // often; the gate collapses it to distinct lines before the main hop.
+        speechLoad = ModelLoad.line(.speech, fraction: nil, downloading: false)
+        let speechGate = LineGate()
         do {
-            try await transcriber.prepare()
+            try await transcriber.prepare { [weak self] fraction, downloading in
+                let line = ModelLoad.line(.speech, fraction: fraction, downloading: downloading)
+                guard speechGate.changed(line) else { return }
+                Task { @MainActor in self?.speechLoad = line }
+            }
+            speechLoad = nil
             NSLog("pomvox-engine: model ready")
         } catch {
+            speechLoad = nil
             NSLog("pomvox-engine: model load FAILED: %@", String(describing: error))
             pidfile.release()
             history?.close(); history = nil
@@ -182,9 +200,18 @@ final class NativeEngine: ObservableObject {
         if cleanupEnabled {
             let modelID = cleanupModelID
             let hint = dictionary.hint  // baked into the cached prefix — set before prepare
-            Task { [cleanup] in
+            let polishGate = LineGate()
+            Task { [cleanup, weak self] in
                 await cleanup.setTermsHint(hint)
-                await cleanup.prepare(modelID: modelID)
+                await MainActor.run {
+                    self?.polishLoad = ModelLoad.line(.polish, fraction: nil, downloading: false)
+                }
+                await cleanup.prepare(modelID: modelID) { [weak self] fraction in
+                    let line = ModelLoad.line(.polish, fraction: fraction, downloading: true)
+                    guard polishGate.changed(line) else { return }
+                    Task { @MainActor in self?.polishLoad = line }
+                }
+                await MainActor.run { self?.polishLoad = nil }
             }
         }
 
@@ -234,6 +261,7 @@ final class NativeEngine: ObservableObject {
         pidfile.release()
         resetMachine()
         persist(false)
+        speechLoad = nil; polishLoad = nil
         status = .off
     }
 
