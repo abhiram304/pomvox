@@ -221,7 +221,7 @@ private struct NativeEngineGroup: View {
 
     private var statusText: String {
         if let speechLoad = engine.speechLoad { return speechLoad }
-        switch engine.status {
+        return switch engine.status {
         case .off:               "Off — the Python engine is your daily driver."
         case .preparing:         "Preparing the speech model… (first run downloads it)."
         case .ready:             "Ready — hold Fn, speak, then release."

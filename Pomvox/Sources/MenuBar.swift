@@ -86,7 +86,7 @@ struct MenuBarContent: View {
         // While the speech model loads it stands in for the status — it's the
         // one thing gating dictation, and a live percentage beats "Preparing…".
         if let speechLoad = engine.speechLoad { return speechLoad }
-        switch engine.status {
+        return switch engine.status {
         case .off:          "Engine off"
         case .preparing:    "Preparing the speech model…"
         case .ready:        "Ready — hold Fn to dictate"
