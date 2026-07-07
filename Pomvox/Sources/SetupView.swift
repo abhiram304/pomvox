@@ -99,13 +99,16 @@ struct SetupView: View {
                               : "Press Fn to test your dictation key")
                         .font(Typo.ui(13.5, .semibold)).foregroundStyle(Palette.ink)
                     if !seen {
-                        Text("No key event? Third-party keyboards may handle Fn in hardware — set [hotkey] ptt = \"right_option\" in config.toml. Just granted Input Monitoring? Relaunch Pomvox.")
+                        Text("No key event? Some third-party keyboards handle Fn in hardware and never send it to macOS — try the Globe/Fn key on an Apple keyboard. Just granted Input Monitoring? Relaunch Pomvox.")
                             .font(Typo.ui(11.5)).foregroundStyle(Palette.muted)
                     }
                 }
                 Spacer(minLength: 12)
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(seen ? "Hotkey working, Fn reaches Pomvox"
+                                     : "Press Fn to test your dictation key")
         }
         .background(RoundedRectangle(cornerRadius: 12).fill(Palette.pane))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.hair, lineWidth: 0.5))
