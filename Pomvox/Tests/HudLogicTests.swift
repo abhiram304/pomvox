@@ -268,4 +268,22 @@ final class HudLogicTests: XCTestCase {
         XCTAssertFalse(hudShouldShow(state: "polishing", prevState: "transcribing"))
         XCTAssertFalse(hudShouldShow(state: "done", prevState: "polishing"))
     }
+
+    func testErrorResultFlashesEvenWhileHidden() {
+        // A press during model download / a failed capture start must be able
+        // to say why nothing is happening — errors flash from any state.
+        let m = make()
+        let vm = m.apply([.result: .result("error", "still downloading the speech model")], now: 1.0)
+        XCTAssertEqual(vm.state, "error")
+        XCTAssertTrue(vm.status.contains("downloading"))
+        XCTAssertNotNil(vm.hideAt)
+    }
+
+    func testOkResultWhileHiddenIsStillIgnored() {
+        // Only errors escape the gate — a stale "ok" from a cancelled session
+        // must not flash "done" out of nowhere.
+        let m = make()
+        let vm = m.apply([.result: .result("ok", "ghost")], now: 1.0)
+        XCTAssertFalse(vm.visible)
+    }
 }

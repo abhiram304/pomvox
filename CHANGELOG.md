@@ -9,6 +9,44 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 _Nothing yet._
 
+## [0.1.7] — 2026-07-06
+
+### Fixed
+
+- **Dictation could die silently after deep sleep.** A long sleep could leave
+  the microphone engine delivering a dead (all-zero) stream — recordings
+  captured audio but transcribed to nothing, with no explanation. The audio
+  engine is now rebuilt after sleep and whenever the input device
+  configuration changes. (#60)
+
+- **Fresh installs had a silent dead zone during the first-run download.**
+  The dictation hotkey only became active after the ~460 MB speech-model
+  download, so pressing Fn right after installing did nothing at all. The
+  hotkey now works immediately: a press during the download shows
+  "not ready yet — downloading NN%" on the HUD. (#60)
+
+- **A hotkey press racing engine startup could corrupt the engine state.**
+  Stop/cancel/hands-free events arriving before the engine was ready could
+  flip it to "ready" mid-download or fake a transcription cycle; every
+  terminal transition is now status-guarded. A wake during the download can
+  no longer strand a dead hotkey tap or crash on the next keypress. (#60)
+
+### Added
+
+- **Every "nothing happened" now explains itself.** The HUD logs its
+  show/hide lifecycle and verifies against the window server that the pill
+  is actually on screen; empty transcripts are classified (mic captured
+  silence vs transcription failure vs genuinely no words) and the two hard
+  failures flash the reason on the HUD. (#60)
+
+- **Setup shows a live hotkey heartbeat.** A new row in the Setup checklist
+  turns green when Fn actually reaches Pomvox — separating "permission not
+  effective until relaunch" and "this keyboard handles Fn in hardware" from
+  everything else. (#60)
+
+- **`scripts/verify-hud.sh`** — an end-to-end check that synthesizes an Fn
+  press and asks the window server whether the HUD pill really appeared. (#60)
+
 ## [0.1.6] — 2026-07-05
 
 ### Added

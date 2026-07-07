@@ -47,7 +47,15 @@ final class AudioCapture {
         !AudioDevices.inputDeviceNames().isEmpty
     }
 
-    private let engine = AVAudioEngine()
+    // `var`: rebuilt when marked stale — a long-lived AVAudioEngine can keep
+    // "running" after deep sleep or a default-device change while delivering a
+    // dead (all-zero) stream. A fresh engine re-binds to live hardware.
+    // Contract: cross-thread reads of `engine` go through `lock`; main-actor-only
+    // paths (rest of start()/stop()) may read it directly.
+    private var engine = AVAudioEngine()
+    private var stale = false
+    private(set) var rebuildCount = 0
+    private var configObserver: NSObjectProtocol?
     private let targetFormat: AVAudioFormat
     private var converter: AVAudioConverter?
 
@@ -64,12 +72,46 @@ final class AudioCapture {
     init() {
         targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
                                      sampleRate: 16000, channels: 1, interleaved: false)!
+
+        // The engine posts this when the input device / format changes under it
+        // (sleep-wake, AirPods connect, default-device switch). Rebinding lazily
+        // at the next start() is enough — mid-recording changes end the session
+        // via the engine stopping on its own.
+        configObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: nil, queue: nil
+        ) { [weak self] note in
+            guard let self else { return }
+            self.lock.lock(); let current = self.engine; self.lock.unlock()
+            guard (note.object as? AVAudioEngine) === current else { return }
+            NSLog("audio: engine configuration changed — marked stale")
+            self.markStale()
+        }
     }
+
+    deinit {
+        if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
+    }
+
+    /// Next `start()` builds a fresh AVAudioEngine. Thread-safe; called from the
+    /// wake handler and the configuration-change notification.
+    func markStale() { lock.lock(); stale = true; lock.unlock() }
 
     /// Begin capture. Throws if the audio engine can't start (no mic grant /
     /// no input device).
     func start() throws {
-        lock.lock(); samples.removeAll(keepingCapacity: true); recording = true; lock.unlock()
+        lock.lock()
+        samples.removeAll(keepingCapacity: true); recording = true
+        let needsFresh = stale; stale = false
+        lock.unlock()
+        if needsFresh {
+            lock.lock(); let old = engine; lock.unlock()
+            old.inputNode.removeTap(onBus: 0)
+            old.stop()
+            let fresh = AVAudioEngine()
+            lock.lock(); engine = fresh; lock.unlock()
+            rebuildCount += 1
+            NSLog("audio: engine rebuilt (stale after sleep/config change)")
+        }
 
         let input = engine.inputNode
         let inputFormat = input.inputFormat(forBus: 0)

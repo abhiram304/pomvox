@@ -40,6 +40,14 @@ final class EventTap {
         self.onKeyDown = onKeyDown
     }
 
+    /// Backstop: if the last strong reference to a still-running tap is ever
+    /// dropped without an explicit stop() (e.g. a future bookkeeping bug),
+    /// this guarantees the CGEventTap callback — which holds an unretained
+    /// pointer to this instance — never keeps firing into freed memory.
+    deinit {
+        stop()
+    }
+
     /// Create the tap (throws if Input Monitoring isn't granted) and run its
     /// run loop on a dedicated background thread.
     func start() throws {

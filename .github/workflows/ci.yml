@@ -38,8 +38,10 @@ jobs:
     name: Swift tests (macOS)
     # macos-15 ships Xcode >= 16.3 (Swift 6.1), required by swift-tokenizers-mlx's
     # tools version; macos-14's newest stable Xcode is too old to resolve it.
+    # 90 min: shared runners intermittently take >6x the healthy ~7 min build
+    # (observed 2026-07-07, 3 consecutive 40-min timeouts mid-dependency-compile).
     runs-on: macos-15
-    timeout-minutes: 40
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 

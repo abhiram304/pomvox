@@ -41,6 +41,11 @@ final class NativeEngine: ObservableObject {
     @Published private(set) var speechLoad: String?
     @Published private(set) var polishLoad: String?
 
+    // Setup heartbeat: last time the PTT key's own event reached the tap.
+    // Distinguishes "tap dead / key handled in keyboard hardware" (stays nil)
+    // from "events arrive, problem is downstream".
+    @Published private(set) var lastPttSeenAt: Date?
+
     // Hotkey path — touched on the event-tap thread, serialized by the lock.
     private nonisolated(unsafe) let machine: HotkeyMachine
     private nonisolated let machineLock = NSLock()
@@ -103,6 +108,10 @@ final class NativeEngine: ObservableObject {
     private var wakeObserver: NSObjectProtocol?
     private var screensWakeObserver: NSObjectProtocol?
     private var wakeRecreateTask: Task<Void, Never>?
+    // A wake fired during the .preparing download window, where recreateTap()
+    // defers to arm()'s ownership of the tap; arm() retries the recreate once
+    // it completes (the arm-installed tap may have died across the deep sleep).
+    private var pendingTapRecreate = false
 
     init(configPath: String = SettingsModel.defaultPath()) {
         self.configPath = configPath
@@ -162,6 +171,32 @@ final class NativeEngine: ObservableObject {
 
         loadEngineConfig()
 
+        // The audio callback posts mic level (waveform) and, when armed, drives
+        // the VAD endpointer. Set before any capture.start().
+        capture.onBlock = { [weak self] block in self?.onAudioBlock(block) }
+
+        // Tap FIRST, model second: on a fresh install prepare() downloads
+        // ~460 MB — with the tap already live, a press during the download
+        // flashes "still downloading" instead of doing nothing (the
+        // fresh-install "app is dead" report). startCapture() gates on .ready.
+        let tap = makeTap()
+        do {
+            try tap.start()
+            NSLog("pomvox-engine: event tap installed")
+        } catch {
+            NSLog("pomvox-engine: event tap FAILED (Input Monitoring?): %@", String(describing: error))
+            pidfile.release()
+            status = .failed(
+                "Input Monitoring isn't granted. Enable Pomvox in System Settings ▸ Privacy & "
+                + "Security ▸ Input Monitoring, then turn this on again.")
+            TelemetryClient.shared.emit(.error, props: errorProps("input_monitoring_denied"))
+            return
+        }
+        self.tap = tap
+        // A brand-new tap owes nothing to wakes that predate it (and a stale
+        // flag from a failed prior arm must not trigger a spurious recreate).
+        pendingTapRecreate = false
+
         // History store (M7a): the engine process holds the pidfile, so it is
         // the single inserter. A failed open degrades to no-history — the
         // engine must dictate even when bookkeeping can't.
@@ -187,6 +222,12 @@ final class NativeEngine: ObservableObject {
         } catch {
             speechLoad = nil
             NSLog("pomvox-engine: model load FAILED: %@", String(describing: error))
+            // Tear down whichever tap is *current* (self.tap), not the local
+            // `tap` this catch closed over: recreateTap() now refuses to run
+            // during .preparing, but tearing down through self.tap rather than
+            // the stale local is the robust fix regardless — it can never drop
+            // the last reference to a live, still-enabled tap.
+            self.tap?.stop(); self.tap = nil
             pidfile.release()
             history?.close(); history = nil
             status = .failed("Speech model failed to load. \(error.localizedDescription)")
@@ -215,29 +256,14 @@ final class NativeEngine: ObservableObject {
             }
         }
 
-        // The audio callback posts mic level (waveform) and, when armed, drives
-        // the VAD endpointer. Set before any capture.start().
-        capture.onBlock = { [weak self] block in self?.onAudioBlock(block) }
-
-        let tap = makeTap()
-        do {
-            try tap.start()
-            NSLog("pomvox-engine: event tap installed")
-        } catch {
-            NSLog("pomvox-engine: event tap FAILED (Input Monitoring?): %@", String(describing: error))
-            pidfile.release()
-            history?.close(); history = nil
-            status = .failed(
-                "Input Monitoring isn't granted. Enable Pomvox in System Settings ▸ Privacy & "
-                + "Security ▸ Input Monitoring, then turn this on again.")
-            TelemetryClient.shared.emit(.error, props: errorProps("input_monitoring_denied"))
-            return
-        }
-        self.tap = tap
         registerSleepWakeObservers()
         persist(true)
         NSLog("pomvox-engine: ARMED — ready")
         status = .ready
+        if pendingTapRecreate {
+            pendingTapRecreate = false
+            recreateTap()   // a wake fired mid-download; the arm-installed tap may be dead
+        }
         TelemetryClient.shared.emit(.appLaunch)
     }
 
@@ -248,6 +274,7 @@ final class NativeEngine: ObservableObject {
 
     func disarm() {
         unregisterSleepWakeObservers()
+        pendingTapRecreate = false
         tap?.stop(); tap = nil
         draftTask?.cancel(); draftTask = nil
         endVadSession()
@@ -307,12 +334,15 @@ final class NativeEngine: ObservableObject {
     // MARK: - hotkey path (event-tap thread)
 
     private nonisolated func decide(
+        keycode: Int? = nil,
         _ body: (HotkeyMachine) -> HotkeyMachine.Decision
     ) -> HotkeyMachine.Decision {
         machineLock.lock()
         let decision = body(machine)
+        let isPtt = keycode == machine.pttKeycode
         if decision.action == .stop { stopAt = CFAbsoluteTimeGetCurrent() }  // t0 = key-up
         machineLock.unlock()
+        if isPtt { Task { @MainActor [weak self] in self?.lastPttSeenAt = Date() } }
         if decision.action != .none {
             let action = decision.action
             Task { @MainActor [weak self] in self?.handle(action) }
@@ -364,6 +394,10 @@ final class NativeEngine: ObservableObject {
         case .startPTT:
             startCapture(mode: "push-to-talk")
         case .enterToggle:
+            // A Fn+Space that raced the pre-ready guard (no capture ever
+            // started) must not fake hands-free: it would set .recording with
+            // no capture running and arm a VAD endpointer over dead audio.
+            guard status == .recording else { resetMachine(); return }
             // Hands-free: keep recording, arm the energy endpointer.
             bus.post(.state("recording", "recording (hands-free)"))
             if vadEnabled {
@@ -381,6 +415,17 @@ final class NativeEngine: ObservableObject {
     }
 
     private func startCapture(mode: String) {
+        // Tap is live before the model is (fresh-install download): a press
+        // that can't record yet must say why instead of doing nothing.
+        guard status == .ready || status == .recording else {
+            let line = speechLoad ?? polishLoad
+            let msg = line.map { "not ready yet — \($0)" }
+                ?? "Pomvox is still starting up — try again in a moment"
+            NSLog("pomvox-engine: press before ready (status not .ready) — %@", msg)
+            bus.post(.result("error", msg))
+            resetMachine()
+            return
+        }
         sessionGen += 1
         finishing = false
         do {
@@ -405,6 +450,15 @@ final class NativeEngine: ObservableObject {
     }
 
     private func finish() {
+        // A stop that raced the pre-ready guard in startCapture (Fn-up arriving
+        // before the main actor ran the guard + resetMachine()) must not fake a
+        // transcription cycle: with no capture ever started there is nothing to
+        // stop/transcribe, and running the rest of this function would post a
+        // bogus "transcribing" state, throw notLoaded, emit bogus stt_failed
+        // telemetry, and flip status to .ready mid-download or un-fail a
+        // .failed engine. onVadEndpoint's auto-stop only calls finish() when
+        // status == .recording, so that path is unaffected by this guard.
+        guard status == .recording else { resetMachine(); return }
         finishing = true
         endVadSession()
         draftTask?.cancel(); draftTask = nil
@@ -428,7 +482,14 @@ final class NativeEngine: ObservableObject {
             // in history.timings_json with Python's keys.
             var timings = EngineTimings()
             timings.start(at: t0)
-            let raw = (try? await self.transcriber.transcribe(samples)) ?? ""
+            var sttError: String?
+            var raw = ""
+            do {
+                raw = try await self.transcriber.transcribe(samples)
+            } catch {
+                sttError = String(describing: error)
+                NSLog("pomvox-engine: finalize transcribe FAILED: %@", sttError!)
+            }
             timings.stamp("stt_finalize")
             NSLog("pomvox-engine: transcript = %@", raw.isEmpty ? "<empty>" : raw)
             var text = raw
@@ -453,7 +514,17 @@ final class NativeEngine: ObservableObject {
             text = dict.apply(text)
             let (appHint, pastedAt): (String?, Double?) = await MainActor.run {
                 guard !text.isEmpty else {
-                    self.bus.post(.result("empty", ""))
+                    let peak = peakDbfs(samples)
+                    let cause = classifyEmptyTranscript(peakDbfs: peak, sttError: sttError)
+                    NSLog("pomvox-engine: empty transcript — %@", String(describing: cause))
+                    if let msg = cause.hudMessage {
+                        self.bus.post(.result("error", msg))
+                    } else {
+                        self.bus.post(.result("empty", ""))
+                    }
+                    if let code = cause.errorCode {
+                        TelemetryClient.shared.emit(.error, props: self.errorProps(code))
+                    }
                     self.doneMachine()
                     self.status = .ready
                     return (nil, nil)
@@ -546,7 +617,7 @@ final class NativeEngine: ObservableObject {
     private func makeTap() -> EventTap {
         EventTap(
             onModifier: { [weak self] keycode, isDown in
-                self?.decide { $0.onModifier(keycode, isDown) } ?? HotkeyMachine.Decision()
+                self?.decide(keycode: keycode) { $0.onModifier(keycode, isDown) } ?? HotkeyMachine.Decision()
             },
             onKeyDown: { [weak self] keycode in
                 self?.decide { $0.onKeyDown(keycode) } ?? HotkeyMachine.Decision()
@@ -594,6 +665,7 @@ final class NativeEngine: ObservableObject {
     /// deliver). Debounced so overlapping wake signals rebuild once.
     private func onWake(reason: String) {
         panicReset(reason: "system \(reason)")
+        capture.markStale()   // a post-sleep engine can deliver a dead stream
         guard isArmed else { return }
         wakeRecreateTask?.cancel()
         wakeRecreateTask = Task { [weak self] in
@@ -607,6 +679,21 @@ final class NativeEngine: ObservableObject {
     /// recovery for a session tap that stopped delivering after deep sleep.
     private func recreateTap() {
         guard isArmed else { return }
+        // During the first-run download window arm() owns the tap lifecycle
+        // end-to-end (it installed the tap, and its catch tears it down on a
+        // model-load failure). A wake-triggered recreate here would stop that
+        // tap and swap in a fresh one into self.tap — then, if prepare() goes
+        // on to throw, arm()'s catch would tear down *this* fresh tap via a
+        // stale local reference, dropping the last strong reference to a still-
+        // enabled CGEventTap whose callback points at self. Simplest fix: never
+        // touch the tap mid-download: let arm() finish owning it. But the wake
+        // that got us here means the arm-installed tap may be dead (deep sleep
+        // kills session taps) — record the debt so arm() retries the recreate
+        // once it completes, instead of finishing with a possibly-dead tap.
+        guard status != .preparing else {
+            pendingTapRecreate = true
+            return
+        }
         tap?.stop()
         let fresh = makeTap()
         do {
@@ -637,10 +724,23 @@ final class NativeEngine: ObservableObject {
         capture.stop()
         bus.post(.state("idle", "ready"))   // hide the HUD if it was showing
         resetMachine()
-        status = .ready
+        // Only fold a genuine in-flight recording/transcription back to
+        // .ready. A wake that catches a press in flight before startCapture's
+        // guard has run (status still .preparing/.failed/.blocked) must not
+        // promote that status — the machine/capture/draft/VAD/HUD reset above
+        // still applies unconditionally, but the engine's own status is left
+        // alone so a mid-download wake can't un-fail a .failed engine or
+        // report .ready before the model has actually loaded.
+        if status == .recording || status == .transcribing {
+            status = .ready
+        }
     }
 
     private func cancelRecording() {
+        // Esc racing the pre-ready guard (no capture ever started) must not
+        // fake a cancel: capture.stop() on nothing, a bogus "cancelled" HUD
+        // flash, and status = .ready mid-download/mid-failure.
+        guard status == .recording else { resetMachine(); return }
         NSLog("pomvox-engine: cancelled by user")
         endVadSession()
         draftTask?.cancel(); draftTask = nil

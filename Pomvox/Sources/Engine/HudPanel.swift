@@ -200,10 +200,36 @@ final class HudController {
             panel.animator().alphaValue = 1.0
         }
         panel.orderFrontRegardless()           // never makeKeyAndOrderFront
+        NSLog("hud: show at (%.0f, %.0f) screen=%@", f.x, f.y,
+              screen?.localizedName ?? "<none>")
+        scheduleShowProbe()
+    }
+
+    /// ~0.3 s after a show, ask the window server whether the pill is really on
+    /// screen. A miss is the "HUD never appeared" bug caught red-handed — one
+    /// log line + one anonymous error event, never any UI.
+    private func scheduleShowProbe() {
+        let gen = showGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self, self.showGeneration == gen, self.prevState != "hidden"
+            else { return }  // already hidden again — nothing to verify
+            let visible = hudPillFound(
+                windows: HudProbe.onScreenWindows(),
+                pid: Int(ProcessInfo.processInfo.processIdentifier),
+                pillSize: HudConst.pillSize)
+            if !visible {
+                NSLog("hud: PROBE MISS — pill not on screen 0.3s after show (state=%@)",
+                      self.prevState)
+                var p = TelemetryProps()
+                p.errorCode = "hud_not_visible"
+                TelemetryClient.shared.emit(.error, props: p)
+            }
+        }
     }
 
     private func hide(_ panel: NSPanel) {
         let gen = showGeneration
+        NSLog("hud: hide (fade) state=%@", prevState)
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.25
             panel.animator().alphaValue = 0.0
