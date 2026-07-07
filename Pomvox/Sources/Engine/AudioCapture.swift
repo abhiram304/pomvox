@@ -50,6 +50,8 @@ final class AudioCapture {
     // `var`: rebuilt when marked stale — a long-lived AVAudioEngine can keep
     // "running" after deep sleep or a default-device change while delivering a
     // dead (all-zero) stream. A fresh engine re-binds to live hardware.
+    // Contract: cross-thread reads of `engine` go through `lock`; main-actor-only
+    // paths (rest of start()/stop()) may read it directly.
     private var engine = AVAudioEngine()
     private var stale = false
     private(set) var rebuildCount = 0
@@ -78,7 +80,9 @@ final class AudioCapture {
         configObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: nil, queue: nil
         ) { [weak self] note in
-            guard let self, (note.object as? AVAudioEngine) === self.engine else { return }
+            guard let self else { return }
+            self.lock.lock(); let current = self.engine; self.lock.unlock()
+            guard (note.object as? AVAudioEngine) === current else { return }
             NSLog("audio: engine configuration changed — marked stale")
             self.markStale()
         }
@@ -100,9 +104,11 @@ final class AudioCapture {
         let needsFresh = stale; stale = false
         lock.unlock()
         if needsFresh {
-            engine.inputNode.removeTap(onBus: 0)
-            engine.stop()
-            engine = AVAudioEngine()
+            lock.lock(); let old = engine; lock.unlock()
+            old.inputNode.removeTap(onBus: 0)
+            old.stop()
+            let fresh = AVAudioEngine()
+            lock.lock(); engine = fresh; lock.unlock()
             rebuildCount += 1
             NSLog("audio: engine rebuilt (stale after sleep/config change)")
         }
