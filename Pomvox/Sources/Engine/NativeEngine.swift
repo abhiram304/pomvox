@@ -437,8 +437,7 @@ final class NativeEngine: ObservableObject {
                 NSLog("pomvox-engine: finalize transcribe FAILED: %@", sttError!)
             }
             timings.stamp("stt_finalize")
-            NSLog("pomvox-engine: transcript = %@ (peak %.0f dBFS)",
-                  raw.isEmpty ? "<empty>" : raw, peakDbfs(samples))
+            NSLog("pomvox-engine: transcript = %@", raw.isEmpty ? "<empty>" : raw)
             var text = raw
             var cleanupStatus: CleanupStatus?
             // Cleanup OFF: nothing below runs — the <300 ms raw path is intact.
@@ -461,15 +460,15 @@ final class NativeEngine: ObservableObject {
             text = dict.apply(text)
             let (appHint, pastedAt): (String?, Double?) = await MainActor.run {
                 guard !text.isEmpty else {
-                    let cause = classifyEmptyTranscript(
-                        peakDbfs: peakDbfs(samples), sttError: sttError)
+                    let peak = peakDbfs(samples)
+                    let cause = classifyEmptyTranscript(peakDbfs: peak, sttError: sttError)
+                    NSLog("pomvox-engine: empty transcript — %@", String(describing: cause))
                     if let msg = cause.hudMessage {
                         self.bus.post(.result("error", msg))
                     } else {
                         self.bus.post(.result("empty", ""))
                     }
                     if let code = cause.errorCode {
-                        NSLog("pomvox-engine: empty transcript — %@", code)
                         TelemetryClient.shared.emit(.error, props: self.errorProps(code))
                     }
                     self.doneMachine()
