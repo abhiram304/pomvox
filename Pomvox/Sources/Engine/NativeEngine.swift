@@ -182,7 +182,6 @@ final class NativeEngine: ObservableObject {
         } catch {
             NSLog("pomvox-engine: event tap FAILED (Input Monitoring?): %@", String(describing: error))
             pidfile.release()
-            history?.close(); history = nil
             status = .failed(
                 "Input Monitoring isn't granted. Enable Pomvox in System Settings ▸ Privacy & "
                 + "Security ▸ Input Monitoring, then turn this on again.")
@@ -216,7 +215,12 @@ final class NativeEngine: ObservableObject {
         } catch {
             speechLoad = nil
             NSLog("pomvox-engine: model load FAILED: %@", String(describing: error))
-            tap.stop(); self.tap = nil
+            // Tear down whichever tap is *current* (self.tap), not the local
+            // `tap` this catch closed over: recreateTap() now refuses to run
+            // during .preparing, but tearing down through self.tap rather than
+            // the stale local is the robust fix regardless — it can never drop
+            // the last reference to a live, still-enabled tap.
+            self.tap?.stop(); self.tap = nil
             pidfile.release()
             history?.close(); history = nil
             status = .failed("Speech model failed to load. \(error.localizedDescription)")
@@ -378,6 +382,10 @@ final class NativeEngine: ObservableObject {
         case .startPTT:
             startCapture(mode: "push-to-talk")
         case .enterToggle:
+            // A Fn+Space that raced the pre-ready guard (no capture ever
+            // started) must not fake hands-free: it would set .recording with
+            // no capture running and arm a VAD endpointer over dead audio.
+            guard status == .recording else { resetMachine(); return }
             // Hands-free: keep recording, arm the energy endpointer.
             bus.post(.state("recording", "recording (hands-free)"))
             if vadEnabled {
@@ -430,6 +438,15 @@ final class NativeEngine: ObservableObject {
     }
 
     private func finish() {
+        // A stop that raced the pre-ready guard in startCapture (Fn-up arriving
+        // before the main actor ran the guard + resetMachine()) must not fake a
+        // transcription cycle: with no capture ever started there is nothing to
+        // stop/transcribe, and running the rest of this function would post a
+        // bogus "transcribing" state, throw notLoaded, emit bogus stt_failed
+        // telemetry, and flip status to .ready mid-download or un-fail a
+        // .failed engine. onVadEndpoint's auto-stop only calls finish() when
+        // status == .recording, so that path is unaffected by this guard.
+        guard status == .recording else { resetMachine(); return }
         finishing = true
         endVadSession()
         draftTask?.cancel(); draftTask = nil
@@ -650,6 +667,15 @@ final class NativeEngine: ObservableObject {
     /// recovery for a session tap that stopped delivering after deep sleep.
     private func recreateTap() {
         guard isArmed else { return }
+        // During the first-run download window arm() owns the tap lifecycle
+        // end-to-end (it installed the tap, and its catch tears it down on a
+        // model-load failure). A wake-triggered recreate here would stop that
+        // tap and swap in a fresh one into self.tap — then, if prepare() goes
+        // on to throw, arm()'s catch would tear down *this* fresh tap via a
+        // stale local reference, dropping the last strong reference to a still-
+        // enabled CGEventTap whose callback points at self. Simplest fix: never
+        // touch the tap mid-download: let arm() finish owning it.
+        guard status != .preparing else { return }
         tap?.stop()
         let fresh = makeTap()
         do {
@@ -680,10 +706,23 @@ final class NativeEngine: ObservableObject {
         capture.stop()
         bus.post(.state("idle", "ready"))   // hide the HUD if it was showing
         resetMachine()
-        status = .ready
+        // Only fold a genuine in-flight recording/transcription back to
+        // .ready. A wake that catches a press in flight before startCapture's
+        // guard has run (status still .preparing/.failed/.blocked) must not
+        // promote that status — the machine/capture/draft/VAD/HUD reset above
+        // still applies unconditionally, but the engine's own status is left
+        // alone so a mid-download wake can't un-fail a .failed engine or
+        // report .ready before the model has actually loaded.
+        if status == .recording || status == .transcribing {
+            status = .ready
+        }
     }
 
     private func cancelRecording() {
+        // Esc racing the pre-ready guard (no capture ever started) must not
+        // fake a cancel: capture.stop() on nothing, a bogus "cancelled" HUD
+        // flash, and status = .ready mid-download/mid-failure.
+        guard status == .recording else { resetMachine(); return }
         NSLog("pomvox-engine: cancelled by user")
         endVadSession()
         draftTask?.cancel(); draftTask = nil
