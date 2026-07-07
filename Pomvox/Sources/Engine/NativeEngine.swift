@@ -108,6 +108,10 @@ final class NativeEngine: ObservableObject {
     private var wakeObserver: NSObjectProtocol?
     private var screensWakeObserver: NSObjectProtocol?
     private var wakeRecreateTask: Task<Void, Never>?
+    // A wake fired during the .preparing download window, where recreateTap()
+    // defers to arm()'s ownership of the tap; arm() retries the recreate once
+    // it completes (the arm-installed tap may have died across the deep sleep).
+    private var pendingTapRecreate = false
 
     init(configPath: String = SettingsModel.defaultPath()) {
         self.configPath = configPath
@@ -189,6 +193,9 @@ final class NativeEngine: ObservableObject {
             return
         }
         self.tap = tap
+        // A brand-new tap owes nothing to wakes that predate it (and a stale
+        // flag from a failed prior arm must not trigger a spurious recreate).
+        pendingTapRecreate = false
 
         // History store (M7a): the engine process holds the pidfile, so it is
         // the single inserter. A failed open degrades to no-history — the
@@ -253,6 +260,10 @@ final class NativeEngine: ObservableObject {
         persist(true)
         NSLog("pomvox-engine: ARMED — ready")
         status = .ready
+        if pendingTapRecreate {
+            pendingTapRecreate = false
+            recreateTap()   // a wake fired mid-download; the arm-installed tap may be dead
+        }
         TelemetryClient.shared.emit(.appLaunch)
     }
 
@@ -263,6 +274,7 @@ final class NativeEngine: ObservableObject {
 
     func disarm() {
         unregisterSleepWakeObservers()
+        pendingTapRecreate = false
         tap?.stop(); tap = nil
         draftTask?.cancel(); draftTask = nil
         endVadSession()
@@ -674,8 +686,14 @@ final class NativeEngine: ObservableObject {
         // on to throw, arm()'s catch would tear down *this* fresh tap via a
         // stale local reference, dropping the last strong reference to a still-
         // enabled CGEventTap whose callback points at self. Simplest fix: never
-        // touch the tap mid-download: let arm() finish owning it.
-        guard status != .preparing else { return }
+        // touch the tap mid-download: let arm() finish owning it. But the wake
+        // that got us here means the arm-installed tap may be dead (deep sleep
+        // kills session taps) — record the debt so arm() retries the recreate
+        // once it completes, instead of finishing with a possibly-dead tap.
+        guard status != .preparing else {
+            pendingTapRecreate = true
+            return
+        }
         tap?.stop()
         let fresh = makeTap()
         do {
