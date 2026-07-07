@@ -224,7 +224,10 @@ final class HudStateMachine {
         case let .endpointProgress(value):
             if vm.state == "recording" { vm.endpointFraction = value }
         case let .result(status, text):
-            guard vm.visible else { return }
+            // Errors flash from ANY state — a press that can't start (model
+            // still downloading, mic dead) must say so; everything else keeps
+            // the old gate (a stale ok/cancelled must not flash from hidden).
+            guard vm.visible || status == "error" else { return }
             switch status {
             case "ok":
                 vm = HudViewModel(state: "done", final: truncateHead(text, maxChars),

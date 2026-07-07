@@ -162,6 +162,30 @@ final class NativeEngine: ObservableObject {
 
         loadEngineConfig()
 
+        // The audio callback posts mic level (waveform) and, when armed, drives
+        // the VAD endpointer. Set before any capture.start().
+        capture.onBlock = { [weak self] block in self?.onAudioBlock(block) }
+
+        // Tap FIRST, model second: on a fresh install prepare() downloads
+        // ~460 MB — with the tap already live, a press during the download
+        // flashes "still downloading" instead of doing nothing (the
+        // fresh-install "app is dead" report). startCapture() gates on .ready.
+        let tap = makeTap()
+        do {
+            try tap.start()
+            NSLog("pomvox-engine: event tap installed")
+        } catch {
+            NSLog("pomvox-engine: event tap FAILED (Input Monitoring?): %@", String(describing: error))
+            pidfile.release()
+            history?.close(); history = nil
+            status = .failed(
+                "Input Monitoring isn't granted. Enable Pomvox in System Settings ▸ Privacy & "
+                + "Security ▸ Input Monitoring, then turn this on again.")
+            TelemetryClient.shared.emit(.error, props: errorProps("input_monitoring_denied"))
+            return
+        }
+        self.tap = tap
+
         // History store (M7a): the engine process holds the pidfile, so it is
         // the single inserter. A failed open degrades to no-history — the
         // engine must dictate even when bookkeeping can't.
@@ -187,6 +211,7 @@ final class NativeEngine: ObservableObject {
         } catch {
             speechLoad = nil
             NSLog("pomvox-engine: model load FAILED: %@", String(describing: error))
+            tap.stop(); self.tap = nil
             pidfile.release()
             history?.close(); history = nil
             status = .failed("Speech model failed to load. \(error.localizedDescription)")
@@ -215,25 +240,6 @@ final class NativeEngine: ObservableObject {
             }
         }
 
-        // The audio callback posts mic level (waveform) and, when armed, drives
-        // the VAD endpointer. Set before any capture.start().
-        capture.onBlock = { [weak self] block in self?.onAudioBlock(block) }
-
-        let tap = makeTap()
-        do {
-            try tap.start()
-            NSLog("pomvox-engine: event tap installed")
-        } catch {
-            NSLog("pomvox-engine: event tap FAILED (Input Monitoring?): %@", String(describing: error))
-            pidfile.release()
-            history?.close(); history = nil
-            status = .failed(
-                "Input Monitoring isn't granted. Enable Pomvox in System Settings ▸ Privacy & "
-                + "Security ▸ Input Monitoring, then turn this on again.")
-            TelemetryClient.shared.emit(.error, props: errorProps("input_monitoring_denied"))
-            return
-        }
-        self.tap = tap
         registerSleepWakeObservers()
         persist(true)
         NSLog("pomvox-engine: ARMED — ready")
@@ -381,6 +387,17 @@ final class NativeEngine: ObservableObject {
     }
 
     private func startCapture(mode: String) {
+        // Tap is live before the model is (fresh-install download): a press
+        // that can't record yet must say why instead of doing nothing.
+        guard status == .ready || status == .recording else {
+            let line = speechLoad ?? polishLoad
+            let msg = line.map { "not ready yet — \($0)" }
+                ?? "Pomvox is still starting up — try again in a moment"
+            NSLog("pomvox-engine: press before ready (status not .ready) — %@", msg)
+            bus.post(.result("error", msg))
+            resetMachine()
+            return
+        }
         sessionGen += 1
         finishing = false
         do {
