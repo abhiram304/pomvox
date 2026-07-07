@@ -59,6 +59,10 @@ final class HotkeyMachine {
     static let pass = Decision()
 
     let pttKey: Int
+    /// The PTT virtual keycode, exposed for the Setup heartbeat ("is your key
+    /// reaching Pomvox at all?" — hardware Fn keys on third-party keyboards
+    /// often never generate an event).
+    var pttKeycode: Int { pttKey }
     let toggleMod: Int
     let toggleKey: Int
     let stopKey: Int?

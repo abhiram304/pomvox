@@ -41,6 +41,11 @@ final class NativeEngine: ObservableObject {
     @Published private(set) var speechLoad: String?
     @Published private(set) var polishLoad: String?
 
+    // Setup heartbeat: last time the PTT key's own event reached the tap.
+    // Distinguishes "tap dead / key handled in keyboard hardware" (stays nil)
+    // from "events arrive, problem is downstream".
+    @Published private(set) var lastPttSeenAt: Date?
+
     // Hotkey path — touched on the event-tap thread, serialized by the lock.
     private nonisolated(unsafe) let machine: HotkeyMachine
     private nonisolated let machineLock = NSLock()
@@ -313,12 +318,15 @@ final class NativeEngine: ObservableObject {
     // MARK: - hotkey path (event-tap thread)
 
     private nonisolated func decide(
+        keycode: Int? = nil,
         _ body: (HotkeyMachine) -> HotkeyMachine.Decision
     ) -> HotkeyMachine.Decision {
         machineLock.lock()
         let decision = body(machine)
+        let isPtt = keycode == machine.pttKeycode
         if decision.action == .stop { stopAt = CFAbsoluteTimeGetCurrent() }  // t0 = key-up
         machineLock.unlock()
+        if isPtt { Task { @MainActor [weak self] in self?.lastPttSeenAt = Date() } }
         if decision.action != .none {
             let action = decision.action
             Task { @MainActor [weak self] in self?.handle(action) }
@@ -580,7 +588,7 @@ final class NativeEngine: ObservableObject {
     private func makeTap() -> EventTap {
         EventTap(
             onModifier: { [weak self] keycode, isDown in
-                self?.decide { $0.onModifier(keycode, isDown) } ?? HotkeyMachine.Decision()
+                self?.decide(keycode: keycode) { $0.onModifier(keycode, isDown) } ?? HotkeyMachine.Decision()
             },
             onKeyDown: { [weak self] keycode in
                 self?.decide { $0.onKeyDown(keycode) } ?? HotkeyMachine.Decision()

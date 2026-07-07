@@ -34,6 +34,7 @@ struct SetupView: View {
             VStack(alignment: .leading, spacing: 22) {
                 header
                 permissionsCard
+                heartbeatCard
                 selfTestCard
             }
             .padding(28)
@@ -78,6 +79,33 @@ struct SetupView: View {
             Text(OnboardingFlow.staleTccHint)
                 .font(Typo.ui(11)).foregroundStyle(Palette.muted)
                 .padding(.horizontal, 16).padding(.vertical, 10)
+        }
+        .background(RoundedRectangle(cornerRadius: 12).fill(Palette.pane))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.hair, lineWidth: 0.5))
+    }
+
+    // Hotkey heartbeat: proves the dictation key physically reaches the app.
+    // Green within 10 s of a press; the hint covers the two known silent
+    // worlds (hardware Fn keys, missing relaunch after a grant).
+    private var heartbeatCard: some View {
+        TimelineView(.periodic(from: .now, by: 1.0)) { context in
+            let seen = engine.lastPttSeenAt.map {
+                context.date.timeIntervalSince($0) < 10.0 } ?? false
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: seen ? "checkmark.circle.fill" : "circle.dashed")
+                    .foregroundStyle(seen ? .green : Palette.muted)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(seen ? "Hotkey working — Fn reaches Pomvox"
+                              : "Press Fn to test your dictation key")
+                        .font(Typo.ui(13.5, .semibold)).foregroundStyle(Palette.ink)
+                    if !seen {
+                        Text("No key event? Third-party keyboards may handle Fn in hardware — set [hotkey] ptt = \"right_option\" in config.toml. Just granted Input Monitoring? Relaunch Pomvox.")
+                            .font(Typo.ui(11.5)).foregroundStyle(Palette.muted)
+                    }
+                }
+                Spacer(minLength: 12)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
         }
         .background(RoundedRectangle(cornerRadius: 12).fill(Palette.pane))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.hair, lineWidth: 0.5))

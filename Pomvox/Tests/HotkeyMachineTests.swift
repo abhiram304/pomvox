@@ -212,4 +212,9 @@ final class HotkeyMachineTests: XCTestCase {
         XCTAssertFalse(m.externalStop())
         XCTAssertEqual(m.state, .ptt)
     }
+
+    func testExposesThePttKeycodeForTheHeartbeat() throws {
+        XCTAssertEqual(try HotkeyMachine().pttKeycode, 63)                       // fn
+        XCTAssertEqual(try HotkeyMachine(ptt: "right_option").pttKeycode, 61)
+    }
 }
