@@ -47,4 +47,35 @@ final class AudioCaptureFailureTests: XCTestCase {
             XCTAssertEqual(TelemetrySanitizer.errorCode(f.errorCode), f.errorCode)
         }
     }
+
+    // MARK: - stale-engine rebuild (post-sleep dead stream)
+
+    func testMarkStaleForcesRebuildOnNextStart() throws {
+        try XCTSkipUnless(AudioCapture.hasInputDevice(), "no audio input device on this machine")
+        let capture = AudioCapture()
+        capture.markStale()
+        // start() may throw on CI (no mic grant) — the rebuild happens first
+        // and must be counted either way.
+        _ = try? capture.start()
+        XCTAssertEqual(capture.rebuildCount, 1)
+        capture.stop()
+    }
+
+    func testStartWithoutStaleDoesNotRebuild() throws {
+        try XCTSkipUnless(AudioCapture.hasInputDevice(), "no audio input device on this machine")
+        let capture = AudioCapture()
+        _ = try? capture.start()
+        XCTAssertEqual(capture.rebuildCount, 0)
+        capture.stop()
+    }
+
+    func testMarkStaleIsIdempotentPerStart() throws {
+        try XCTSkipUnless(AudioCapture.hasInputDevice(), "no audio input device on this machine")
+        let capture = AudioCapture()
+        capture.markStale()
+        capture.markStale()
+        _ = try? capture.start()
+        XCTAssertEqual(capture.rebuildCount, 1)
+        capture.stop()
+    }
 }
