@@ -95,11 +95,11 @@ struct SetupView: View {
                 Image(systemName: seen ? "checkmark.circle.fill" : "circle.dashed")
                     .foregroundStyle(seen ? .green : Palette.muted)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(seen ? "Hotkey working — Fn reaches Pomvox"
-                              : "Press Fn to test your dictation key")
+                    Text(seen ? "Hotkey working — \(engine.pttDisplayName) reaches Pomvox"
+                              : "Press \(engine.pttDisplayName) to test your dictation key")
                         .font(Typo.ui(13.5, .semibold)).foregroundStyle(Palette.ink)
                     if !seen {
-                        Text("No key event? Some third-party keyboards handle Fn in hardware and never send it to macOS — try the Globe/Fn key on an Apple keyboard. Just granted Input Monitoring? Relaunch Pomvox.")
+                        Text("No key event? Some keyboards handle this key in hardware and never send it to macOS — pick a different key in Settings ▸ Hotkeys (turn the engine off and on to apply). Just granted Input Monitoring? Relaunch Pomvox.")
                             .font(Typo.ui(11.5)).foregroundStyle(Palette.muted)
                     }
                 }
@@ -107,8 +107,8 @@ struct SetupView: View {
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(seen ? "Hotkey working, Fn reaches Pomvox"
-                                     : "Press Fn to test your dictation key")
+            .accessibilityLabel(seen ? "Hotkey working, \(engine.pttDisplayName) reaches Pomvox"
+                                     : "Press \(engine.pttDisplayName) to test your dictation key")
         }
         .background(RoundedRectangle(cornerRadius: 12).fill(Palette.pane))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.hair, lineWidth: 0.5))

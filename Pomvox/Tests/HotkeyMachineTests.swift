@@ -217,4 +217,31 @@ final class HotkeyMachineTests: XCTestCase {
         XCTAssertEqual(try HotkeyMachine().pttKeycode, 63)                       // fn
         XCTAssertEqual(try HotkeyMachine(ptt: "right_option").pttKeycode, 61)
     }
+
+    // MARK: - config resolution (#58: [hotkey] honored, bad values degrade)
+
+    func testResolvedHonorsValidConfig() {
+        let r = HotkeyMachine.resolved(ptt: "right_option", toggle: "right_option+space",
+                                       stop: "", cancel: "esc")
+        XCTAssertFalse(r.fellBack)
+        XCTAssertEqual(r.machine.pttKeycode, 61)
+    }
+
+    func testResolvedFallsBackOnUnknownKey() {
+        let r = HotkeyMachine.resolved(ptt: "hyper", toggle: "fn+space", stop: "", cancel: "esc")
+        XCTAssertTrue(r.fellBack)
+        XCTAssertEqual(r.machine.pttKeycode, 63)   // Fn defaults — never a dead engine
+    }
+
+    func testResolvedFallsBackOnBadToggle() {
+        let r = HotkeyMachine.resolved(ptt: "fn", toggle: "space", stop: "", cancel: "esc")
+        XCTAssertTrue(r.fellBack)
+        XCTAssertEqual(r.machine.pttKeycode, 63)
+    }
+
+    func testDisplayNames() {
+        XCTAssertEqual(HotkeyMachine.displayName("fn"), "Fn (🌐)")
+        XCTAssertEqual(HotkeyMachine.displayName("right_option"), "Right Option (⌥)")
+        XCTAssertEqual(HotkeyMachine.displayName("weird"), "weird")  // unknown: echo as-is
+    }
 }

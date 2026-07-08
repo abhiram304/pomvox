@@ -56,6 +56,33 @@ final class HotkeyMachine {
     /// Keycodes that arrive as flagsChanged rather than keyDown (used by EventTap).
     static let modifierKeycodes: Set<Int> = [63, 61, 58, 54, 55, 60, 56, 62, 59]
 
+    /// Human-readable names for the Setup heartbeat and log lines. Unknown
+    /// names echo through so a log never hides what the config actually said.
+    static let displayNames: [String: String] = [
+        "fn": "Fn (🌐)", "space": "Space", "esc": "Esc",
+        "right_option": "Right Option (⌥)", "left_option": "Left Option (⌥)",
+        "right_command": "Right Command (⌘)", "right_shift": "Right Shift (⇧)",
+        "right_control": "Right Control (⌃)",
+    ]
+
+    static func displayName(_ configName: String) -> String {
+        let key = configName.trimmingCharacters(in: .whitespaces).lowercased()
+        return displayNames[key] ?? configName
+    }
+
+    /// Build from `[hotkey]` config, degrading to the Fn defaults on any invalid
+    /// value (#58): dictation must never brick over a typo in config.toml. The
+    /// `fellBack` flag lets the caller log which bindings were rejected.
+    static func resolved(ptt: String, toggle: String, stop: String, cancel: String)
+        -> (machine: HotkeyMachine, fellBack: Bool)
+    {
+        if let m = try? HotkeyMachine(ptt: ptt, toggle: toggle, stop: stop, cancel: cancel) {
+            return (m, false)
+        }
+        // The default bindings are statically valid; `try!` is safe here.
+        return (try! HotkeyMachine(), true)
+    }
+
     static let pass = Decision()
 
     let pttKey: Int
