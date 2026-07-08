@@ -48,6 +48,16 @@ final class EmptyTranscriptTests: XCTestCase {
             .dictionaryWiped)
     }
 
+    func testWipeWinsOverSttError() {
+        // rawWasEmpty is checked before sttError: a non-empty raw proves capture
+        // and STT both produced words, so post-processing (the dictionary rules)
+        // is the only thing that could have emptied the text — even if a later
+        // stage also reported an error.
+        XCTAssertEqual(
+            classifyEmptyTranscript(rawWasEmpty: false, peakDbfs: -30.0, sttError: "boom"),
+            .dictionaryWiped)
+    }
+
     func testEmptyRawKeepsTheExistingThreeWayClassification() {
         XCTAssertEqual(
             classifyEmptyTranscript(rawWasEmpty: true, peakDbfs: -80.0, sttError: nil),
