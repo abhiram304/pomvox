@@ -9,6 +9,24 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 _Nothing yet._
 
+## [0.1.8] — 2026-07-07
+
+### Fixed
+
+- **The dictation hotkey was locked to Fn.** Changing the push-to-talk key in
+  Settings ▸ Hotkeys had no effect — the native engine ignored the `[hotkey]`
+  configuration entirely, leaving no workaround for keyboards that handle Fn in
+  hardware. The engine now honors the configured key, and degrades safely back
+  to the Fn defaults (with a log line) if the configuration is invalid, so
+  dictation never breaks. (#61)
+
+- **Dictation looked broken when your Dictionary rules removed every word.** If
+  your replacement rules deleted all of the recognized text, the app pasted
+  nothing and gave no hint why — indistinguishable from not being heard. It now
+  flashes "your replacement rules removed every word — check Settings ▸
+  Dictionary" instead of failing silently. Long HUD messages also wrap to two
+  lines instead of being truncated. (#62)
+
 ## [0.1.7] — 2026-07-06
 
 ### Fixed
@@ -164,7 +182,10 @@ on Apple Silicon, shipping as a signed, notarized `Pomvox.dmg`.
 - **Python reference engine** (`src/pomvox/`) — the original app, now frozen as a
   runnable reference whose pure-logic modules are the cross-checked test spec.
 
-[Unreleased]: https://github.com/abhiram304/pomvox/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/abhiram304/pomvox/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/abhiram304/pomvox/compare/v0.1.7...v0.1.8
+[0.1.7]: https://github.com/abhiram304/pomvox/compare/v0.1.6...v0.1.7
+[0.1.6]: https://github.com/abhiram304/pomvox/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/abhiram304/pomvox/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/abhiram304/pomvox/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/abhiram304/pomvox/compare/v0.1.2...v0.1.3
