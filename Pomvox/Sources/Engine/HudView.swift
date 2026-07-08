@@ -29,7 +29,7 @@ struct HudView: View {
             if vm.state == "recording" {
                 HudWaveform(bars: model.bars)
                     .frame(width: 84, height: 32)
-            } else {
+            } else if !glyph.isEmpty {
                 Text(glyph)
                     .font(.system(size: 20))
                     .frame(width: 84, height: 32)
@@ -61,8 +61,9 @@ struct HudView: View {
             Text(vm.status)
                 .font(.system(size: 14))
                 .foregroundStyle(.white)
-                .lineLimit(1)
-                .truncationMode(.head)
+                .lineLimit(vm.state == "error" ? 2 : 1)
+                .truncationMode(vm.state == "error" ? .tail : .head)
+                .multilineTextAlignment(.leading)
             if vm.state == "recording" && vm.endpointFraction > 0.4 {
                 HudSilenceArc(fraction: vm.endpointFraction)
                     .frame(width: 16, height: 16)
