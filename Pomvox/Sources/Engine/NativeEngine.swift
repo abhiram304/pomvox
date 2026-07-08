@@ -537,8 +537,10 @@ final class NativeEngine: ObservableObject {
             let (appHint, pastedAt): (String?, Double?) = await MainActor.run {
                 guard !text.isEmpty else {
                     let peak = peakDbfs(samples)
-                    let cause = classifyEmptyTranscript(peakDbfs: peak, sttError: sttError)
-                    NSLog("pomvox-engine: empty transcript — %@", String(describing: cause))
+                    let cause = classifyEmptyTranscript(
+                        rawWasEmpty: raw.isEmpty, peakDbfs: peak, sttError: sttError)
+                    NSLog("pomvox-engine: empty transcript — %@ (raw %d chars)",
+                          String(describing: cause), raw.count)
                     if let msg = cause.hudMessage {
                         self.bus.post(.result("error", msg))
                     } else {
