@@ -46,8 +46,14 @@ final class NativeEngine: ObservableObject {
     // from "events arrive, problem is downstream".
     @Published private(set) var lastPttSeenAt: Date?
 
+    // The configured PTT key's display name, for the Setup heartbeat row.
+    @Published private(set) var pttDisplayName = HotkeyMachine.displayName("fn")
+
     // Hotkey path — touched on the event-tap thread, serialized by the lock.
-    private nonisolated(unsafe) let machine: HotkeyMachine
+    // Rebuilt from [hotkey] at every arm() (snapshot-at-arm like [hud]/[cleanup]).
+    // Reassigned only under machineLock, and only from loadEngineConfig() —
+    // which runs before the tap installs, so a live tap never sees the swap.
+    private nonisolated(unsafe) var machine: HotkeyMachine
     private nonisolated let machineLock = NSLock()
     private nonisolated(unsafe) var stopAt: CFAbsoluteTime = 0  // t0 for paste latency
 
@@ -296,6 +302,22 @@ final class NativeEngine: ObservableObject {
     /// `config.py`) and build the HUD config + the energy-only endpointer.
     private func loadEngineConfig() {
         let doc = ConfigDocument.load(path: configPath)
+
+        // [hotkey] (#58): rebuild the machine from config. Settings' Hotkeys
+        // pane rows are marked restart:true — snapshot-at-arm is the contract.
+        let pttName = doc.string("hotkey", "ptt") ?? "fn"
+        let (m, fellBack) = HotkeyMachine.resolved(
+            ptt: pttName,
+            toggle: doc.string("hotkey", "toggle") ?? "fn+space",
+            stop: doc.string("hotkey", "stop") ?? "",
+            cancel: doc.string("hotkey", "cancel") ?? "esc")
+        if fellBack {
+            NSLog("pomvox-engine: invalid [hotkey] config — using Fn defaults")
+        }
+        machineLock.lock(); machine = m; machineLock.unlock()
+        pttDisplayName = HotkeyMachine.displayName(fellBack ? "fn" : pttName)
+        NSLog("pomvox-engine: hotkeys — ptt=%@", pttDisplayName)
+
         let hudEnabled = doc.bool("hud", "enabled") ?? true
         hud.applyConfig(
             enabled: hudEnabled,
