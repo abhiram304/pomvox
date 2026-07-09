@@ -7,6 +7,15 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Added
+
+- **Low-memory Macs now work out of the box.** On a fresh install on a Mac with
+  ≤ 8 GB of RAM, the native engine defaults transcript cleanup off — raw
+  on-device dictation (~600 MB) instead of the ~2.5 GB armed+cleanup cost that
+  would swap on an 8 GB machine. The choice is written to your config and can be
+  turned on any time in Settings ▸ Models. Existing configs and machines with
+  more memory are unaffected.
+
 ### Fixed
 
 - **The `[stt] model` setting did nothing.** The native engine always loaded the
