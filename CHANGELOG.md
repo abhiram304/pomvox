@@ -7,6 +7,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [0.1.9] — 2026-07-09
+
 ### Added
 
 - **Low-memory Macs now work out of the box.** On a fresh install on a Mac with
@@ -14,7 +18,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   on-device dictation (~600 MB) instead of the ~2.5 GB armed+cleanup cost that
   would swap on an 8 GB machine. The choice is written to your config and can be
   turned on any time in Settings ▸ Models. Existing configs and machines with
-  more memory are unaffected.
+  more memory are unaffected. (#65)
 
 ### Fixed
 
@@ -22,7 +26,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   v3 speech model regardless of the configured value. It now honors the setting
   (v2 or v3), and falls back to v3 (with a log line) for an unrecognized value,
   so a typo never stops the engine from arming. Settings ▸ Models now notes that
-  the native engine supports Parakeet v2/v3 (other ids fall back to v3).
+  the native engine supports Parakeet v2/v3 (other ids fall back to v3). (#64)
 
 ## [0.1.8] — 2026-07-07
 
