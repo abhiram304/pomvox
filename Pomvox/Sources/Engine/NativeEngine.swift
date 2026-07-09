@@ -73,6 +73,9 @@ final class NativeEngine: ObservableObject {
     // STT model id, snapshotted at arm() for the (anonymous) dictation_completed
     // telemetry event — the basename only ever reaches the wire.
     private var sttModelID = "mlx-community/parakeet-tdt-0.6b-v3"
+    // The resolved FluidAudio model the loader actually uses, from [stt] model.
+    // Falls back to the shipped default when config names no wired model.
+    private var sttModel = SttModel.default
 
     // [history] snapshot + store (M7a: the native engine writes the rows).
     // Opens at arm(), closes at disarm(); enabled=false writes nothing.
@@ -218,7 +221,7 @@ final class NativeEngine: ObservableObject {
         speechLoad = ModelLoad.line(.speech, fraction: nil, downloading: false)
         let speechGate = LineGate()
         do {
-            try await transcriber.prepare { [weak self] fraction, downloading in
+            try await transcriber.prepare(model: sttModel) { [weak self] fraction, downloading in
                 let line = ModelLoad.line(.speech, fraction: fraction, downloading: downloading)
                 guard speechGate.changed(line) else { return }
                 Task { @MainActor in self?.speechLoad = line }
@@ -328,6 +331,13 @@ final class NativeEngine: ObservableObject {
         hud.prepare()
 
         sttModelID = doc.string("stt", "model") ?? "mlx-community/parakeet-tdt-0.6b-v3"
+        sttModel = SttModel.resolve(sttModelID)
+        if SttModel.parse(sttModelID) == nil {
+            NSLog("pomvox-engine: unrecognized [stt] model %@ — using %@",
+                  sttModelID, sttModel.rawValue)
+        }
+        NSLog("pomvox-engine: stt model — %@ (FluidAudio %@)",
+              sttModelID, sttModel.rawValue)
         cleanupEnabled = doc.bool("cleanup", "enabled") ?? true
         cleanupStyle = doc.string("cleanup", "style") ?? "polish"
         cleanupTimeoutS = doc.double("cleanup", "timeout_s") ?? 5.0

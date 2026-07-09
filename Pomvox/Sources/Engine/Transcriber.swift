@@ -4,8 +4,9 @@ import Foundation
 
 enum TranscriberError: Error { case notLoaded }
 
-/// FluidAudio Parakeet TDT 0.6b v3 on the Neural Engine (M0 result 1: PASS,
-/// 3–8× the GPU path). Reuses the `native/` bench's load + transcribe pattern.
+/// FluidAudio Parakeet TDT 0.6b on the Neural Engine (M0 result 1: PASS,
+/// 3–8× the GPU path); the version (v3 default, v2 selectable) comes from
+/// `[stt] model`. Reuses the `native/` bench's load + transcribe pattern.
 /// Models load + warm on toggle-on (off the hot path); on release the whole
 /// utterance is batch-transcribed (not streaming — that's M5).
 ///
@@ -20,10 +21,14 @@ actor Transcriber {
     /// `onProgress` reports `(fraction, downloading)` while the ~460 MB first-run
     /// fetch is in flight — `downloading` flips false once the bytes are down and
     /// CoreML is compiling — so the UI can show a live percentage instead of a
-    /// silent "Preparing…".
-    func prepare(onProgress: (@Sendable (Double, Bool) -> Void)? = nil) async throws {
+    /// silent "Preparing…". `model` is resolved from `[stt] model` (defaults to
+    /// the shipped v3) — the loader picks the matching FluidAudio version.
+    func prepare(
+        model: SttModel = .default,
+        onProgress: (@Sendable (Double, Bool) -> Void)? = nil
+    ) async throws {
         if asr != nil { return }
-        let models = try await AsrModels.downloadAndLoad(version: .v3) { progress in
+        let models = try await AsrModels.downloadAndLoad(version: model.fluidVersion) { progress in
             let downloading: Bool
             if case .downloading = progress.phase { downloading = true } else { downloading = false }
             onProgress?(progress.fractionCompleted, downloading)

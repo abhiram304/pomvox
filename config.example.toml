@@ -15,6 +15,9 @@ stop = ""            # optional extra stop key; fn tap / fn+space always stop
 cancel = "esc"       # discard the utterance (nothing inserts); "" disables
 
 [stt]
+# Speech model. The native engine loads the matching FluidAudio Parakeet TDT
+# 0.6b weights on the Neural Engine; "…-v3" (default) or "…-v2" are supported,
+# and an unrecognized value falls back to v3. Restart required to change.
 model = "mlx-community/parakeet-tdt-0.6b-v3"
 
 [cleanup]
