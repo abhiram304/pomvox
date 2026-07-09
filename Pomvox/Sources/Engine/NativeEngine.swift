@@ -76,6 +76,9 @@ final class NativeEngine: ObservableObject {
     // STT model id, snapshotted at arm() for the (anonymous) dictation_completed
     // telemetry event — the basename only ever reaches the wire.
     private var sttModelID = "mlx-community/parakeet-tdt-0.6b-v3"
+    // The resolved FluidAudio model the loader actually uses, from [stt] model.
+    // Falls back to the shipped default when config names no wired model.
+    private var sttModel = SttModel.default
 
     // [history] snapshot + store (M7a: the native engine writes the rows).
     // Opens at arm(), closes at disarm(); enabled=false writes nothing.
@@ -221,7 +224,7 @@ final class NativeEngine: ObservableObject {
         speechLoad = ModelLoad.line(.speech, fraction: nil, downloading: false)
         let speechGate = LineGate()
         do {
-            try await transcriber.prepare { [weak self] fraction, downloading in
+            try await transcriber.prepare(model: sttModel) { [weak self] fraction, downloading in
                 let line = ModelLoad.line(.speech, fraction: fraction, downloading: downloading)
                 guard speechGate.changed(line) else { return }
                 Task { @MainActor in self?.speechLoad = line }
@@ -331,6 +334,13 @@ final class NativeEngine: ObservableObject {
         hud.prepare()
 
         sttModelID = doc.string("stt", "model") ?? "mlx-community/parakeet-tdt-0.6b-v3"
+        sttModel = SttModel.resolve(sttModelID)
+        if SttModel.parse(sttModelID) == nil {
+            NSLog("pomvox-engine: unrecognized [stt] model %@ — using %@",
+                  sttModelID, sttModel.rawValue)
+        }
+        NSLog("pomvox-engine: stt model — %@ (FluidAudio %@)",
+              sttModelID, sttModel.rawValue)
         // Memory-aware first-run default: on a fresh install (no config yet) on a
         // low-memory Mac, cleanup defaults off so raw dictation (~600 MB) works
         // out of the box instead of the ~2.5 GB armed+cleanup cost swapping. An
@@ -516,7 +526,9 @@ final class NativeEngine: ObservableObject {
         let store = history
         let dict = dictionary
         let durationS = Double(samples.count) / 16000.0
-        let sttModel = sttModelID
+        // Report the model that actually loaded (canonical id), not the raw
+        // config string — an unrecognized value fell back to the default.
+        let sttModelTelemetryID = sttModel.canonicalID
         Task { [weak self] in
             guard let self else { return }
             // Stage timings mirror bench.py (t0 = key-up/auto-stop); they land
@@ -600,7 +612,7 @@ final class NativeEngine: ObservableObject {
             if !text.isEmpty {
                 var props = TelemetryProps()
                 props.durationMs = Int(durationS * 1000)
-                props.sttModel = sttModel
+                props.sttModel = sttModelTelemetryID
                 props.cleanup = doCleanup
                 props.cleanupStatus = cleanupStatus?.rawValue ?? "off"
                 TelemetryClient.shared.emit(.dictationCompleted, props: props)

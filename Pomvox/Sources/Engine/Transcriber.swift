@@ -4,26 +4,42 @@ import Foundation
 
 enum TranscriberError: Error { case notLoaded }
 
-/// FluidAudio Parakeet TDT 0.6b v3 on the Neural Engine (M0 result 1: PASS,
-/// 3–8× the GPU path). Reuses the `native/` bench's load + transcribe pattern.
+/// FluidAudio Parakeet TDT 0.6b on the Neural Engine (M0 result 1: PASS,
+/// 3–8× the GPU path); the version (v3 default, v2 selectable) comes from
+/// `[stt] model`. Reuses the `native/` bench's load + transcribe pattern.
 /// Models load + warm on toggle-on (off the hot path); on release the whole
 /// utterance is batch-transcribed (not streaming — that's M5).
 ///
 /// An `actor` so model access is serialized and never blocks the main thread.
 actor Transcriber {
     private var asr: AsrManager?
+    private var loadedModel: SttModel?
     private var decoderLayers = 0
 
     var isLoaded: Bool { asr != nil }
 
-    /// Download (first run only, ~97 s), load, and warm the model. Idempotent.
+    /// Download (first run only, ~97 s), load, and warm the model. Idempotent
+    /// *for the same model*: a no-op when `model` is already loaded (fast
+    /// re-arm), but when `[stt] model` changed and the engine re-armed, the
+    /// previously-loaded version is torn down and the new one loaded — otherwise
+    /// the cached model keeps running while the logs/telemetry report the newly
+    /// resolved one.
     /// `onProgress` reports `(fraction, downloading)` while the ~460 MB first-run
     /// fetch is in flight — `downloading` flips false once the bytes are down and
     /// CoreML is compiling — so the UI can show a live percentage instead of a
-    /// silent "Preparing…".
-    func prepare(onProgress: (@Sendable (Double, Bool) -> Void)? = nil) async throws {
-        if asr != nil { return }
-        let models = try await AsrModels.downloadAndLoad(version: .v3) { progress in
+    /// silent "Preparing…". `model` is resolved from `[stt] model` (defaults to
+    /// the shipped v3) — the loader picks the matching FluidAudio version.
+    func prepare(
+        model: SttModel = .default,
+        onProgress: (@Sendable (Double, Bool) -> Void)? = nil
+    ) async throws {
+        if asr != nil, loadedModel == model { return }
+        // Switching models: free the old CoreML graph before loading the new
+        // one so we don't hold both resident (~600 MB each) on low-RAM Macs.
+        await asr?.cleanup()
+        asr = nil
+        loadedModel = nil
+        let models = try await AsrModels.downloadAndLoad(version: model.fluidVersion) { progress in
             let downloading: Bool
             if case .downloading = progress.phase { downloading = true } else { downloading = false }
             onProgress?(progress.fractionCompleted, downloading)
@@ -32,6 +48,7 @@ actor Transcriber {
         try await manager.loadModels(models)
         decoderLayers = await manager.decoderLayerCount
         asr = manager
+        loadedModel = model
         // Warm the ANE so the first real utterance hits the fast path.
         _ = try? await transcribe([Float](repeating: 0, count: 16000))
     }

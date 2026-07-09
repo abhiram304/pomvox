@@ -284,13 +284,14 @@ private struct ModelsPane: View {
                                value: $model.values.sttModel, error: model.errors["stt.model"])
                 }
             }
+            PaneNote("The native engine runs Parakeet v2 or v3 on the Neural Engine; any other id falls back to v3.")
             SettingsGroup("Cleanup model") {
                 SettingRow(title: "Model", restart: true) {
                     ModelField(presets: SettingsSchema.cleanupModelPresets,
                                value: $model.values.cleanupModel, error: model.errors["cleanup.model"])
                 }
             }
-            PaneNote("Any Hugging Face MLX model id works — the dropdown is just suggestions. Models download on first use and stay local.")
+            PaneNote("Any Hugging Face MLX model id works for cleanup — the dropdown is just suggestions. Models download on first use and stay local.")
         }
     }
 }

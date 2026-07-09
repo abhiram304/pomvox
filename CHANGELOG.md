@@ -16,6 +16,14 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   turned on any time in Settings ▸ Models. Existing configs and machines with
   more memory are unaffected.
 
+### Fixed
+
+- **The `[stt] model` setting did nothing.** The native engine always loaded the
+  v3 speech model regardless of the configured value. It now honors the setting
+  (v2 or v3), and falls back to v3 (with a log line) for an unrecognized value,
+  so a typo never stops the engine from arming. Settings ▸ Models now notes that
+  the native engine supports Parakeet v2/v3 (other ids fall back to v3).
+
 ## [0.1.8] — 2026-07-07
 
 ### Fixed
