@@ -18,6 +18,10 @@ cancel = "esc"       # discard the utterance (nothing inserts); "" disables
 model = "mlx-community/parakeet-tdt-0.6b-v3"
 
 [cleanup]
+# LLM cleanup adds ~2.3 GB while armed. On a fresh install on a low-memory Mac
+# (<= 8 GB, e.g. an 8 GB MacBook) the native engine defaults this to off so raw
+# dictation works without swapping — set it here to override. Existing configs
+# are never changed automatically.
 enabled = true
 model = "mlx-community/Qwen3-4B-4bit"
 style = "polish"  # "light" = fillers/punctuation only; "polish" also smooths rambles

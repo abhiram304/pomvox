@@ -70,6 +70,9 @@ final class NativeEngine: ObservableObject {
     private var cleanupStyle = "polish"
     private var cleanupTimeoutS = 5.0
     private var cleanupModelID = "mlx-community/Qwen3-4B-4bit"
+    // Set when the low-memory first-run default flipped cleanup off; persisted
+    // on the next arm so the choice is visible + editable in Settings.
+    private var applyLowMemCleanupOff = false
     // STT model id, snapshotted at arm() for the (anonymous) dictation_completed
     // telemetry event — the basename only ever reaches the wire.
     private var sttModelID = "mlx-community/parakeet-tdt-0.6b-v3"
@@ -328,7 +331,23 @@ final class NativeEngine: ObservableObject {
         hud.prepare()
 
         sttModelID = doc.string("stt", "model") ?? "mlx-community/parakeet-tdt-0.6b-v3"
-        cleanupEnabled = doc.bool("cleanup", "enabled") ?? true
+        // Memory-aware first-run default: on a fresh install (no config yet) on a
+        // low-memory Mac, cleanup defaults off so raw dictation (~600 MB) works
+        // out of the box instead of the ~2.5 GB armed+cleanup cost swapping. An
+        // existing config or an explicit key is always honored — this can only
+        // supply a default for an absent key on a brand-new install.
+        let configExists = FileManager.default.fileExists(atPath: configPath)
+        let cleanupKeyPresent = doc.bool("cleanup", "enabled") != nil
+        let cleanupDefault = MemoryTier.firstRunCleanupDefault(
+            configExists: configExists,
+            physicalMemoryBytes: ProcessInfo.processInfo.physicalMemory)
+        cleanupEnabled = doc.bool("cleanup", "enabled") ?? cleanupDefault
+        applyLowMemCleanupOff = !cleanupKeyPresent && !configExists && !cleanupEnabled
+        if applyLowMemCleanupOff {
+            let gb = Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824
+            NSLog("pomvox-engine: low-memory Mac (%.1f GB) — cleanup off by default "
+                  + "on first run (enable in Settings ▸ Models)", gb)
+        }
         cleanupStyle = doc.string("cleanup", "style") ?? "polish"
         cleanupTimeoutS = doc.double("cleanup", "timeout_s") ?? 5.0
         cleanupModelID = doc.string("cleanup", "model") ?? "mlx-community/Qwen3-4B-4bit"
@@ -818,6 +837,12 @@ final class NativeEngine: ObservableObject {
     private func persist(_ enabled: Bool) {
         var doc = ConfigDocument.load(path: configPath)
         doc.set("engine", "native", bool: enabled)
+        // Record the low-memory first-run cleanup-off default (arming only), so
+        // it survives restarts and is visible + editable in Settings ▸ Models.
+        if enabled, applyLowMemCleanupOff {
+            doc.set("cleanup", "enabled", bool: false)
+            applyLowMemCleanupOff = false
+        }
         try? doc.write(to: configPath)
     }
 }
