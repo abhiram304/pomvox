@@ -44,4 +44,14 @@ enum SttModel: String, CaseIterable, Sendable {
         case .parakeetV3: return .v3
         }
     }
+
+    /// The canonical Hugging Face repo id for this model. Used for telemetry so
+    /// the reported basename reflects what actually loaded — not a mis-typed
+    /// config value that fell back to the default.
+    var canonicalID: String {
+        switch self {
+        case .parakeetV2: return "mlx-community/parakeet-tdt-0.6b-v2"
+        case .parakeetV3: return "mlx-community/parakeet-tdt-0.6b-v3"
+        }
+    }
 }

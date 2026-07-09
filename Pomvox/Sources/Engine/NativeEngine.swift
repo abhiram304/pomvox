@@ -507,7 +507,9 @@ final class NativeEngine: ObservableObject {
         let store = history
         let dict = dictionary
         let durationS = Double(samples.count) / 16000.0
-        let sttModel = sttModelID
+        // Report the model that actually loaded (canonical id), not the raw
+        // config string — an unrecognized value fell back to the default.
+        let sttModelTelemetryID = sttModel.canonicalID
         Task { [weak self] in
             guard let self else { return }
             // Stage timings mirror bench.py (t0 = key-up/auto-stop); they land
@@ -591,7 +593,7 @@ final class NativeEngine: ObservableObject {
             if !text.isEmpty {
                 var props = TelemetryProps()
                 props.durationMs = Int(durationS * 1000)
-                props.sttModel = sttModel
+                props.sttModel = sttModelTelemetryID
                 props.cleanup = doCleanup
                 props.cleanupStatus = cleanupStatus?.rawValue ?? "off"
                 TelemetryClient.shared.emit(.dictationCompleted, props: props)

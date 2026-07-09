@@ -41,4 +41,11 @@ final class SttModelTests: XCTestCase {
         if case .v2 = SttModel.parakeetV2.fluidVersion {} else { XCTFail("expected .v2") }
         if case .v3 = SttModel.parakeetV3.fluidVersion {} else { XCTFail("expected .v3") }
     }
+
+    func testCanonicalIDRoundTripsThroughParse() {
+        // Telemetry reports canonicalID; it must resolve back to the same model.
+        for m in SttModel.allCases {
+            XCTAssertEqual(SttModel.parse(m.canonicalID), m)
+        }
+    }
 }
