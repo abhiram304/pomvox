@@ -7,7 +7,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **"Report an Issue" in the Hub.** A new sidebar item (under Setup) opens a
+  simple compose screen — subject and message fields, pre-addressed to
+  `hello@pomvox.ai`. Submitting opens your default mail app with the message
+  ready to send, so feedback reaches the maintainer without Pomvox needing an
+  account or sending anything itself.
 
 ## [0.1.9] — 2026-07-09
 

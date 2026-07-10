@@ -1,18 +1,21 @@
 import SwiftUI
 
 enum NavItem: String, CaseIterable, Identifiable {
-    case home, history, settings, setup
+    // Declaration order is the sidebar order — `reportIssue` sits under Setup.
+    case home, history, settings, setup, reportIssue
     var id: String { rawValue }
     var title: String {
         switch self {
         case .home: "Home"; case .history: "History"
         case .settings: "Settings"; case .setup: "Setup"
+        case .reportIssue: "Report an Issue"
         }
     }
     var symbol: String {
         switch self {
         case .home: "house"; case .history: "clock.arrow.circlepath"
         case .settings: "gearshape"; case .setup: "checkmark.shield"
+        case .reportIssue: "exclamationmark.bubble"
         }
     }
 }
@@ -60,10 +63,11 @@ struct RootView: View {
 
     @ViewBuilder private var detail: some View {
         switch selection {
-        case .home:     HomeView(goToHistory: { selection = .history })
-        case .history:  HistoryView()
-        case .settings: SettingsView()
-        case .setup:    SetupView()
+        case .home:        HomeView(goToHistory: { selection = .history })
+        case .history:     HistoryView()
+        case .settings:    SettingsView()
+        case .setup:       SetupView()
+        case .reportIssue: ReportIssueView()
         }
     }
 }
