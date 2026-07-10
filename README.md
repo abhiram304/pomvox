@@ -160,6 +160,13 @@ The only network calls Pomvox ever makes are:
    — **Share anonymous stats** or **No thanks** — with no default and no
    pre-checked box, and a `maySend` gate holds all sending until you pick. Change
    your mind anytime in **Settings → Privacy**.
+3. **Update checks — on by default.** Pomvox checks GitHub for a newer version at
+   launch and about once a day, so you get security and bug fixes without
+   manually reinstalling. It only fetches a small `appcast.xml` and, when you
+   click **Update**, the new release; it never installs anything without that
+   click, and sends nothing about you. Turn it off with **Automatically check
+   for updates** in **Settings → General**. (Updates are a security feature, so
+   unlike usage stats they default on.)
 
 If you choose to share, Pomvox sends a random per-install ID (anonymous) plus
 content-free counters: app/OS version, that a dictation happened with its

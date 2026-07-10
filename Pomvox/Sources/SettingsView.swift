@@ -119,6 +119,7 @@ private struct GeneralPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             NativeEngineGroup()
+            UpdatesGroup()
             LoginItemGroup()
             SettingsGroup("Cleanup") {
                 SettingRow(title: "Clean up transcripts",
@@ -250,6 +251,54 @@ private struct NativeEngineGroup: View {
         case .blocked:            Palette.gold
         case .failed:             Palette.ember
         default:                  Palette.muted
+        }
+    }
+}
+
+/// In-app updates (design: 2026-07-09-in-app-updates-design). The auto-check
+/// toggle, a manual "Check Now", the current version, and inline feedback.
+/// Hidden entirely when the updater is disabled (e.g. a self-signed Debug build
+/// with no test feed).
+private struct UpdatesGroup: View {
+    @EnvironmentObject var updater: UpdaterModel
+
+    var body: some View {
+        if updater.isEnabled {
+            SettingsGroup("Updates") {
+                SettingRow(
+                    title: "Automatically check for updates",
+                    desc: "Checks GitHub about once a day in the background. Pomvox only "
+                        + "downloads and installs an update when you click Update."
+                ) {
+                    SettingToggle(
+                        isOn: Binding(
+                            get: { updater.automaticChecks },
+                            set: { updater.setAutomaticChecks($0) }),
+                        label: "Automatically check for updates")
+                }
+                RowDivider()
+                SettingRow(title: "Version \(updater.currentVersion)", desc: feedback) {
+                    Button(action: { updater.checkNow() }) {
+                        Text("Check Now").font(Typo.ui(12.5, .semibold)).foregroundStyle(Palette.ink)
+                            .padding(.horizontal, 14).padding(.vertical, 6)
+                            .background(Capsule().fill(Palette.pane2))
+                            .overlay(Capsule().stroke(Palette.hair, lineWidth: 0.5))
+                    }
+                    .buttonStyle(.plain).disabled(updater.state.isBusy)
+                    .accessibilityLabel("Check for updates now")
+                }
+            }
+        }
+    }
+
+    /// Inline status under the version row: "up to date", an error, or the
+    /// current check/download progress. Blank when idle.
+    private var feedback: String? {
+        switch updater.state {
+        case .idle: return nil
+        default:
+            let line = updater.state.statusLine
+            return line.isEmpty ? nil : line
         }
     }
 }

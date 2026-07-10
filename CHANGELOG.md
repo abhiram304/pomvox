@@ -7,7 +7,18 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **In-app updates — no more manual reinstalling.** Pomvox now checks GitHub for
+  a newer version at launch and about once a day, and shows a native banner on
+  the Home screen when one is available: **Update** downloads, installs, and
+  relaunches into the new version in one click (waiting for any in-flight
+  dictation to finish first), with **Later** and **Skip this version** options
+  and a release-notes link. Settings → General gains an "Automatically check for
+  updates" toggle (on by default — updates are a security feature), a **Check
+  Now** button, and the current version. Powered by Sparkle 2 with a fully custom
+  UI (no stock update popup); updates are cryptographically verified and never
+  install without your click.
 
 ## [0.1.9] — 2026-07-09
 

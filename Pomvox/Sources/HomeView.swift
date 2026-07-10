@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject var model: HubModel
+    @EnvironmentObject var updater: UpdaterModel
     var goToHistory: () -> Void = {}
 
     var body: some View {
@@ -11,6 +12,9 @@ struct HomeView: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    if updater.state.bannerVisible {
+                        UpdateBanner().padding(.bottom, 22)
+                    }
                     greeting.padding(.bottom, 26)
 
                     if model.rows.isEmpty {

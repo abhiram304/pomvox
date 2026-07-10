@@ -31,6 +31,12 @@ packages:
     url: https://github.com/DePasqualeOrg/swift-tokenizers.git
     minVersion: "0.5.0"
     maxVersion: "0.6.0"
+  # In-app updates (design: 2026-07-09-in-app-updates-design). Headless Sparkle 2
+  # with a custom SPUUserDriver (Updater.swift) — native Pomvox UI, no stock
+  # Sparkle popup.
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle.git
+    from: "2.9.0"
 
 settings:
   base:
@@ -83,6 +89,20 @@ targets:
         # Native engine (M4): shown when macOS prompts for the microphone.
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Pomvox transcribes your speech on-device. Audio never leaves this Mac."
         ENABLE_PREVIEWS: YES
+        # In-app updates (Sparkle). The feed + auto-check behavior are also set
+        # programmatically in Updater.swift (feedURLString delegate + first-run
+        # config), which is the reliable path — Xcode can filter custom keys out
+        # of the generated Info.plist. SUPublicEDKey MUST be a real key though:
+        # run Sparkle's `generate_keys` once, paste the base64 public key below,
+        # then VERIFY it lands in the built app's Contents/Info.plist. If Xcode
+        # filters it, add a partial Info.plist (INFOPLIST_FILE) that merges.
+        INFOPLIST_KEY_SUFeedURL: "https://raw.githubusercontent.com/abhiram304/pomvox/main/appcast.xml"
+        INFOPLIST_KEY_SUPublicEDKey: "REPLACE_WITH_SUPUBLICEDKEY_FROM_generate_keys"
+        INFOPLIST_KEY_SUEnableAutomaticChecks: "YES"
+        INFOPLIST_KEY_SUAutomaticallyUpdate: "NO"
+        INFOPLIST_KEY_SUScheduledCheckInterval: "86400"
+        INFOPLIST_KEY_SUVerifyUpdateBeforeExtraction: "YES"
+        INFOPLIST_KEY_SUEnableJavaScript: "NO"
     dependencies:
       - sdk: libsqlite3.tbd
       - package: FluidAudio
@@ -98,6 +118,8 @@ targets:
       # pruning the version-pinned package reference.
       - package: swift-tokenizers
         product: Tokenizers
+      - package: Sparkle
+        product: Sparkle
 
   PomvoxTests:
     type: bundle.unit-test

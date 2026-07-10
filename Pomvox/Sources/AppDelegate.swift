@@ -111,6 +111,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if doc.bool("engine", "native") ?? false {
             Task { await NativeEngine.shared.arm(interactive: false) }
         }
+
+        // In-app updates: start Sparkle's background scheduler at launch (even a
+        // windowless login-item launch). A found update lights the Home banner;
+        // it never installs without a click. No-op on disabled (Debug) builds.
+        UpdaterModel.shared.start()
     }
 }
 
