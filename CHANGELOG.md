@@ -7,7 +7,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **"Report an issue" button in Settings → General.** A one-click way to send
+  feedback to the maintainer: it opens your default mail app pre-addressed to
+  `hello@pomvox.ai`. Pomvox needs no account and sends nothing itself — you write
+  and send from your own mail client.
 
 ## [0.1.9] — 2026-07-09
 

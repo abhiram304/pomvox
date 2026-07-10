@@ -120,6 +120,7 @@ private struct GeneralPane: View {
         VStack(alignment: .leading, spacing: 0) {
             NativeEngineGroup()
             LoginItemGroup()
+            FeedbackGroup()
             SettingsGroup("Cleanup") {
                 SettingRow(title: "Clean up transcripts",
                            desc: "Run the local LLM pass after speech-to-text.") {
@@ -271,6 +272,34 @@ private struct LoginItemGroup: View {
         .onReceive(NotificationCenter.default.publisher(
             for: NSApplication.didBecomeActiveNotification)
         ) { _ in loginItem.refresh() }  // System Settings can revoke it behind us
+    }
+}
+
+/// One button to email feedback to the maintainer. No account, no backend —
+/// it opens the default mail app pre-addressed to `hello@pomvox.ai` via a
+/// `mailto:` link; the user writes and sends from there.
+private struct FeedbackGroup: View {
+    var body: some View {
+        SettingsGroup("Feedback") {
+            SettingRow(
+                title: "Report an issue",
+                desc: "Opens your mail app with a message to \(ReportIssue.recipient)."
+            ) {
+                Button(action: openMail) {
+                    Text("Report an issue…")
+                        .font(Typo.ui(12.5, .semibold)).foregroundStyle(Palette.ink)
+                        .padding(.horizontal, 14).padding(.vertical, 6)
+                        .background(Capsule().fill(Palette.pane2))
+                        .overlay(Capsule().stroke(Palette.hair, lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Report an issue by email")
+            }
+        }
+    }
+
+    private func openMail() {
+        if let url = ReportIssue.mailtoURL() { NSWorkspace.shared.open(url) }
     }
 }
 
