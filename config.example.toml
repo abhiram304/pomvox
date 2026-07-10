@@ -29,6 +29,13 @@ enabled = true
 model = "mlx-community/Qwen3-4B-4bit"
 style = "polish"  # "light" = fillers/punctuation only; "polish" also smooths rambles
 timeout_s = 5.0   # hard deadline; on timeout the raw transcript is inserted
+# Cleanup loads lazily so it never blocks startup: STT (small, always used)
+# loads eagerly, but the ~2.3 GB cleanup LLM loads on first use or this many
+# seconds after arm — whichever comes first (0 = only on first use).
+preload_delay_s = 20.0
+# Evict the cleanup LLM from memory after this many idle seconds; it reloads on
+# next use so it isn't resident 24/7 for bursty use (0 = never evict).
+idle_evict_s = 300.0
 
 [insert]
 method = "paste"

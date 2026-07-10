@@ -73,6 +73,20 @@ final class NativeEngine: ObservableObject {
     // Set when the low-memory first-run default flipped cleanup off; persisted
     // on the next arm so the choice is visible + editable in Settings.
     private var applyLowMemCleanupOff = false
+
+    // Cleanup LLM residency (items 4 & 5): STT loads eagerly at arm; the ~2.3 GB
+    // cleanup model does NOT — it loads on first use or after `preloadDelayS`,
+    // and is evicted after `idleEvictS` unused (reloads on next use). The hint
+    // is snapshotted at arm and applied just before the deferred load so it
+    // still rides inside the cached prompt prefix.
+    private var cleanupPreloadDelayS = CleanupResidency.defaultPreloadDelayS
+    private var cleanupIdleEvictS = CleanupResidency.defaultIdleEvictS
+    private var cleanupHint = ""
+    private var cleanupLastUsedAt: CFAbsoluteTime?
+    private var cleanupLoadedAt: CFAbsoluteTime?
+    private var cleanupLoadTask: Task<Void, Never>?
+    private var cleanupPreloadTask: Task<Void, Never>?
+    private var cleanupResidencyTask: Task<Void, Never>?
     // STT model id, snapshotted at arm() for the (anonymous) dictation_completed
     // telemetry event — the basename only ever reaches the wire.
     private var sttModelID = "mlx-community/parakeet-tdt-0.6b-v3"
@@ -268,36 +282,21 @@ final class NativeEngine: ObservableObject {
             return
         }
 
-        // The cleanup LLM loads + warms in the background (first run downloads
-        // ~2.3 GB): arm→ready never waits on it. Until it's ready, clean()
-        // returns nil and the raw transcript pastes — Python's exact behavior.
+        // The STT breakdown is complete now; cleanup loads lazily (below), so
+        // its load time is reported as a separate cold_start event when it
+        // actually happens rather than blocking arm.
+        emitColdStart(cold)
+
+        // Lazy cleanup residency (items 4 & 5): don't load the ~2.3 GB LLM at
+        // arm. Snapshot the prompt hint now (it rides inside the cached prefix),
+        // schedule a background preload after a short delay, and start the
+        // idle-eviction watchdog. First real use also triggers a load.
         if cleanupEnabled {
-            let modelID = cleanupModelID
-            let hint = dictionary.hint  // baked into the cached prefix — set before prepare
-            let polishGate = LineGate()
-            let coldSnapshot = cold
-            Task { [cleanup, weak self] in
-                await cleanup.setTermsHint(hint)
-                await MainActor.run {
-                    self?.polishLoad = ModelLoad.line(.polish, fraction: nil, downloading: false)
-                }
-                let cleanupLoadMs = await cleanup.prepare(modelID: modelID) { [weak self] fraction in
-                    let line = ModelLoad.line(.polish, fraction: fraction, downloading: true)
-                    guard polishGate.changed(line) else { return }
-                    Task { @MainActor in self?.polishLoad = line }
-                }
-                await MainActor.run {
-                    self?.polishLoad = nil
-                    // Emit the full breakdown once cleanup finishes so the event
-                    // carries all four stages; STT stages were captured above.
-                    var c = coldSnapshot
-                    c.cleanupLoadMs = cleanupLoadMs
-                    self?.emitColdStart(c)
-                }
-            }
-        } else {
-            // No cleanup this launch — the STT breakdown is complete now.
-            emitColdStart(cold)
+            cleanupHint = dictionary.hint
+            cleanupLastUsedAt = nil
+            cleanupLoadedAt = nil
+            scheduleCleanupPreload()
+            startCleanupResidencyWatchdog()
         }
 
         registerSleepWakeObservers()
@@ -325,6 +324,99 @@ final class NativeEngine: ObservableObject {
         TelemetryClient.shared.emit(.coldStart, props: timings.telemetryProps())
     }
 
+    // MARK: - cleanup LLM residency (lazy-load + idle eviction)
+
+    /// Load + warm the cleanup LLM if it isn't already resident, deduping
+    /// concurrent triggers (a first-use press racing the delayed preload). The
+    /// load is off the hot path — until it's ready, `clean()` returns nil and
+    /// the raw transcript pastes, exactly as before.
+    private func ensureCleanupLoaded() {
+        guard cleanupEnabled, isArmed, cleanupLoadTask == nil else { return }
+        let modelID = cleanupModelID
+        let hint = cleanupHint
+        let polishGate = LineGate()
+        cleanupLoadTask = Task { [cleanup, weak self] in
+            if await cleanup.isLoaded {
+                await MainActor.run { self?.cleanupLoadTask = nil }
+                return
+            }
+            await cleanup.setTermsHint(hint)
+            await MainActor.run {
+                self?.polishLoad = ModelLoad.line(.polish, fraction: nil, downloading: false)
+            }
+            let loadMs = await cleanup.prepare(modelID: modelID) { [weak self] fraction in
+                let line = ModelLoad.line(.polish, fraction: fraction, downloading: true)
+                guard polishGate.changed(line) else { return }
+                Task { @MainActor in self?.polishLoad = line }
+            }
+            await MainActor.run {
+                guard let self else { return }
+                self.polishLoad = nil
+                self.cleanupLoadTask = nil
+                if loadMs != nil { self.cleanupLoadedAt = CFAbsoluteTimeGetCurrent() }
+                // Report the deferred cleanup-load stage as its own cold_start
+                // event (the STT stages were emitted at arm).
+                if let loadMs {
+                    var c = ColdStartTimings(); c.cleanupLoadMs = loadMs
+                    self.emitColdStart(c)
+                }
+            }
+        }
+    }
+
+    /// After a short post-launch delay, preload cleanup so a user reading the UI
+    /// has a warm model before their first dictation — without blocking startup.
+    private func scheduleCleanupPreload() {
+        cleanupPreloadTask?.cancel()
+        let delay = cleanupPreloadDelayS
+        cleanupPreloadTask = Task { [weak self] in
+            if delay > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run { self?.ensureCleanupLoaded() }
+        }
+    }
+
+    /// Evict the cleanup LLM once it's been idle past `cleanupIdleEvictS`; it
+    /// reloads on next use. STT stays resident (small, always used). The wake
+    /// interval is coarse so this costs nothing at rest.
+    private func startCleanupResidencyWatchdog() {
+        cleanupResidencyTask?.cancel()
+        let evictS = cleanupIdleEvictS
+        guard evictS > 0 else { return }
+        let interval = CleanupResidency.checkIntervalS(idleEvictS: evictS)
+        cleanupResidencyTask = Task { [weak self, cleanup] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                if Task.isCancelled { break }
+                let loaded = await cleanup.isLoaded
+                let now = CFAbsoluteTimeGetCurrent()
+                let evict: Bool = await MainActor.run {
+                    guard let self else { return false }
+                    return CleanupResidency.shouldEvict(
+                        loaded: loaded, lastUsedAt: self.cleanupLastUsedAt,
+                        loadedAt: self.cleanupLoadedAt, now: now, idleEvictS: evictS)
+                }
+                guard evict else { continue }
+                await cleanup.unload()
+                await MainActor.run {
+                    self?.cleanupLoadedAt = nil
+                    NSLog("pomvox-engine: cleanup idle > %.0fs — evicted (reloads on next use)", evictS)
+                }
+            }
+        }
+    }
+
+    /// Cancel every cleanup-residency task (disarm / re-arm).
+    private func stopCleanupResidency() {
+        cleanupPreloadTask?.cancel(); cleanupPreloadTask = nil
+        cleanupResidencyTask?.cancel(); cleanupResidencyTask = nil
+        cleanupLoadTask?.cancel(); cleanupLoadTask = nil
+        cleanupLastUsedAt = nil
+        cleanupLoadedAt = nil
+    }
+
     func disarm() {
         unregisterSleepWakeObservers()
         pendingTapRecreate = false
@@ -335,6 +427,7 @@ final class NativeEngine: ObservableObject {
         capture.onBlock = nil
         // Unlike the ~600 MB Parakeet models (kept for fast re-arm), the
         // ~2.3 GB cleanup LLM is dropped on toggle-off; re-arm reloads in ~1.5s.
+        stopCleanupResidency()
         Task { [cleanup] in await cleanup.unload() }
         bus.post(.state("idle", "ready"))   // hide the HUD if showing
         history?.close(); history = nil
@@ -402,6 +495,12 @@ final class NativeEngine: ObservableObject {
         cleanupStyle = doc.string("cleanup", "style") ?? "polish"
         cleanupTimeoutS = doc.double("cleanup", "timeout_s") ?? 5.0
         cleanupModelID = doc.string("cleanup", "model") ?? "mlx-community/Qwen3-4B-4bit"
+        // Residency tuning (items 4 & 5): how long after arm to preload cleanup
+        // in the background, and how long idle before evicting it. 0 disables.
+        cleanupPreloadDelayS = doc.double("cleanup", "preload_delay_s")
+            ?? CleanupResidency.defaultPreloadDelayS
+        cleanupIdleEvictS = doc.double("cleanup", "idle_evict_s")
+            ?? CleanupResidency.defaultIdleEvictS
 
         historyEnabled = doc.bool("history", "enabled") ?? true
         historyRetentionDays = doc.int("history", "retention_days") ?? 7
@@ -556,6 +655,13 @@ final class NativeEngine: ObservableObject {
         draftTask?.cancel(); draftTask = nil
         status = .transcribing
         bus.post(.state("transcribing", ""))
+        // First real use warms cleanup (if the delayed preload hasn't already)
+        // and marks it used so the idle-evict clock resets. The load is off the
+        // hot path — this dictation still pastes raw if cleanup isn't ready yet.
+        if cleanupEnabled {
+            cleanupLastUsedAt = CFAbsoluteTimeGetCurrent()
+            ensureCleanupLoaded()
+        }
         let samples = capture.stop()
         machineLock.lock(); let t0 = stopAt; machineLock.unlock()
         NSLog("pomvox-engine: stop — %d samples (%.1fs), transcribing", samples.count,
