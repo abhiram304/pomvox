@@ -70,6 +70,7 @@ enum TelemetryEventName: String, Sendable {
     case appLaunch = "app_launch"
     case dictationCompleted = "dictation_completed"
     case cleanupUsed = "cleanup_used"
+    case coldStart = "cold_start"
     case error
     case settingChanged = "setting_changed"
 }
@@ -82,6 +83,14 @@ struct TelemetryProps: Equatable, Sendable {
     var cleanup: Bool?
     var cleanupStatus: String?   // ok | timeout | rejected | error | off
     var errorCode: String?       // enum-shaped: ^[a-z0-9_]{1,40}$
+    // Cold-start breakdown (schema v2, `cold_start` event) — the four stages
+    // that dominate first-dictation latency, plus whether the CoreML compile
+    // cache was reused. All numeric/boolean; no content can ride here.
+    var sttWeightLoadMs: Int?
+    var coremlCompileMs: Int?
+    var aneWarmupMs: Int?
+    var cleanupLoadMs: Int?
+    var coremlCacheHit: Bool?
 }
 
 struct TelemetryEvent: Equatable, Sendable {
@@ -130,6 +139,13 @@ enum TelemetrySanitizer {
         out.cleanup = p.cleanup
         if let c = p.cleanupStatus { out.cleanupStatus = cleanupStatus(c) }
         if let e = p.errorCode { out.errorCode = errorCode(e) }
+        // Cold-start durations reuse the duration clamp (0…24h); the cache-hit
+        // flag is a plain boolean and passes through untouched.
+        if let v = p.sttWeightLoadMs { out.sttWeightLoadMs = durationMs(v) }
+        if let v = p.coremlCompileMs { out.coremlCompileMs = durationMs(v) }
+        if let v = p.aneWarmupMs { out.aneWarmupMs = durationMs(v) }
+        if let v = p.cleanupLoadMs { out.cleanupLoadMs = durationMs(v) }
+        out.coremlCacheHit = p.coremlCacheHit
         return out
     }
 
@@ -167,6 +183,11 @@ enum TelemetryEncoder {
         if let v = p.cleanup { o["cleanup"] = v }
         if let v = p.cleanupStatus { o["cleanup_status"] = v }
         if let v = p.errorCode { o["error_code"] = v }
+        if let v = p.sttWeightLoadMs { o["stt_weight_load_ms"] = v }
+        if let v = p.coremlCompileMs { o["coreml_compile_ms"] = v }
+        if let v = p.aneWarmupMs { o["ane_warmup_ms"] = v }
+        if let v = p.cleanupLoadMs { o["cleanup_load_ms"] = v }
+        if let v = p.coremlCacheHit { o["coreml_cache_hit"] = v }
         return o
     }
 
@@ -229,8 +250,10 @@ enum TelemetryGate {
 // MARK: - Environment metadata
 
 enum TelemetryEnvBuilder {
+    /// Schema v2 adds the `cold_start` event and its numeric breakdown props;
+    /// the ingest side must accept v2 (and the new fields) before this ships.
     static func current(installID: String) -> TelemetryEnv {
-        TelemetryEnv(schemaVersion: 1, installID: installID,
+        TelemetryEnv(schemaVersion: 2, installID: installID,
                      appVersion: appVersion(), osVersion: osVersion(), arch: arch())
     }
 

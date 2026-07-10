@@ -223,13 +223,34 @@ final class NativeEngine: ObservableObject {
         // often; the gate collapses it to distinct lines before the main hop.
         speechLoad = ModelLoad.line(.speech, fraction: nil, downloading: false)
         let speechGate = LineGate()
+        // Cold-start instrumentation (items 1 & 3): probe the CoreML compile
+        // cache before loading (was a compiled .mlmodelc already on disk?), then
+        // measure each load stage so telemetry can show which one dominates.
+        let cacheProbe = CompiledModelCache.probe(model: sttModel)
+        NSLog("pomvox-engine: %@", cacheProbe.logLine(model: sttModel.rawValue))
+        var cold = ColdStartTimings()
+        cold.coremlCacheHit = cacheProbe.hit
         do {
-            try await transcriber.prepare(model: sttModel) { [weak self] fraction, downloading in
+            let sttTiming = try await transcriber.prepare(model: sttModel) { [weak self] fraction, downloading in
                 let line = ModelLoad.line(.speech, fraction: fraction, downloading: downloading)
                 guard speechGate.changed(line) else { return }
                 Task { @MainActor in self?.speechLoad = line }
             }
             speechLoad = nil
+            if sttTiming.alreadyLoaded {
+                // Warm re-arm: STT didn't reload, so its cold-start stages and
+                // the cache hit/miss don't apply this launch.
+                cold.coremlCacheHit = nil
+            } else {
+                cold.sttWeightLoadMs = sttTiming.weightLoadMs
+                cold.coremlCompileMs = sttTiming.coremlCompileMs
+                cold.aneWarmupMs = sttTiming.aneWarmupMs
+                // Record the artifact fingerprint so the next launch can tell
+                // "unchanged" (compile cache persisted) from "recompiled".
+                if let fp = CompiledModelCache.locate(model: sttModel) {
+                    CompiledModelCache.record(fp, for: sttModel)
+                }
+            }
             NSLog("pomvox-engine: model ready")
         } catch {
             speechLoad = nil
@@ -254,18 +275,29 @@ final class NativeEngine: ObservableObject {
             let modelID = cleanupModelID
             let hint = dictionary.hint  // baked into the cached prefix — set before prepare
             let polishGate = LineGate()
+            let coldSnapshot = cold
             Task { [cleanup, weak self] in
                 await cleanup.setTermsHint(hint)
                 await MainActor.run {
                     self?.polishLoad = ModelLoad.line(.polish, fraction: nil, downloading: false)
                 }
-                await cleanup.prepare(modelID: modelID) { [weak self] fraction in
+                let cleanupLoadMs = await cleanup.prepare(modelID: modelID) { [weak self] fraction in
                     let line = ModelLoad.line(.polish, fraction: fraction, downloading: true)
                     guard polishGate.changed(line) else { return }
                     Task { @MainActor in self?.polishLoad = line }
                 }
-                await MainActor.run { self?.polishLoad = nil }
+                await MainActor.run {
+                    self?.polishLoad = nil
+                    // Emit the full breakdown once cleanup finishes so the event
+                    // carries all four stages; STT stages were captured above.
+                    var c = coldSnapshot
+                    c.cleanupLoadMs = cleanupLoadMs
+                    self?.emitColdStart(c)
+                }
             }
+        } else {
+            // No cleanup this launch — the STT breakdown is complete now.
+            emitColdStart(cold)
         }
 
         registerSleepWakeObservers()
@@ -282,6 +314,15 @@ final class NativeEngine: ObservableObject {
     /// One enum-shaped code, never a message (the contract forbids free text).
     private nonisolated func errorProps(_ code: String) -> TelemetryProps {
         var p = TelemetryProps(); p.errorCode = code; return p
+    }
+
+    /// Log the cold-start breakdown and emit the anonymous `cold_start` event
+    /// (numeric spans + cache hit only — no content). A no-op on a warm re-arm
+    /// where nothing loaded, so we never send an all-empty event.
+    private func emitColdStart(_ timings: ColdStartTimings) {
+        guard timings.hasMeasurement else { return }
+        NSLog("pomvox-engine: %@", timings.summary())
+        TelemetryClient.shared.emit(.coldStart, props: timings.telemetryProps())
     }
 
     func disarm() {

@@ -7,7 +7,18 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **Cold-start latency is now instrumented.** The first dictation after launch
+  can feel slow, and it was never clear which stage dominated. The native engine
+  now measures the four cold-start stages separately — STT weight load, CoreML
+  compile/load, Neural Engine warmup, and cleanup-LLM load — and logs a
+  breakdown. It also verifies the CoreML compile cache actually persists across
+  launches (the ~37 s compile should happen once, not every launch): each load
+  logs whether a compiled `.mlmodelc` was already on disk and whether it changed
+  since the previous launch. When usage stats are enabled, an anonymous,
+  content-free `cold_start` event carries the numeric per-stage timings and the
+  cache hit/miss (telemetry schema v2).
 
 ## [0.1.9] — 2026-07-09
 

@@ -53,11 +53,16 @@ actor CleanupEngine: CleanupCleaning {
     /// `onProgress` reports the download fraction [0, 1] while the ~2.3 GB
     /// first-run fetch is in flight, so the background load can surface a note
     /// instead of the first few dictations silently pasting raw.
-    func prepare(modelID: String, onProgress: (@Sendable (Double) -> Void)? = nil) async {
-        guard container == nil, !preparing else { return }
+    /// Returns the model-load time in milliseconds for the cold-start breakdown
+    /// (item 3), or `nil` when nothing loaded (already resident, in flight, or a
+    /// load failure — all of which leave the engine safely unloaded).
+    @discardableResult
+    func prepare(modelID: String, onProgress: (@Sendable (Double) -> Void)? = nil) async -> Double? {
+        guard container == nil, !preparing else { return nil }
         preparing = true
         defer { preparing = false }
 
+        let loadMs: Double
         do {
             let t0 = CFAbsoluteTimeGetCurrent()
             let loaded = try await LLMModelFactory.shared.loadContainer(
@@ -65,11 +70,12 @@ actor CleanupEngine: CleanupCleaning {
                 using: TokenizersLoader(),
                 configuration: ModelConfiguration(id: modelID),
                 progressHandler: { progress in onProgress?(progress.fractionCompleted) })
-            NSLog("cleanup: loaded %@ in %.1fs", modelID, CFAbsoluteTimeGetCurrent() - t0)
+            loadMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+            NSLog("cleanup: loaded %@ in %.1fs", modelID, loadMs / 1000)
             container = loaded
         } catch {
             NSLog("cleanup: model load FAILED: %@", String(describing: error))
-            return
+            return nil
         }
 
         // Warmup: prefill the static prompt prefix per style (doubles as the
@@ -82,6 +88,7 @@ actor CleanupEngine: CleanupCleaning {
         } catch {
             NSLog("cleanup: warmup failed: %@", String(describing: error))
         }
+        return loadMs
     }
 
     /// Drop the model and prefix caches (toggle-off); re-arm reloads.
