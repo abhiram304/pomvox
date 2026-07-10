@@ -70,9 +70,6 @@ final class NativeEngine: ObservableObject {
     private var cleanupStyle = "polish"
     private var cleanupTimeoutS = 5.0
     private var cleanupModelID = "mlx-community/Qwen3-4B-4bit"
-    // Set when the low-memory first-run default flipped cleanup off; persisted
-    // on the next arm so the choice is visible + editable in Settings.
-    private var applyLowMemCleanupOff = false
 
     // Cleanup LLM residency (items 4 & 5): STT loads eagerly at arm; the ~2.3 GB
     // cleanup model does NOT — it loads on first use or after `preloadDelayS`,
@@ -493,21 +490,29 @@ final class NativeEngine: ObservableObject {
         // out of the box instead of the ~2.5 GB armed+cleanup cost swapping. An
         // existing config or an explicit key is always honored — this can only
         // supply a default for an absent key on a brand-new install.
+        //
+        // The choice is no longer persisted silently (item 7): the engine runs
+        // with the in-memory default, and the Hub shows a one-time prompt
+        // (LowMemoryCleanupModel) that writes the user's explicit choice — so a
+        // low-memory user understands the tradeoff instead of a missing feature.
+        let physicalMemory = ProcessInfo.processInfo.physicalMemory
         let configExists = FileManager.default.fileExists(atPath: configPath)
-        let cleanupKeyPresent = doc.bool("cleanup", "enabled") != nil
         let cleanupDefault = MemoryTier.firstRunCleanupDefault(
-            configExists: configExists,
-            physicalMemoryBytes: ProcessInfo.processInfo.physicalMemory)
+            configExists: configExists, physicalMemoryBytes: physicalMemory)
         cleanupEnabled = doc.bool("cleanup", "enabled") ?? cleanupDefault
-        applyLowMemCleanupOff = !cleanupKeyPresent && !configExists && !cleanupEnabled
-        if applyLowMemCleanupOff {
-            let gb = Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824
+        if !cleanupEnabled, !configExists {
+            let gb = Double(physicalMemory) / 1_073_741_824
             NSLog("pomvox-engine: low-memory Mac (%.1f GB) — cleanup off by default "
-                  + "on first run (enable in Settings ▸ Models)", gb)
+                  + "on first run (the Hub prompts to enable it)", gb)
         }
         cleanupStyle = doc.string("cleanup", "style") ?? "polish"
         cleanupTimeoutS = doc.double("cleanup", "timeout_s") ?? 5.0
-        cleanupModelID = doc.string("cleanup", "model") ?? "mlx-community/Qwen3-4B-4bit"
+        // Item 6: memory-aware model-size default (1.7B on ≤8 GB, 4B on 16 GB+)
+        // for a fresh install; an existing config keeps the prior 4B default.
+        let cleanupModelDefault = configExists
+            ? MemoryTier.standardCleanupModel
+            : MemoryTier.firstRunCleanupModel(physicalMemoryBytes: physicalMemory)
+        cleanupModelID = doc.string("cleanup", "model") ?? cleanupModelDefault
         // Residency tuning (items 4 & 5): how long after arm to preload cleanup
         // in the background, and how long idle before evicting it. 0 disables.
         cleanupPreloadDelayS = doc.double("cleanup", "preload_delay_s")
@@ -1009,12 +1014,6 @@ final class NativeEngine: ObservableObject {
     private func persist(_ enabled: Bool) {
         var doc = ConfigDocument.load(path: configPath)
         doc.set("engine", "native", bool: enabled)
-        // Record the low-memory first-run cleanup-off default (arming only), so
-        // it survives restarts and is visible + editable in Settings ▸ Models.
-        if enabled, applyLowMemCleanupOff {
-            doc.set("cleanup", "enabled", bool: false)
-            applyLowMemCleanupOff = false
-        }
         try? doc.write(to: configPath)
     }
 }

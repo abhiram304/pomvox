@@ -39,4 +39,20 @@ final class MemoryTierTests: XCTestCase {
         XCTAssertTrue(MemoryTier.firstRunCleanupDefault(
             configExists: false, physicalMemoryBytes: 16 * Self.gb))
     }
+
+    // MARK: - memory-aware cleanup model size (item 6)
+
+    func testLowMemoryDefaultsToTheCompactModel() {
+        XCTAssertEqual(MemoryTier.firstRunCleanupModel(physicalMemoryBytes: 8 * Self.gb),
+                       MemoryTier.compactCleanupModel)
+        XCTAssertEqual(MemoryTier.compactCleanupModel, "mlx-community/Qwen3-1.7B-4bit")
+    }
+
+    func testAmpleMemoryDefaultsToTheStandardModel() {
+        XCTAssertEqual(MemoryTier.firstRunCleanupModel(physicalMemoryBytes: 16 * Self.gb),
+                       MemoryTier.standardCleanupModel)
+        XCTAssertEqual(MemoryTier.firstRunCleanupModel(physicalMemoryBytes: 64 * Self.gb),
+                       MemoryTier.standardCleanupModel, "8B is offered, never auto-selected")
+        XCTAssertEqual(MemoryTier.standardCleanupModel, "mlx-community/Qwen3-4B-4bit")
+    }
 }
