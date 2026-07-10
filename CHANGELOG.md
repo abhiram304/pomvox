@@ -9,6 +9,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- **Your first dictation is warmed up during setup, not on first use.** On a
+  fresh install the models are now warmed the first time the engine arms — while
+  you're still reading the Setup screen — by running a throwaway pass through
+  both the speech and cleanup models. That moves the one-time cold-start cost off
+  your very first real dictation, so it feels fast instead of slow. Later
+  launches keep the lazy behavior.
+
 - **The cleanup model no longer sits in memory when you're not using it.** The
   ~2.3 GB cleanup LLM used to load at launch and stay resident. Now the small,
   always-used speech model loads eagerly while the cleanup model loads lazily —

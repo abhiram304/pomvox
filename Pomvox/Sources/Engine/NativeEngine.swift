@@ -291,11 +291,24 @@ final class NativeEngine: ObservableObject {
         // arm. Snapshot the prompt hint now (it rides inside the cached prefix),
         // schedule a background preload after a short delay, and start the
         // idle-eviction watchdog. First real use also triggers a load.
+        //
+        // Onboarding warm (item 2): on a fresh install, warm cleanup eagerly
+        // *now* — while the user is still in Setup — so the cold-start cost
+        // lands there instead of on their first real dictation. STT already
+        // warmed during prepare() above. After this first warm, later launches
+        // use the lazy path.
         if cleanupEnabled {
             cleanupHint = dictionary.hint
             cleanupLastUsedAt = nil
             cleanupLoadedAt = nil
-            scheduleCleanupPreload()
+            let onboarding = OnboardingWarm()
+            if onboarding.shouldWarmNow {
+                NSLog("pomvox-engine: first run — warming cleanup now (onboarding)")
+                onboarding.markWarmed()
+                ensureCleanupLoaded()
+            } else {
+                scheduleCleanupPreload()
+            }
             startCleanupResidencyWatchdog()
         }
 
