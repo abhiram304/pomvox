@@ -84,6 +84,11 @@ final class NativeEngine: ObservableObject {
     private var cleanupLoadTask: Task<Void, Never>?
     private var cleanupPreloadTask: Task<Void, Never>?
     private var cleanupResidencyTask: Task<Void, Never>?
+
+    // Perceived-fast HUD (item 8): the first dictation after arm pays the cold
+    // model spin-up, so the HUD shows a shimmer placeholder for it. True until
+    // the first finalize consumes it.
+    private var coldFirstInference = true
     // STT model id, snapshotted at arm() for the (anonymous) dictation_completed
     // telemetry event — the basename only ever reaches the wire.
     private var sttModelID = "mlx-community/parakeet-tdt-0.6b-v3"
@@ -311,6 +316,8 @@ final class NativeEngine: ObservableObject {
 
         registerSleepWakeObservers()
         persist(true)
+        // The first dictation of this armed session gets the cold-start shimmer.
+        coldFirstInference = true
         NSLog("pomvox-engine: ARMED — ready")
         status = .ready
         if pendingTapRecreate {
@@ -672,7 +679,13 @@ final class NativeEngine: ObservableObject {
         endVadSession()
         draftTask?.cancel(); draftTask = nil
         status = .transcribing
-        bus.post(.state("transcribing", ""))
+        // The first finalize after arm pays the cold spin-up: mark its HUD
+        // states so the renderer shimmers a placeholder (item 8). Consumed here
+        // so every later dictation this session uses the plain label.
+        let cold = coldFirstInference
+        coldFirstInference = false
+        let coldMark = cold ? HudConst.coldStartMark : ""
+        bus.post(.state("transcribing", coldMark))
         // First real use warms cleanup (if the delayed preload hasn't already)
         // and marks it used so the idle-evict clock resets. The load is off the
         // hot path — this dictation still pastes raw if cleanup isn't ready yet.
@@ -716,7 +729,7 @@ final class NativeEngine: ObservableObject {
             // The draft loop is already stopped (`finishing`), so the GPU pass
             // never overlaps STT on the ANE.
             if doCleanup, !raw.isEmpty {
-                self.bus.post(.state("polishing", ""))
+                self.bus.post(.state("polishing", coldMark))
                 let (cleaned, status) = await self.cleanupWithWatchdog(
                     raw: raw, style: style, timeoutS: timeoutS)
                 text = cleaned

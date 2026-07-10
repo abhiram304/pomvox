@@ -85,6 +85,10 @@ struct HudView: View {
                 + Text(model.volatileDraft).foregroundColor(.gray))
                 .font(.system(size: 13))
                 .lineLimit(1).truncationMode(.head)
+        } else if vm.placeholder {
+            // Cold first inference (item 8): a moving skeleton so the wait reads
+            // as "working", not "stuck", while the model spins up.
+            HudShimmerBar().frame(width: 180, height: 10)
         } else {
             EmptyView()
         }
@@ -104,6 +108,36 @@ struct HudView: View {
         case "recording": return "Recording. \(vm.status)"
         case "done": return "Done. \(vm.final)"
         default: return vm.status
+        }
+    }
+}
+
+/// A shimmering skeleton line shown only during the first (cold) dictation's
+/// transcribe/polish wait. The `repeatForever` sweep is fine here (unlike the
+/// deliberately loop-free waveform) because it lives for a brief, one-time
+/// window per armed session and conveys "working" instead of a frozen label.
+private struct HudShimmerBar: View {
+    @State private var sweep: CGFloat = -1
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color.white.opacity(0.12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(LinearGradient(
+                            colors: [.clear, .white.opacity(0.4), .clear],
+                            startPoint: .leading, endPoint: .trailing))
+                        .offset(x: sweep * w)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+        }
+        .onAppear {
+            sweep = -1
+            withAnimation(.linear(duration: 1.1).repeatForever(autoreverses: false)) {
+                sweep = 1
+            }
         }
     }
 }

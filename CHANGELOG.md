@@ -9,6 +9,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- **The first dictation no longer looks frozen while the model warms up.** The
+  very first dictation after the engine turns on pays a one-time model spin-up
+  cost, during which the HUD used to sit on a static "finishing…". It now shows a
+  subtle shimmering placeholder so the wait reads as "working", replaced by your
+  real text the moment it's ready. Every later dictation in the session is
+  already warm and shows the plain label.
+
 - **Cleanup now picks a model size that fits your Mac, and asks before skipping
   it.** A fresh install defaults the cleanup model to a size that fits comfortably
   in memory — the compact Qwen3-1.7B on Macs with ≤ 8 GB of RAM, Qwen3-4B on

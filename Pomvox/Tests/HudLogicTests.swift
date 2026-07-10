@@ -153,6 +153,36 @@ final class HudLogicTests: XCTestCase {
         XCTAssertEqual(vm.draft, "so far")
     }
 
+    // MARK: - cold first-inference shimmer placeholder (item 8)
+
+    func testWarmTranscribingHasNoPlaceholderShimmer() {
+        let m = make()
+        _ = m.apply([.state: .state("recording", "")], now: 0.0)
+        let vm = m.apply([.state: .state("transcribing", "")], now: 2.0)
+        XCTAssertFalse(vm.placeholder, "a plain transcribing state shows no shimmer")
+        XCTAssertEqual(vm.status, "finishing…")
+    }
+
+    func testColdTranscribingRaisesThePlaceholderShimmer() {
+        let m = make()
+        _ = m.apply([.state: .state("recording", "")], now: 0.0)
+        let vm = m.apply([.state: .state("transcribing", HudConst.coldStartMark)], now: 2.0)
+        XCTAssertEqual(vm.state, "transcribing")
+        XCTAssertTrue(vm.placeholder, "the cold marker turns on the shimmer")
+        XCTAssertEqual(vm.status, "finishing…", "the label is unchanged; only the shimmer differs")
+    }
+
+    func testColdPolishingKeepsTheShimmerThenTheResultClearsIt() {
+        let m = make()
+        _ = m.apply([.state: .state("recording", "")], now: 0.0)
+        _ = m.apply([.state: .state("transcribing", HudConst.coldStartMark)], now: 2.0)
+        let polishing = m.apply([.state: .state("polishing", HudConst.coldStartMark)], now: 3.0)
+        XCTAssertTrue(polishing.placeholder)
+        let done = m.apply([.result: .result("ok", "Final text.")], now: 4.0)
+        XCTAssertEqual(done.state, "done")
+        XCTAssertFalse(done.placeholder, "the real result replaces the shimmer")
+    }
+
     func testOkResultFlashesThenHidesOnTick() {
         let m = make()
         _ = m.apply([.state: .state("recording", "")], now: 0.0)
