@@ -24,6 +24,21 @@ func hudPillFound(windows: [HudWindowInfo], pid: Int,
     }
 }
 
+/// What the post-show probe should do with its result. The initial probe may
+/// heal (rebuild the panel — a fresh window-server window orders in when a
+/// wedged one won't, proven live 2026-07-11); the post-heal verification probe
+/// only reports, so one show() can never rebuild more than once.
+enum HudProbeAction: Equatable {
+    case none              // pill on screen — nothing to do
+    case healAndRecheck    // miss on the original panel — rebuild + verify
+    case reportHealFailed  // miss on the REBUILT panel — log/telemetry only
+}
+
+func hudProbeAction(pillVisible: Bool, isPostHealCheck: Bool) -> HudProbeAction {
+    if pillVisible { return .none }
+    return isPostHealCheck ? .reportHealFailed : .healAndRecheck
+}
+
 enum HudProbe {
     /// Snapshot of all on-screen windows (any process). `optionOnScreenOnly`
     /// already excludes ordered-out and fully-hidden windows.

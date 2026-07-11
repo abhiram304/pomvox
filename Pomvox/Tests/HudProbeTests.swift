@@ -38,4 +38,28 @@ final class HudProbeTests: XCTestCase {
     func testEmptyWindowListDoesNotCount() {
         XCTAssertFalse(hudPillFound(windows: [], pid: 42, pillSize: pill))
     }
+
+    // MARK: - probe policy (self-heal on miss, at most once per show)
+
+    func testVisiblePillNeedsNoAction() {
+        XCTAssertEqual(hudProbeAction(pillVisible: true, isPostHealCheck: false), .none)
+    }
+
+    func testMissTriggersHeal() {
+        // The 2026-07-11 wedge: orderFrontRegardless no-ops on the old window.
+        // A fresh panel is the proven fix — rebuild and verify.
+        XCTAssertEqual(hudProbeAction(pillVisible: false, isPostHealCheck: false),
+                       .healAndRecheck)
+    }
+
+    func testHealedPillNeedsNoAction() {
+        XCTAssertEqual(hudProbeAction(pillVisible: true, isPostHealCheck: true), .none)
+    }
+
+    func testMissAfterHealOnlyReports() {
+        // Never heal twice for one show(): if a FRESH panel also can't order
+        // in (locked screen, exotic breakage), report and stop — no loop.
+        XCTAssertEqual(hudProbeAction(pillVisible: false, isPostHealCheck: true),
+                       .reportHealFailed)
+    }
 }
