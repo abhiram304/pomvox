@@ -993,6 +993,7 @@ final class NativeEngine: ObservableObject {
     private func onWake(reason: String) {
         panicReset(reason: "system \(reason)")
         capture.markStale()   // a post-sleep engine can deliver a dead stream
+        hud.markStale()       // a post-sleep panel can refuse to order in
         guard isArmed else { return }
         wakeRecreateTask?.cancel()
         wakeRecreateTask = Task { [weak self] in

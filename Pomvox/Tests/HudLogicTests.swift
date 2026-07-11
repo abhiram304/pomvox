@@ -316,4 +316,20 @@ final class HudLogicTests: XCTestCase {
         let vm = m.apply([.result: .result("ok", "ghost")], now: 1.0)
         XCTAssertFalse(vm.visible)
     }
+
+    // MARK: - stale panel rebuild (post-sleep window-server wedge)
+
+    func testStaleHiddenPanelRebuilds() {
+        XCTAssertTrue(hudShouldRebuildStale(stale: true, prevState: "hidden"))
+    }
+
+    func testStaleVisiblePanelWaits() {
+        // Never yank a panel that is currently displaying — the wedge only
+        // matters at the next show, and the show-probe self-heal covers it.
+        XCTAssertFalse(hudShouldRebuildStale(stale: true, prevState: "recording"))
+    }
+
+    func testFreshPanelIsLeftAlone() {
+        XCTAssertFalse(hudShouldRebuildStale(stale: false, prevState: "hidden"))
+    }
 }

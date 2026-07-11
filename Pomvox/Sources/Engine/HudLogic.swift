@@ -142,6 +142,14 @@ func hudShouldShow(state: String, prevState: String) -> Bool {
     return state == "recording" && prevState != "recording"
 }
 
+/// After sleep/wake the panel's window-server window may be wedged (ordering
+/// no-ops — the 2026-07-11 incident). Rebuild lazily at the next present, and
+/// only while hidden: a visible panel is by definition not wedged, and the
+/// show-probe self-heal covers anything that slips through.
+func hudShouldRebuildStale(stale: Bool, prevState: String) -> Bool {
+    stale && prevState == "hidden"
+}
+
 /// Ring buffer of recent mic levels for the waveform bars. Port of `LevelHistory`.
 final class LevelHistory {
     private let n: Int

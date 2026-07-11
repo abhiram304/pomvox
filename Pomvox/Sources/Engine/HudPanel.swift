@@ -23,6 +23,7 @@ final class HudController {
     private var panel: NonActivatingPanel?
     private var panelFailed = false
     private var occlusionObserver: NSObjectProtocol?
+    private var panelStale = false
 
     private var enabled = true
     private var position: String
@@ -63,6 +64,11 @@ final class HudController {
         ensurePanel()
     }
 
+    /// Mark the panel's window-server window as suspect (sleep/wake). The next
+    /// present() while hidden swaps in a fresh panel — same recovery the event
+    /// tap (#49) and audio engine (#60) already get on wake.
+    func markStale() { panelStale = true }
+
     /// The `HudBus` render callback — drained payloads in, panel updated. Main thread.
     func render(_ payloads: [UiEvent: HudPayload]) {
         let now = CACurrentMediaTime()
@@ -75,6 +81,13 @@ final class HudController {
     }
 
     private func present(_ vm: HudViewModel, now: Double) {
+        if hudShouldRebuildStale(stale: panelStale, prevState: prevState) {
+            panelStale = false
+            if panel != nil {
+                NSLog("hud: rebuilding stale panel after wake")
+                rebuildPanel()
+            }
+        }
         if panel == nil && !panelFailed { ensurePanel() }
         guard let panel else { return }
 
