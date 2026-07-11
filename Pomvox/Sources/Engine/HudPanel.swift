@@ -217,6 +217,14 @@ final class HudController {
     }
 
     private func show(_ panel: NSPanel) {
+        showGeneration &+= 1
+        orderIn(panel)
+        scheduleShowProbe(isPostHealCheck: false)
+    }
+
+    /// Frame + alpha + order-front, shared by show() and the self-heal re-show
+    /// (which must NOT bump showGeneration — the heal belongs to the same show).
+    private func orderIn(_ panel: NSPanel) {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
         let vf = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
@@ -224,7 +232,6 @@ final class HudController {
                                          Double(vf.size.width), Double(vf.size.height)),
                           position: position)
         panel.setFrame(NSRect(x: f.x, y: f.y, width: f.w, height: f.h), display: true)
-        showGeneration &+= 1
         // Cancel any in-flight fade-out: a re-record that lands inside hide()'s
         // 0.25 s fade would otherwise keep animating alpha back to 0 and the HUD
         // never appears. Re-assigning alpha through a zero-duration animation
@@ -239,15 +246,17 @@ final class HudController {
         // this cycle animates without waiting for the first occlusion callback
         // (which can lag the order-front). Occlusion updates take over after.
         model.windowVisible = true
-        NSLog("hud: show at (%.0f, %.0f) screen=%@", f.x, f.y,
-              screen?.localizedName ?? "<none>")
-        scheduleShowProbe()
+        NSLog("hud: show at (%.0f, %.0f) screen=%@ win=%d", f.x, f.y,
+              screen?.localizedName ?? "<none>", panel.windowNumber)
     }
 
     /// ~0.3 s after a show, ask the window server whether the pill is really on
-    /// screen. A miss is the "HUD never appeared" bug caught red-handed — one
-    /// log line + one anonymous error event, never any UI.
-    private func scheduleShowProbe() {
+    /// screen. On a miss, rebuild the panel and re-order it in: a long-lived
+    /// NSPanel can wedge so orderFrontRegardless() silently no-ops while a fresh
+    /// window orders in fine (proven live 2026-07-11 — alpha animated, onscreen
+    /// never went true, and a new window in the same process displayed). The
+    /// post-heal probe only reports, so one show() rebuilds at most once.
+    private func scheduleShowProbe(isPostHealCheck: Bool) {
         let gen = showGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self, self.showGeneration == gen, self.prevState != "hidden"
@@ -256,14 +265,45 @@ final class HudController {
                 windows: HudProbe.onScreenWindows(),
                 pid: Int(ProcessInfo.processInfo.processIdentifier),
                 pillSize: HudConst.pillSize)
-            if !visible {
-                NSLog("hud: PROBE MISS — pill not on screen 0.3s after show (state=%@)",
-                      self.prevState)
+            switch hudProbeAction(pillVisible: visible, isPostHealCheck: isPostHealCheck) {
+            case .none:
+                if isPostHealCheck {
+                    NSLog("hud: self-heal OK — rebuilt pill is on screen")
+                    var p = TelemetryProps()
+                    p.errorCode = "hud_selfheal_ok"
+                    TelemetryClient.shared.emit(.error, props: p)
+                }
+            case .healAndRecheck:
+                NSLog("hud: PROBE MISS — pill not on screen 0.3s after show (state=%@ appkitVisible=%@ win=%d alpha=%.2f) — rebuilding panel",
+                      self.prevState,
+                      self.panel?.isVisible == true ? "yes" : "no",
+                      self.panel?.windowNumber ?? -1,
+                      self.panel?.alphaValue ?? -1)
                 var p = TelemetryProps()
                 p.errorCode = "hud_not_visible"
                 TelemetryClient.shared.emit(.error, props: p)
+                self.rebuildPanel()
+                if let fresh = self.panel { self.orderIn(fresh) }
+                self.scheduleShowProbe(isPostHealCheck: true)
+            case .reportHealFailed:
+                NSLog("hud: self-heal FAILED — rebuilt pill still not on screen (state=%@)",
+                      self.prevState)
+                var p = TelemetryProps()
+                p.errorCode = "hud_selfheal_failed"
+                TelemetryClient.shared.emit(.error, props: p)
             }
         }
+    }
+
+    /// Discard the panel and build a fresh one — a new window-server window.
+    /// The SwiftUI content re-binds automatically: `ensurePanel()` hosts
+    /// `HudView(model:)` on the same shared `HudRenderModel`.
+    private func rebuildPanel() {
+        panel?.orderOut(nil)
+        panel = nil
+        panelFailed = false
+        ensurePanel()
+        NSLog("hud: panel rebuilt (win=%d)", panel?.windowNumber ?? -1)
     }
 
     private func hide(_ panel: NSPanel) {
