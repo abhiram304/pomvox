@@ -299,8 +299,11 @@ final class HudController {
                 if let fresh = self.panel { self.orderIn(fresh) }
                 self.scheduleShowProbe(isPostHealCheck: true)
             case .reportHealFailed:
-                NSLog("hud: self-heal FAILED — rebuilt pill still not on screen (state=%@)",
-                      self.prevState)
+                NSLog("hud: self-heal FAILED — rebuilt pill still not on screen (state=%@ appkitVisible=%@ win=%d alpha=%.2f)",
+                      self.prevState,
+                      self.panel?.isVisible == true ? "yes" : "no",
+                      self.panel?.windowNumber ?? -1,
+                      self.panel?.alphaValue ?? -1)
                 var p = TelemetryProps()
                 p.errorCode = "hud_selfheal_failed"
                 TelemetryClient.shared.emit(.error, props: p)

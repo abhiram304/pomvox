@@ -332,4 +332,8 @@ final class HudLogicTests: XCTestCase {
     func testFreshPanelIsLeftAlone() {
         XCTAssertFalse(hudShouldRebuildStale(stale: false, prevState: "hidden"))
     }
+
+    func testFreshVisiblePanelIsLeftAlone() {
+        XCTAssertFalse(hudShouldRebuildStale(stale: false, prevState: "recording"))
+    }
 }
