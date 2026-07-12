@@ -84,6 +84,10 @@ final class NativeEngine: ObservableObject {
     private var cleanupLoadTask: Task<Void, Never>?
     private var cleanupPreloadTask: Task<Void, Never>?
     private var cleanupResidencyTask: Task<Void, Never>?
+    // Set at a fresh-install onboarding arm; the cleanup "warmed" flag is only
+    // persisted once the eager load actually completes (see markOnboarding…),
+    // so an interrupted/failed first-run warm is retried on the next launch.
+    private var pendingOnboardingWarm = false
 
     // Perceived-fast HUD (item 8): the first dictation after arm pays the cold
     // model spin-up, so the HUD shows a shimmer placeholder for it. True until
@@ -306,12 +310,18 @@ final class NativeEngine: ObservableObject {
             let onboarding = OnboardingWarm()
             if onboarding.shouldWarmNow {
                 NSLog("pomvox-engine: first run — warming cleanup now (onboarding)")
-                onboarding.markWarmed()
+                // Mark warmed only once the load actually completes, not up
+                // front: if the warm is interrupted (quit during Setup) or the
+                // load fails, the flag stays unset so the next launch retries
+                // the eager warm instead of silently dropping to the lazy path
+                // with a cold first dictation.
+                pendingOnboardingWarm = true
                 // Fire-and-forget: ensureCleanupLoaded only spawns the background
                 // load Task and returns, so this eager warm does not block
                 // arm→ready — the cost is paid off the hot path during Setup.
                 ensureCleanupLoaded()
             } else {
+                pendingOnboardingWarm = false
                 scheduleCleanupPreload()
             }
             startCleanupResidencyWatchdog()
@@ -376,6 +386,8 @@ final class NativeEngine: ObservableObject {
                     // first-use trigger): reset the idle clock so a fresh use
                     // isn't measured from the old load time.
                     self.cleanupLoadedAt = CFAbsoluteTimeGetCurrent()
+                    // The model is warm — an onboarding warm counts as done.
+                    self.markOnboardingWarmedIfPending()
                 }
                 return
             }
@@ -398,6 +410,9 @@ final class NativeEngine: ObservableObject {
                     // completes, so a slow (~2.3 GB first-run) load isn't
                     // counted as idle time against the model.
                     self.cleanupLoadedAt = CFAbsoluteTimeGetCurrent()
+                    // The eager onboarding warm (if any) succeeded — record it
+                    // now, gated on the completed load rather than up front.
+                    self.markOnboardingWarmedIfPending()
                     // Report the deferred cleanup-load stage as its own
                     // cold_start event (the STT stages were emitted at arm).
                     var c = ColdStartTimings(); c.cleanupLoadMs = outcome.prepareMs
@@ -413,6 +428,17 @@ final class NativeEngine: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Persist the fresh-install onboarding-warm flag, but only once — from a
+    /// completed load — so an interrupted or failed warm (quit during Setup, a
+    /// load error) leaves the flag unset and the next launch retries the eager
+    /// warm rather than dropping straight to the lazy path with a cold first
+    /// dictation. Uses `.standard`, matching `arm()`'s `OnboardingWarm()`.
+    private func markOnboardingWarmedIfPending() {
+        guard pendingOnboardingWarm else { return }
+        pendingOnboardingWarm = false
+        OnboardingWarm().markWarmed()
     }
 
     /// After a short post-launch delay, preload cleanup so a user reading the UI
@@ -478,6 +504,9 @@ final class NativeEngine: ObservableObject {
         cleanupLoadTask?.cancel(); cleanupLoadTask = nil
         cleanupLastUsedAt = nil
         cleanupLoadedAt = nil
+        // A pending onboarding warm that never completed is abandoned on disarm;
+        // the flag stays unset in defaults, so the next arm re-attempts it.
+        pendingOnboardingWarm = false
         // Clear the snapshotted prompt hint too: arm() re-snapshots it, but a
         // disarm without a following arm (e.g. a config change) must not leave a
         // stale hint that a later load could bake into the cached prefix.
