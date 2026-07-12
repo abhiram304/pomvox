@@ -44,6 +44,11 @@ struct HeatmapCell: Identifiable {
 struct HubStats {
     var totalWords: Int = 0
     var dictationCount: Int = 0
+    /// Purge-proof all-time counters from `lifetime_stats` — unlike the two
+    /// above, these do NOT shrink when retention prunes rows. nil when the db
+    /// predates the table; display falls back to the windowed sums.
+    var lifetimeWords: Int?
+    var lifetimeDictations: Int?
     /// Words ÷ minutes spoken, over dictations with a known positive duration.
     var averageWPM: Int = 0
     var activity: [DayBucket] = []
