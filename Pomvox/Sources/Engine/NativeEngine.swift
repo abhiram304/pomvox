@@ -305,6 +305,9 @@ final class NativeEngine: ObservableObject {
             if onboarding.shouldWarmNow {
                 NSLog("pomvox-engine: first run — warming cleanup now (onboarding)")
                 onboarding.markWarmed()
+                // Fire-and-forget: ensureCleanupLoaded only spawns the background
+                // load Task and returns, so this eager warm does not block
+                // arm→ready — the cost is paid off the hot path during Setup.
                 ensureCleanupLoaded()
             } else {
                 scheduleCleanupPreload()
@@ -343,6 +346,13 @@ final class NativeEngine: ObservableObject {
     /// concurrent triggers (a first-use press racing the delayed preload). The
     /// load is off the hot path — until it's ready, `clean()` returns nil and
     /// the raw transcript pastes, exactly as before.
+    ///
+    /// Returns immediately: the only work done synchronously on the caller's
+    /// actor is the cheap guard and spawning `cleanupLoadTask`; every heavy step
+    /// (the ~2.3 GB `cleanup.prepare()` load + warmup) runs inside that detached
+    /// Task on the cleanup actor. So `arm()` — including the fresh-install
+    /// onboarding warm that calls this eagerly — never waits on it: arm→ready
+    /// stays fast whether cleanup warms now or lazily.
     private func ensureCleanupLoaded() {
         // The guard and the `cleanupLoadTask` assignment below run without an
         // intervening await, and NativeEngine is @MainActor, so two triggers
