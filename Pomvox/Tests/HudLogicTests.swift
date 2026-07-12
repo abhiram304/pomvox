@@ -336,4 +336,24 @@ final class HudLogicTests: XCTestCase {
     func testFreshVisiblePanelIsLeftAlone() {
         XCTAssertFalse(hudShouldRebuildStale(stale: false, prevState: "recording"))
     }
+
+    // MARK: - show-generation tracker (heal-once / fade-race bookkeeping)
+
+    func testBeginShowInvalidatesOlderGenerations() {
+        var t = ShowGenerationTracker()
+        t.beginShow()
+        let first = t.current
+        t.beginShow()
+        XCTAssertFalse(t.isCurrent(first))
+        XCTAssertTrue(t.isCurrent(t.current))
+    }
+
+    func testFreshTrackerIsItsOwnCurrent() {
+        // Work captured before any show (gen 0) stands down after the first.
+        var t = ShowGenerationTracker()
+        let preShow = t.current
+        XCTAssertTrue(t.isCurrent(preShow))
+        t.beginShow()
+        XCTAssertFalse(t.isCurrent(preShow))
+    }
 }

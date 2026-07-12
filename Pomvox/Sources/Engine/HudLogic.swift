@@ -150,6 +150,21 @@ func hudShouldRebuildStale(stale: Bool, prevState: String) -> Bool {
     stale && prevState == "hidden"
 }
 
+/// Show-generation bookkeeping for the HUD panel. Every `show()` begins a new
+/// generation; async work captured under an older one (a hide-fade completion,
+/// a pending visibility probe) must stand down when it fires. Extracted pure so
+/// the heal-at-most-once-per-show bound survives refactors under unit test —
+/// the wedge class this guards took multi-day soaks to surface in the field.
+struct ShowGenerationTracker: Equatable {
+    private(set) var current = 0
+
+    /// Start a new show; everything captured before this call is stale.
+    mutating func beginShow() { current &+= 1 }
+
+    /// Is *gen* still the latest show?
+    func isCurrent(_ gen: Int) -> Bool { gen == current }
+}
+
 /// Ring buffer of recent mic levels for the waveform bars. Port of `LevelHistory`.
 final class LevelHistory {
     private let n: Int

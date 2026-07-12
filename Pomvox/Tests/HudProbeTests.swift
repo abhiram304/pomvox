@@ -62,4 +62,25 @@ final class HudProbeTests: XCTestCase {
         XCTAssertEqual(hudProbeAction(pillVisible: false, isPostHealCheck: true),
                        .reportHealFailed)
     }
+
+    func testMissOnLockedScreenSkipsHeal() {
+        // A locked screen can't display the pill — healing would waste a
+        // rebuild and mislabel the environment as the window-server wedge.
+        XCTAssertEqual(hudProbeAction(pillVisible: false, isPostHealCheck: false,
+                                      screenLocked: true),
+                       .skipLockedScreen)
+    }
+
+    func testMissAfterHealOnLockedScreenAlsoSkips() {
+        XCTAssertEqual(hudProbeAction(pillVisible: false, isPostHealCheck: true,
+                                      screenLocked: true),
+                       .skipLockedScreen)
+    }
+
+    func testVisiblePillOnLockedScreenNeedsNoAction() {
+        // Visibility wins — if the pill somehow displays, nothing to do.
+        XCTAssertEqual(hudProbeAction(pillVisible: true, isPostHealCheck: false,
+                                      screenLocked: true),
+                       .none)
+    }
 }

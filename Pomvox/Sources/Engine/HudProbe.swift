@@ -32,10 +32,16 @@ enum HudProbeAction: Equatable {
     case none              // pill on screen — nothing to do
     case healAndRecheck    // miss on the original panel — rebuild + verify
     case reportHealFailed  // miss on the REBUILT panel — log/telemetry only
+    case skipLockedScreen  // miss while locked — nothing can display; log only
 }
 
-func hudProbeAction(pillVisible: Bool, isPostHealCheck: Bool) -> HudProbeAction {
+func hudProbeAction(pillVisible: Bool, isPostHealCheck: Bool,
+                    screenLocked: Bool = false) -> HudProbeAction {
     if pillVisible { return .none }
+    // A locked screen can't display the pill no matter how fresh the panel is —
+    // healing would waste a rebuild and mislabel "screen was locked" as
+    // hud_not_visible/hud_selfheal_failed, poisoning the wedge telemetry.
+    if screenLocked { return .skipLockedScreen }
     return isPostHealCheck ? .reportHealFailed : .healAndRecheck
 }
 
@@ -55,5 +61,12 @@ enum HudProbe {
                 alpha: info[kCGWindowAlpha as String] as? Double ?? 1.0,
                 layer: info[kCGWindowLayer as String] as? Int ?? 0)
         }
+    }
+
+    /// Is the login session locked (lock screen / screensaver auth up)? Misses
+    /// probed in that state are environmental, not the window-server wedge.
+    static func screenIsLocked() -> Bool {
+        let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+        return session?["CGSSessionScreenIsLocked"] as? Bool ?? false
     }
 }

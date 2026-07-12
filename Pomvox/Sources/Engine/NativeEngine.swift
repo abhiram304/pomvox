@@ -334,7 +334,7 @@ final class NativeEngine: ObservableObject {
 
     /// One enum-shaped code, never a message (the contract forbids free text).
     private nonisolated func errorProps(_ code: String) -> TelemetryProps {
-        var p = TelemetryProps(); p.errorCode = code; return p
+        .error(code)
     }
 
     /// Log the cold-start breakdown and emit the anonymous `cold_start` event
