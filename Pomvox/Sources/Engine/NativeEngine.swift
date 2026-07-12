@@ -87,10 +87,6 @@ final class NativeEngine: ObservableObject {
     private var cleanupLoadTask: Task<Void, Never>?
     private var cleanupPreloadTask: Task<Void, Never>?
     private var cleanupResidencyTask: Task<Void, Never>?
-    // Guards against emitting the cleanup cold_start event more than once for a
-    // single resident load: set when the `.loaded` breakdown is emitted, reset
-    // at arm and after an idle eviction (so a genuine reload re-emits once).
-    private var cleanupColdStartEmitted = false
     // STT model id, snapshotted at arm() for the (anonymous) dictation_completed
     // telemetry event — the basename only ever reaches the wire.
     private var sttModelID = "mlx-community/parakeet-tdt-0.6b-v3"
@@ -361,6 +357,17 @@ final class NativeEngine: ObservableObject {
     /// onboarding warm that calls this eagerly — never waits on it: arm→ready
     /// stays fast whether cleanup warms now or lazily.
     ///
+    /// Whether an in-flight cleanup load's completion should be ignored: its
+    /// Task was cancelled (disarm/teardown cancels `cleanupLoadTask`) or the
+    /// engine is no longer armed. `Task.isCancelled` reads the enclosing load
+    /// Task here because this runs synchronously inside that Task's
+    /// `MainActor.run` completion. Used so a load finishing after the session
+    /// ended can't emit telemetry, persist the onboarding flag, or clobber a
+    /// re-arm's fresh load token.
+    private func isStaleCleanupLoad() -> Bool {
+        Task.isCancelled || !isArmed
+    }
+
     /// `markWarmedOnSuccess` records the one-time onboarding warm once the model
     /// is actually resident. It's passed per-call and captured as an immutable
     /// local inside the load Task rather than kept in a shared flag, so there's
@@ -381,7 +388,7 @@ final class NativeEngine: ObservableObject {
         cleanupLoadTask = Task { [cleanup, weak self] in
             if await cleanup.isLoaded {
                 await MainActor.run {
-                    guard let self else { return }
+                    guard let self, !self.isStaleCleanupLoad() else { return }
                     self.cleanupLoadTask = nil
                     // Already resident (e.g. preload finished before this
                     // first-use trigger): reset the idle clock so a fresh use
@@ -403,6 +410,13 @@ final class NativeEngine: ObservableObject {
             }
             await MainActor.run {
                 guard let self else { return }
+                // If this load's Task was cancelled (disarm/teardown) or the
+                // session otherwise ended while the ~2.3 GB load was in flight,
+                // drop the completion entirely: it must not emit telemetry,
+                // persist the onboarding flag, or clobber a subsequent re-arm's
+                // fresh load token. Cancellation is cooperative (prepare() does
+                // not poll it), so honoring it here is the single checkpoint.
+                guard !self.isStaleCleanupLoad() else { return }
                 self.polishLoad = nil
                 self.cleanupLoadTask = nil
                 switch outcome {
@@ -414,23 +428,19 @@ final class NativeEngine: ObservableObject {
                     // The eager onboarding warm (if any) succeeded — record it
                     // now, gated on the completed load rather than up front.
                     if markWarmed { OnboardingWarm().markWarmed() }
-                    // Report the deferred cleanup-load stage as its own
-                    // cold_start event (the STT stages were emitted at arm),
-                    // at most once per resident load so overlapping triggers
-                    // can't double-count it.
-                    if !self.cleanupColdStartEmitted {
-                        self.cleanupColdStartEmitted = true
-                        var c = ColdStartTimings(); c.cleanupLoadMs = outcome.prepareMs
-                        self.emitColdStart(c)
-                    }
+                    // Exactly one cold_start per load, structurally: prepare()
+                    // returns `.loaded` only to the single deduped Task that
+                    // actually brought the model up — concurrent triggers get
+                    // `.skipped` or the already-resident early return above, and
+                    // the stale-load guard drops a cancelled completion — so no
+                    // extra dedup flag is needed.
+                    var c = ColdStartTimings(); c.cleanupLoadMs = outcome.prepareMs
+                    self.emitColdStart(c)
                 case .skipped:
                     // A concurrent load beat us to it; leave its bookkeeping.
                     break
                 case .failed:
                     // Non-fatal (raw transcript still pastes) but not silent.
-                    // Leave cleanupColdStartEmitted false so a later successful
-                    // (re)load still emits exactly one cold_start.
-                    self.cleanupColdStartEmitted = false
                     NSLog("pomvox-engine: cleanup model load FAILED — dictation will paste raw")
                     var p = TelemetryProps(); p.errorCode = "cleanup_load_failed"
                     TelemetryClient.shared.emit(.error, props: p)
@@ -487,8 +497,6 @@ final class NativeEngine: ObservableObject {
                 if didEvict {
                     await MainActor.run {
                         self?.cleanupLoadedAt = nil
-                        // A later reload is a fresh cold start — allow one emit.
-                        self?.cleanupColdStartEmitted = false
                         NSLog("pomvox-engine: cleanup idle > %.0fs — evicted (reloads on next use)",
                               evictS)
                     }
@@ -504,11 +512,6 @@ final class NativeEngine: ObservableObject {
         cleanupLoadTask?.cancel(); cleanupLoadTask = nil
         cleanupLastUsedAt = nil
         cleanupLoadedAt = nil
-        // Reset the cold_start dedup on teardown (disarm drops the cleanup
-        // model, so the next armed session's load is a genuine cold start).
-        // Tying it to teardown rather than arm() means a re-arm that's guarded
-        // out by `!isArmed` can never reset it under a still-resident load.
-        cleanupColdStartEmitted = false
         // Clear the snapshotted prompt hint too: arm() re-snapshots it, but a
         // disarm without a following arm (e.g. a config change) must not leave a
         // stale hint that a later load could bake into the cached prefix.
