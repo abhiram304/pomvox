@@ -84,10 +84,6 @@ final class NativeEngine: ObservableObject {
     private var cleanupLoadTask: Task<Void, Never>?
     private var cleanupPreloadTask: Task<Void, Never>?
     private var cleanupResidencyTask: Task<Void, Never>?
-    // Set at a fresh-install onboarding arm; the cleanup "warmed" flag is only
-    // persisted once the eager load actually completes (see markOnboarding…),
-    // so an interrupted/failed first-run warm is retried on the next launch.
-    private var pendingOnboardingWarm = false
     // Guards against emitting the cleanup cold_start event more than once for a
     // single resident load: set when the `.loaded` breakdown is emitted, reset
     // at arm and after an idle eviction (so a genuine reload re-emits once).
@@ -310,18 +306,15 @@ final class NativeEngine: ObservableObject {
             let onboarding = OnboardingWarm()
             if onboarding.shouldWarmNow {
                 NSLog("pomvox-engine: first run — warming cleanup now (onboarding)")
-                // Mark warmed only once the load actually completes, not up
-                // front: if the warm is interrupted (quit during Setup) or the
-                // load fails, the flag stays unset so the next launch retries
-                // the eager warm instead of silently dropping to the lazy path
-                // with a cold first dictation.
-                pendingOnboardingWarm = true
                 // Fire-and-forget: ensureCleanupLoaded only spawns the background
                 // load Task and returns, so this eager warm does not block
                 // arm→ready — the cost is paid off the hot path during Setup.
-                ensureCleanupLoaded()
+                // markWarmedOnSuccess persists the one-time flag only once that
+                // background load completes, so an interrupted/failed warm is
+                // retried next launch instead of dropping to a cold first
+                // dictation.
+                ensureCleanupLoaded(markWarmedOnSuccess: true)
             } else {
-                pendingOnboardingWarm = false
                 scheduleCleanupPreload()
             }
             startCleanupResidencyWatchdog()
@@ -365,7 +358,14 @@ final class NativeEngine: ObservableObject {
     /// Task on the cleanup actor. So `arm()` — including the fresh-install
     /// onboarding warm that calls this eagerly — never waits on it: arm→ready
     /// stays fast whether cleanup warms now or lazily.
-    private func ensureCleanupLoaded() {
+    ///
+    /// `markWarmedOnSuccess` records the one-time onboarding warm once the model
+    /// is actually resident. It's passed per-call and captured as an immutable
+    /// local inside the load Task rather than kept in a shared flag, so there's
+    /// no cross-task mutable state to reason about: the fresh-install arm is the
+    /// sole trigger before the engine reports ready, so its Task owns the load
+    /// and persists the flag on completion; a failed/abandoned load never marks.
+    private func ensureCleanupLoaded(markWarmedOnSuccess: Bool = false) {
         // The guard and the `cleanupLoadTask` assignment below run without an
         // intervening await, and NativeEngine is @MainActor, so two triggers
         // (the delayed preload racing a first-use press) are serialized on the
@@ -374,6 +374,7 @@ final class NativeEngine: ObservableObject {
         guard cleanupEnabled, isArmed, cleanupLoadTask == nil else { return }
         let modelID = cleanupModelID
         let hint = cleanupHint
+        let markWarmed = markWarmedOnSuccess
         let polishGate = LineGate()
         cleanupLoadTask = Task { [cleanup, weak self] in
             if await cleanup.isLoaded {
@@ -385,7 +386,7 @@ final class NativeEngine: ObservableObject {
                     // isn't measured from the old load time.
                     self.cleanupLoadedAt = CFAbsoluteTimeGetCurrent()
                     // The model is warm — an onboarding warm counts as done.
-                    self.markOnboardingWarmedIfPending()
+                    if markWarmed { OnboardingWarm().markWarmed() }
                 }
                 return
             }
@@ -410,7 +411,7 @@ final class NativeEngine: ObservableObject {
                     self.cleanupLoadedAt = CFAbsoluteTimeGetCurrent()
                     // The eager onboarding warm (if any) succeeded — record it
                     // now, gated on the completed load rather than up front.
-                    self.markOnboardingWarmedIfPending()
+                    if markWarmed { OnboardingWarm().markWarmed() }
                     // Report the deferred cleanup-load stage as its own
                     // cold_start event (the STT stages were emitted at arm),
                     // at most once per resident load so overlapping triggers
@@ -425,23 +426,15 @@ final class NativeEngine: ObservableObject {
                     break
                 case .failed:
                     // Non-fatal (raw transcript still pastes) but not silent.
+                    // Leave cleanupColdStartEmitted false so a later successful
+                    // (re)load still emits exactly one cold_start.
+                    self.cleanupColdStartEmitted = false
                     NSLog("pomvox-engine: cleanup model load FAILED — dictation will paste raw")
                     var p = TelemetryProps(); p.errorCode = "cleanup_load_failed"
                     TelemetryClient.shared.emit(.error, props: p)
                 }
             }
         }
-    }
-
-    /// Persist the fresh-install onboarding-warm flag, but only once — from a
-    /// completed load — so an interrupted or failed warm (quit during Setup, a
-    /// load error) leaves the flag unset and the next launch retries the eager
-    /// warm rather than dropping straight to the lazy path with a cold first
-    /// dictation. Uses `.standard`, matching `arm()`'s `OnboardingWarm()`.
-    private func markOnboardingWarmedIfPending() {
-        guard pendingOnboardingWarm else { return }
-        pendingOnboardingWarm = false
-        OnboardingWarm().markWarmed()
     }
 
     /// After a short post-launch delay, preload cleanup so a user reading the UI
@@ -509,12 +502,6 @@ final class NativeEngine: ObservableObject {
         cleanupLoadTask?.cancel(); cleanupLoadTask = nil
         cleanupLastUsedAt = nil
         cleanupLoadedAt = nil
-        // Note: pendingOnboardingWarm is deliberately NOT cleared here. If a load
-        // is still finishing as we tear down, its completion should still be
-        // allowed to persist the "warmed" flag (the model did load); clearing it
-        // here would race that completion and lose the record, forcing a needless
-        // re-warm next launch. arm() re-establishes the flag (true on a fresh
-        // install, false once already warmed), so a stale value can't leak.
         // Clear the snapshotted prompt hint too: arm() re-snapshots it, but a
         // disarm without a following arm (e.g. a config change) must not leave a
         // stale hint that a later load could bake into the cached prefix.
