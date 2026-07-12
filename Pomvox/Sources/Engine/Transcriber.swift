@@ -92,9 +92,19 @@ actor Transcriber {
         loadedModel = model
         let loadEnd = CFAbsoluteTimeGetCurrent()
 
-        // Warm the ANE so the first real utterance hits the fast path.
+        // Warm the ANE so the first real utterance hits the fast path. A warmup
+        // failure is non-fatal — the model is loaded and the first real
+        // utterance still works, just without the pre-warm — but it must not be
+        // swallowed: a throw here can foreshadow a runtime problem on the first
+        // real transcription, so log it loudly instead of silently reporting a
+        // zero warmup span.
         let warmStart = CFAbsoluteTimeGetCurrent()
-        _ = try? await transcribe([Float](repeating: 0, count: 16000))
+        do {
+            _ = try await transcribe([Float](repeating: 0, count: 16000))
+        } catch {
+            NSLog("stt: ANE warmup FAILED (model loaded, first utterance not pre-warmed): %@",
+                  String(describing: error))
+        }
         let warmEnd = CFAbsoluteTimeGetCurrent()
 
         let (downloaded, compileStartAt) = phase.snapshot()

@@ -281,17 +281,28 @@ final class NativeEngine: ObservableObject {
                 await MainActor.run {
                     self?.polishLoad = ModelLoad.line(.polish, fraction: nil, downloading: false)
                 }
-                let cleanupLoadMs = await cleanup.prepare(modelID: modelID) { [weak self] fraction in
+                let outcome = await cleanup.prepare(modelID: modelID) { [weak self] fraction in
                     let line = ModelLoad.line(.polish, fraction: fraction, downloading: true)
                     guard polishGate.changed(line) else { return }
                     Task { @MainActor in self?.polishLoad = line }
                 }
                 await MainActor.run {
                     self?.polishLoad = nil
+                    // A cleanup load failure is non-fatal (raw transcript still
+                    // pastes) but must not be silent: log it and emit the
+                    // anonymous error event so a broken cleanup model surfaces
+                    // instead of the first dictations quietly pasting raw.
+                    if case .failed = outcome {
+                        NSLog("pomvox-engine: cleanup model load FAILED — dictation will paste raw")
+                        var p = TelemetryProps(); p.errorCode = "cleanup_load_failed"
+                        TelemetryClient.shared.emit(.error, props: p)
+                    }
                     // Emit the full breakdown once cleanup finishes so the event
                     // carries all four stages; STT stages were captured above.
+                    // `prepareMs` folds in the warmup (Metal-kernel compile) and
+                    // is nil on a skip/failure, so no bogus zero span is logged.
                     var c = coldSnapshot
-                    c.cleanupLoadMs = cleanupLoadMs
+                    c.cleanupLoadMs = outcome.prepareMs
                     self?.emitColdStart(c)
                 }
             }
