@@ -288,22 +288,29 @@ final class NativeEngine: ObservableObject {
                 }
                 await MainActor.run {
                     self?.polishLoad = nil
-                    // A cleanup load failure is non-fatal (raw transcript still
-                    // pastes) but must not be silent: log it and emit the
-                    // anonymous error event so a broken cleanup model surfaces
-                    // instead of the first dictations quietly pasting raw.
-                    if case .failed = outcome {
+                    var c = coldSnapshot
+                    switch outcome {
+                    case .loaded, .skipped:
+                        // .loaded: record the full prepare span (load + warmup,
+                        // the latter doubling as the Metal-kernel compile).
+                        // .skipped: nothing loaded (already resident / in
+                        // flight), so cleanupLoadMs stays nil — a legitimate
+                        // "no cleanup stage this launch".
+                        c.cleanupLoadMs = outcome.prepareMs
+                        self?.emitColdStart(c)
+                    case .failed:
+                        // Non-fatal (raw transcript still pastes) but must be
+                        // loud. Emit the error carrying the cold-start context
+                        // (STT stages + cache hit) so a failure can be
+                        // correlated to the load stage that preceded it. Do NOT
+                        // also emit a cold_start event: its absent cleanup span
+                        // would read as "cleanup skipped/succeeded" and hide
+                        // that a load was attempted and failed.
                         NSLog("pomvox-engine: cleanup model load FAILED — dictation will paste raw")
-                        var p = TelemetryProps(); p.errorCode = "cleanup_load_failed"
+                        var p = c.telemetryProps()
+                        p.errorCode = "cleanup_load_failed"
                         TelemetryClient.shared.emit(.error, props: p)
                     }
-                    // Emit the full breakdown once cleanup finishes so the event
-                    // carries all four stages; STT stages were captured above.
-                    // `prepareMs` folds in the warmup (Metal-kernel compile) and
-                    // is nil on a skip/failure, so no bogus zero span is logged.
-                    var c = coldSnapshot
-                    c.cleanupLoadMs = outcome.prepareMs
-                    self?.emitColdStart(c)
                 }
             }
         } else {
