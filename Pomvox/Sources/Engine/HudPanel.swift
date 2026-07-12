@@ -22,6 +22,7 @@ final class HudController {
     private let model = HudRenderModel()
     private var panel: NonActivatingPanel?
     private var panelFailed = false
+    private var occlusionObserver: NSObjectProtocol?
 
     private var enabled = true
     private var position: String
@@ -179,6 +180,23 @@ final class HudController {
         hosting.frame = NSRect(x: 0, y: 0, width: size.width, height: size.height)
         panel.contentView = hosting
         self.panel = panel
+
+        // Track on-screen occlusion so the shimmer's repeatForever sweep pauses
+        // when the pill isn't visible (Space switch, display sleep, ordered
+        // out) — an idle HUD must not keep redrawing at the refresh rate.
+        occlusionObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification,
+            object: panel, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, let panel = self.panel else { return }
+                self.model.windowVisible = panel.occlusionState.contains(.visible)
+            }
+        }
+    }
+
+    deinit {
+        if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
     }
 
     private func show(_ panel: NSPanel) {
@@ -200,6 +218,10 @@ final class HudController {
             panel.animator().alphaValue = 1.0
         }
         panel.orderFrontRegardless()           // never makeKeyAndOrderFront
+        // The pill is now front; mark it visible immediately so a shimmer shown
+        // this cycle animates without waiting for the first occlusion callback
+        // (which can lag the order-front). Occlusion updates take over after.
+        model.windowVisible = true
         NSLog("hud: show at (%.0f, %.0f) screen=%@", f.x, f.y,
               screen?.localizedName ?? "<none>")
         scheduleShowProbe()
