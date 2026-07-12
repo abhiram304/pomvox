@@ -307,6 +307,9 @@ final class NativeEngine: ObservableObject {
             if onboarding.shouldWarmNow {
                 NSLog("pomvox-engine: first run — warming cleanup now (onboarding)")
                 onboarding.markWarmed()
+                // Fire-and-forget: ensureCleanupLoaded only spawns the background
+                // load Task and returns, so this eager warm does not block
+                // arm→ready — the cost is paid off the hot path during Setup.
                 ensureCleanupLoaded()
             } else {
                 scheduleCleanupPreload()
@@ -347,21 +350,40 @@ final class NativeEngine: ObservableObject {
     /// concurrent triggers (a first-use press racing the delayed preload). The
     /// load is off the hot path — until it's ready, `clean()` returns nil and
     /// the raw transcript pastes, exactly as before.
+    ///
+    /// Returns immediately: the only work done synchronously on the caller's
+    /// actor is the cheap guard and spawning `cleanupLoadTask`; every heavy step
+    /// (the ~2.3 GB `cleanup.prepare()` load + warmup) runs inside that detached
+    /// Task on the cleanup actor. So `arm()` — including the fresh-install
+    /// onboarding warm that calls this eagerly — never waits on it: arm→ready
+    /// stays fast whether cleanup warms now or lazily.
     private func ensureCleanupLoaded() {
+        // The guard and the `cleanupLoadTask` assignment below run without an
+        // intervening await, and NativeEngine is @MainActor, so two triggers
+        // (the delayed preload racing a first-use press) are serialized on the
+        // main actor: the first installs the task token, the second sees it
+        // non-nil and bails. That makes the dedup atomic without extra locking.
         guard cleanupEnabled, isArmed, cleanupLoadTask == nil else { return }
         let modelID = cleanupModelID
         let hint = cleanupHint
         let polishGate = LineGate()
         cleanupLoadTask = Task { [cleanup, weak self] in
             if await cleanup.isLoaded {
-                await MainActor.run { self?.cleanupLoadTask = nil }
+                await MainActor.run {
+                    guard let self else { return }
+                    self.cleanupLoadTask = nil
+                    // Already resident (e.g. preload finished before this
+                    // first-use trigger): reset the idle clock so a fresh use
+                    // isn't measured from the old load time.
+                    self.cleanupLoadedAt = CFAbsoluteTimeGetCurrent()
+                }
                 return
             }
             await cleanup.setTermsHint(hint)
             await MainActor.run {
                 self?.polishLoad = ModelLoad.line(.polish, fraction: nil, downloading: false)
             }
-            let loadMs = await cleanup.prepare(modelID: modelID) { [weak self] fraction in
+            let outcome = await cleanup.prepare(modelID: modelID) { [weak self] fraction in
                 let line = ModelLoad.line(.polish, fraction: fraction, downloading: true)
                 guard polishGate.changed(line) else { return }
                 Task { @MainActor in self?.polishLoad = line }
@@ -370,12 +392,24 @@ final class NativeEngine: ObservableObject {
                 guard let self else { return }
                 self.polishLoad = nil
                 self.cleanupLoadTask = nil
-                if loadMs != nil { self.cleanupLoadedAt = CFAbsoluteTimeGetCurrent() }
-                // Report the deferred cleanup-load stage as its own cold_start
-                // event (the STT stages were emitted at arm).
-                if let loadMs {
-                    var c = ColdStartTimings(); c.cleanupLoadMs = loadMs
+                switch outcome {
+                case .loaded:
+                    // The idle-evict clock starts when the load actually
+                    // completes, so a slow (~2.3 GB first-run) load isn't
+                    // counted as idle time against the model.
+                    self.cleanupLoadedAt = CFAbsoluteTimeGetCurrent()
+                    // Report the deferred cleanup-load stage as its own
+                    // cold_start event (the STT stages were emitted at arm).
+                    var c = ColdStartTimings(); c.cleanupLoadMs = outcome.prepareMs
                     self.emitColdStart(c)
+                case .skipped:
+                    // A concurrent load beat us to it; leave its bookkeeping.
+                    break
+                case .failed:
+                    // Non-fatal (raw transcript still pastes) but not silent.
+                    NSLog("pomvox-engine: cleanup model load FAILED — dictation will paste raw")
+                    var p = TelemetryProps(); p.errorCode = "cleanup_load_failed"
+                    TelemetryClient.shared.emit(.error, props: p)
                 }
             }
         }
@@ -407,19 +441,31 @@ final class NativeEngine: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
                 if Task.isCancelled { break }
+                // Snapshot the load generation together with `isLoaded`: if a
+                // load lands between here and the unload below, the generation
+                // won't match and `unload(ifGeneration:)` no-ops.
+                let generation = await cleanup.generation
                 let loaded = await cleanup.isLoaded
                 let now = CFAbsoluteTimeGetCurrent()
                 let evict: Bool = await MainActor.run {
                     guard let self else { return false }
+                    // A load already queued/in flight means the model is wanted;
+                    // never evict out from under a pending load.
+                    guard self.cleanupLoadTask == nil else { return false }
                     return CleanupResidency.shouldEvict(
                         loaded: loaded, lastUsedAt: self.cleanupLastUsedAt,
                         loadedAt: self.cleanupLoadedAt, now: now, idleEvictS: evictS)
                 }
                 guard evict else { continue }
-                await cleanup.unload()
-                await MainActor.run {
-                    self?.cleanupLoadedAt = nil
-                    NSLog("pomvox-engine: cleanup idle > %.0fs — evicted (reloads on next use)", evictS)
+                // Conditional on the snapshotted generation so a reload that
+                // won the race isn't immediately dropped.
+                let didEvict = await cleanup.unload(ifGeneration: generation)
+                if didEvict {
+                    await MainActor.run {
+                        self?.cleanupLoadedAt = nil
+                        NSLog("pomvox-engine: cleanup idle > %.0fs — evicted (reloads on next use)",
+                              evictS)
+                    }
                 }
             }
         }
@@ -432,6 +478,10 @@ final class NativeEngine: ObservableObject {
         cleanupLoadTask?.cancel(); cleanupLoadTask = nil
         cleanupLastUsedAt = nil
         cleanupLoadedAt = nil
+        // Clear the snapshotted prompt hint too: arm() re-snapshots it, but a
+        // disarm without a following arm (e.g. a config change) must not leave a
+        // stale hint that a later load could bake into the cached prefix.
+        cleanupHint = ""
     }
 
     func disarm() {
@@ -503,7 +553,12 @@ final class NativeEngine: ObservableObject {
         // (LowMemoryCleanupModel) that writes the user's explicit choice — so a
         // low-memory user understands the tradeoff instead of a missing feature.
         let physicalMemory = ProcessInfo.processInfo.physicalMemory
-        let configExists = FileManager.default.fileExists(atPath: configPath)
+        // Use the existence captured by the same read that produced `doc`, not a
+        // separate stat: a fresh `fileExists` here could disagree with what
+        // `doc` actually loaded (a config written between the two calls), which
+        // would give the model/cleanup defaults an inconsistent view of whether
+        // this is a fresh install.
+        let configExists = doc.fileExisted
         let cleanupDefault = MemoryTier.firstRunCleanupDefault(
             configExists: configExists, physicalMemoryBytes: physicalMemory)
         cleanupEnabled = doc.bool("cleanup", "enabled") ?? cleanupDefault

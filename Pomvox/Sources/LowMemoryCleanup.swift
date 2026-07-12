@@ -71,7 +71,12 @@ final class LowMemoryCleanupModel: ObservableObject {
     private func finish() {
         defaults.set(true, forKey: Self.promptedKey)
         needsPrompt = false
-        // Anonymous: that *a* setting changed, never which one or its value.
+        // Emitted for BOTH choices on purpose: "Keep it off" and "Enable
+        // cleanup" each write an explicit `[cleanup] enabled` key (the whole
+        // point of item 7 — replacing the silent default with a recorded user
+        // choice), so both are genuine setting changes. The event is anonymous:
+        // it signals only that *a* setting changed, never which one or its
+        // value, so it can't reveal the user's answer.
         TelemetryClient.shared.emit(.settingChanged)
     }
 }

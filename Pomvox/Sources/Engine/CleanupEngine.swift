@@ -11,6 +11,28 @@ import MLXLMTokenizers
 /// `clean()` runs per utterance with a hard deadline. `nil` from `clean` means
 /// deadline / model-not-ready — `runCleanup` turns every failure into the raw
 /// transcript, so cleanup can only ever improve the text, never lose it.
+/// Outcome of `CleanupEngine.prepare()`.
+///
+/// `.loaded` carries the cold-start split so the caller sees both the model
+/// load and the warmup (which doubles as the Metal-kernel compile). `.skipped`
+/// is a no-op — the model was already resident or a load was already in
+/// flight — so it must not be reported as a fresh cold-start stage. `.failed`
+/// means the model load threw: the engine is left unloaded (per-utterance
+/// `clean()` returns nil, raw transcript pastes), and the caller MUST surface
+/// it loudly rather than proceeding as if cleanup were ready.
+enum CleanupPrepareOutcome: Sendable {
+    case loaded(loadMs: Double, warmupMs: Double)
+    case skipped
+    case failed(String)
+
+    /// Full preparation time (load + warmup) for the cold-start breakdown, or
+    /// `nil` when nothing loaded this call (skipped or failed).
+    var prepareMs: Double? {
+        if case let .loaded(loadMs, warmupMs) = self { return loadMs + warmupMs }
+        return nil
+    }
+}
+
 actor CleanupEngine: CleanupCleaning {
 
     /// One style's static prompt prefix (system + few-shot examples, ~95% of
@@ -35,6 +57,16 @@ actor CleanupEngine: CleanupCleaning {
     private var preparing = false
     private var prefixCaches: [String: PrefixEntry] = [:]
 
+    /// Bumped on every successful load. The idle-eviction watchdog snapshots it
+    /// before deciding to evict and passes it to `unload(ifGeneration:)`, so a
+    /// load that races in after the decision (but before the unload lands on
+    /// this actor) is detected and the eviction is skipped — otherwise the
+    /// watchdog could drop a model that was just reloaded.
+    private var loadGeneration = 0
+
+    /// The current load generation (see `loadGeneration`), read on the actor.
+    var generation: Int { loadGeneration }
+
     /// Custom-dictionary spelling rule injected into the cleanup prompt. Set at
     /// arm before `prepare()` so it's baked into the cached prefix (changing it
     /// is re-arm-required — the prefix cache is built once). Default "" keeps
@@ -53,12 +85,17 @@ actor CleanupEngine: CleanupCleaning {
     /// `onProgress` reports the download fraction [0, 1] while the ~2.3 GB
     /// first-run fetch is in flight, so the background load can surface a note
     /// instead of the first few dictations silently pasting raw.
-    /// Returns the model-load time in milliseconds for the cold-start breakdown
-    /// (item 3), or `nil` when nothing loaded (already resident, in flight, or a
-    /// load failure — all of which leave the engine safely unloaded).
+    /// Returns a `CleanupPrepareOutcome` describing the cold-start breakdown
+    /// (item 3): `.loaded` with the load + warmup split when the model came up
+    /// this call, `.skipped` when nothing loaded (already resident or a load in
+    /// flight), or `.failed` when the load threw — the last leaves the engine
+    /// unloaded so the caller can surface the failure loudly instead of
+    /// silently pasting raw.
     @discardableResult
-    func prepare(modelID: String, onProgress: (@Sendable (Double) -> Void)? = nil) async -> Double? {
-        guard container == nil, !preparing else { return nil }
+    func prepare(
+        modelID: String, onProgress: (@Sendable (Double) -> Void)? = nil
+    ) async -> CleanupPrepareOutcome {
+        guard container == nil, !preparing else { return .skipped }
         preparing = true
         defer { preparing = false }
 
@@ -73,13 +110,17 @@ actor CleanupEngine: CleanupCleaning {
             loadMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000
             NSLog("cleanup: loaded %@ in %.1fs", modelID, loadMs / 1000)
             container = loaded
+            loadGeneration &+= 1
         } catch {
             NSLog("cleanup: model load FAILED: %@", String(describing: error))
-            return nil
+            return .failed(String(describing: error))
         }
 
         // Warmup: prefill the static prompt prefix per style (doubles as the
-        // Metal kernel compile) and run one tiny generation.
+        // Metal kernel compile) and run one tiny generation. A warmup failure
+        // is non-fatal (the model is loaded and usable), but it's timed and
+        // folded into the returned span so the cold-start breakdown reflects
+        // the full preparation cost.
         let t0 = CFAbsoluteTimeGetCurrent()
         await buildPrefixCaches()
         do {
@@ -88,7 +129,8 @@ actor CleanupEngine: CleanupCleaning {
         } catch {
             NSLog("cleanup: warmup failed: %@", String(describing: error))
         }
-        return loadMs
+        let warmupMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+        return .loaded(loadMs: loadMs, warmupMs: warmupMs)
     }
 
     /// Drop the model and prefix caches (toggle-off); re-arm reloads.
@@ -98,6 +140,18 @@ actor CleanupEngine: CleanupCleaning {
         prefixCaches = [:]
         Memory.clearCache()
         NSLog("cleanup: unloaded")
+    }
+
+    /// Idle-evict variant: unload only if no load has completed since the
+    /// caller snapshotted `generation`. Runs on the actor, so a `prepare()` that
+    /// won the race to load the model bumps `loadGeneration` first and this
+    /// no-ops — closing the check-then-unload window the watchdog would
+    /// otherwise have. Returns whether the model was actually dropped.
+    @discardableResult
+    func unload(ifGeneration expected: Int) -> Bool {
+        guard container != nil, loadGeneration == expected else { return false }
+        unload()
+        return true
     }
 
     /// Prefill a reusable KV cache of each style's static prompt prefix.
