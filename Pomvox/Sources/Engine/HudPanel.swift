@@ -181,16 +181,25 @@ final class HudController {
         panel.contentView = hosting
         self.panel = panel
 
+        // Seed visibility from the panel's actual occlusion at creation rather
+        // than assuming visible: a panel built while occluded (background launch,
+        // display off) then wouldn't animate a shimmer until the first occlusion
+        // callback arrives. A freshly-built, not-yet-ordered-front panel reads
+        // not-visible, which is correct — show() flips it true when it appears.
+        model.windowVisible = panel.occlusionState.contains(.visible)
+
         // Track on-screen occlusion so the shimmer's repeatForever sweep pauses
         // when the pill isn't visible (Space switch, display sleep, ordered
         // out) — an idle HUD must not keep redrawing at the refresh rate.
+        // Capture the panel and model weakly (not via a strong self): the
+        // observer must never extend either's lifetime past HudController.
         occlusionObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didChangeOcclusionStateNotification,
             object: panel, queue: .main
-        ) { [weak self] _ in
+        ) { [weak self, weak model] _ in
             Task { @MainActor in
-                guard let self, let panel = self.panel else { return }
-                self.model.windowVisible = panel.occlusionState.contains(.visible)
+                guard let self, let model, let panel = self.panel else { return }
+                model.windowVisible = panel.occlusionState.contains(.visible)
             }
         }
     }

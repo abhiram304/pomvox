@@ -90,10 +90,12 @@ struct HudView: View {
                 + Text(model.volatileDraft).foregroundColor(.gray))
                 .font(.system(size: 13))
                 .lineLimit(1).truncationMode(.head)
-        } else if vm.placeholder {
+        } else if vm.placeholder && (vm.state == "transcribing" || vm.state == "polishing") {
             // Cold first inference (item 8): a moving skeleton so the wait reads
             // as "working", not "stuck", while the model spins up. Its sweep is
-            // gated on the pill actually being on screen.
+            // gated on the pill actually being on screen. The explicit
+            // working-state check means a stale `placeholder` can never render a
+            // shimmer over a terminal (done/error/cancelled) frame.
             HudShimmerBar(animating: model.windowVisible).frame(width: 180, height: 10)
         } else {
             EmptyView()
@@ -148,7 +150,7 @@ private struct HudShimmerBar: View {
                         .animation(
                             animating
                                 ? .linear(duration: 1.1).repeatForever(autoreverses: false)
-                                : .default,   // settle in place, no repeat, when paused
+                                : nil,   // nil explicitly cancels the repeatForever when paused
                             value: atEnd)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 4))
