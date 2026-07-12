@@ -302,7 +302,6 @@ final class NativeEngine: ObservableObject {
             cleanupHint = dictionary.hint
             cleanupLastUsedAt = nil
             cleanupLoadedAt = nil
-            cleanupColdStartEmitted = false
             let onboarding = OnboardingWarm()
             if onboarding.shouldWarmNow {
                 NSLog("pomvox-engine: first run — warming cleanup now (onboarding)")
@@ -502,6 +501,11 @@ final class NativeEngine: ObservableObject {
         cleanupLoadTask?.cancel(); cleanupLoadTask = nil
         cleanupLastUsedAt = nil
         cleanupLoadedAt = nil
+        // Reset the cold_start dedup on teardown (disarm drops the cleanup
+        // model, so the next armed session's load is a genuine cold start).
+        // Tying it to teardown rather than arm() means a re-arm that's guarded
+        // out by `!isArmed` can never reset it under a still-resident load.
+        cleanupColdStartEmitted = false
         // Clear the snapshotted prompt hint too: arm() re-snapshots it, but a
         // disarm without a following arm (e.g. a config change) must not leave a
         // stale hint that a later load could bake into the cached prefix.
