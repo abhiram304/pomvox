@@ -57,6 +57,16 @@ actor CleanupEngine: CleanupCleaning {
     private var preparing = false
     private var prefixCaches: [String: PrefixEntry] = [:]
 
+    /// Bumped on every successful load. The idle-eviction watchdog snapshots it
+    /// before deciding to evict and passes it to `unload(ifGeneration:)`, so a
+    /// load that races in after the decision (but before the unload lands on
+    /// this actor) is detected and the eviction is skipped — otherwise the
+    /// watchdog could drop a model that was just reloaded.
+    private var loadGeneration = 0
+
+    /// The current load generation (see `loadGeneration`), read on the actor.
+    var generation: Int { loadGeneration }
+
     /// Custom-dictionary spelling rule injected into the cleanup prompt. Set at
     /// arm before `prepare()` so it's baked into the cached prefix (changing it
     /// is re-arm-required — the prefix cache is built once). Default "" keeps
@@ -100,6 +110,7 @@ actor CleanupEngine: CleanupCleaning {
             loadMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000
             NSLog("cleanup: loaded %@ in %.1fs", modelID, loadMs / 1000)
             container = loaded
+            loadGeneration &+= 1
         } catch {
             NSLog("cleanup: model load FAILED: %@", String(describing: error))
             return .failed(String(describing: error))
@@ -129,6 +140,18 @@ actor CleanupEngine: CleanupCleaning {
         prefixCaches = [:]
         Memory.clearCache()
         NSLog("cleanup: unloaded")
+    }
+
+    /// Idle-evict variant: unload only if no load has completed since the
+    /// caller snapshotted `generation`. Runs on the actor, so a `prepare()` that
+    /// won the race to load the model bumps `loadGeneration` first and this
+    /// no-ops — closing the check-then-unload window the watchdog would
+    /// otherwise have. Returns whether the model was actually dropped.
+    @discardableResult
+    func unload(ifGeneration expected: Int) -> Bool {
+        guard container != nil, loadGeneration == expected else { return false }
+        unload()
+        return true
     }
 
     /// Prefill a reusable KV cache of each style's static prompt prefix.
