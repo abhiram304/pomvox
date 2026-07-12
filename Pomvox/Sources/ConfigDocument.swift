@@ -17,6 +17,14 @@ struct ConfigDocument {
     /// a trailing newline shows up as a final empty element we preserve.
     private var lines: [String]
 
+    /// Whether `load` read an actual file (vs. defaulting to empty because the
+    /// file was missing/unreadable). Captured from the same read that populated
+    /// `lines`, so "does a config exist?" is consistent with the loaded content
+    /// — callers must not re-`stat` the path separately, which would open a
+    /// TOCTOU window against a config written concurrently. `false` for
+    /// in-memory documents built via `init(text:)`.
+    private(set) var fileExisted = false
+
     init(text: String) {
         lines = text.components(separatedBy: "\n")
     }
@@ -24,8 +32,10 @@ struct ConfigDocument {
     /// Load from disk; a missing/unreadable file is an empty document (the
     /// Hub can still build one from defaults), mirroring HistoryReader.
     static func load(path: String) -> ConfigDocument {
-        let text = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
-        return ConfigDocument(text: text)
+        let contents = try? String(contentsOfFile: path, encoding: .utf8)
+        var doc = ConfigDocument(text: contents ?? "")
+        doc.fileExisted = (contents != nil)
+        return doc
     }
 
     func render() -> String { lines.joined(separator: "\n") }

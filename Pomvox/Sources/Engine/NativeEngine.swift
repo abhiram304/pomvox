@@ -546,7 +546,12 @@ final class NativeEngine: ObservableObject {
         // (LowMemoryCleanupModel) that writes the user's explicit choice — so a
         // low-memory user understands the tradeoff instead of a missing feature.
         let physicalMemory = ProcessInfo.processInfo.physicalMemory
-        let configExists = FileManager.default.fileExists(atPath: configPath)
+        // Use the existence captured by the same read that produced `doc`, not a
+        // separate stat: a fresh `fileExists` here could disagree with what
+        // `doc` actually loaded (a config written between the two calls), which
+        // would give the model/cleanup defaults an inconsistent view of whether
+        // this is a fresh install.
+        let configExists = doc.fileExisted
         let cleanupDefault = MemoryTier.firstRunCleanupDefault(
             configExists: configExists, physicalMemoryBytes: physicalMemory)
         cleanupEnabled = doc.bool("cleanup", "enabled") ?? cleanupDefault
