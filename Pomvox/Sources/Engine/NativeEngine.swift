@@ -91,6 +91,10 @@ final class NativeEngine: ObservableObject {
     // persisted once the eager load actually completes (see markOnboarding…),
     // so an interrupted/failed first-run warm is retried on the next launch.
     private var pendingOnboardingWarm = false
+    // Guards against emitting the cleanup cold_start event more than once for a
+    // single resident load: set when the `.loaded` breakdown is emitted, reset
+    // at arm and after an idle eviction (so a genuine reload re-emits once).
+    private var cleanupColdStartEmitted = false
     // STT model id, snapshotted at arm() for the (anonymous) dictation_completed
     // telemetry event — the basename only ever reaches the wire.
     private var sttModelID = "mlx-community/parakeet-tdt-0.6b-v3"
@@ -305,6 +309,7 @@ final class NativeEngine: ObservableObject {
             cleanupHint = dictionary.hint
             cleanupLastUsedAt = nil
             cleanupLoadedAt = nil
+            cleanupColdStartEmitted = false
             let onboarding = OnboardingWarm()
             if onboarding.shouldWarmNow {
                 NSLog("pomvox-engine: first run — warming cleanup now (onboarding)")
@@ -410,9 +415,14 @@ final class NativeEngine: ObservableObject {
                     // now, gated on the completed load rather than up front.
                     self.markOnboardingWarmedIfPending()
                     // Report the deferred cleanup-load stage as its own
-                    // cold_start event (the STT stages were emitted at arm).
-                    var c = ColdStartTimings(); c.cleanupLoadMs = outcome.prepareMs
-                    self.emitColdStart(c)
+                    // cold_start event (the STT stages were emitted at arm),
+                    // at most once per resident load so overlapping triggers
+                    // can't double-count it.
+                    if !self.cleanupColdStartEmitted {
+                        self.cleanupColdStartEmitted = true
+                        var c = ColdStartTimings(); c.cleanupLoadMs = outcome.prepareMs
+                        self.emitColdStart(c)
+                    }
                 case .skipped:
                     // A concurrent load beat us to it; leave its bookkeeping.
                     break
@@ -485,6 +495,8 @@ final class NativeEngine: ObservableObject {
                 if didEvict {
                     await MainActor.run {
                         self?.cleanupLoadedAt = nil
+                        // A later reload is a fresh cold start — allow one emit.
+                        self?.cleanupColdStartEmitted = false
                         NSLog("pomvox-engine: cleanup idle > %.0fs — evicted (reloads on next use)",
                               evictS)
                     }
@@ -500,9 +512,12 @@ final class NativeEngine: ObservableObject {
         cleanupLoadTask?.cancel(); cleanupLoadTask = nil
         cleanupLastUsedAt = nil
         cleanupLoadedAt = nil
-        // A pending onboarding warm that never completed is abandoned on disarm;
-        // the flag stays unset in defaults, so the next arm re-attempts it.
-        pendingOnboardingWarm = false
+        // Note: pendingOnboardingWarm is deliberately NOT cleared here. If a load
+        // is still finishing as we tear down, its completion should still be
+        // allowed to persist the "warmed" flag (the model did load); clearing it
+        // here would race that completion and lose the record, forcing a needless
+        // re-warm next launch. arm() re-establishes the flag (true on a fresh
+        // install, false once already warmed), so a stale value can't leak.
         // Clear the snapshotted prompt hint too: arm() re-snapshots it, but a
         // disarm without a following arm (e.g. a config change) must not leave a
         // stale hint that a later load could bake into the cached prefix.
