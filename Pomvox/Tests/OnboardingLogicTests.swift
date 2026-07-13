@@ -49,4 +49,38 @@ final class OnboardingLogicTests: XCTestCase {
         micUnknown["microphone"] = Bool?.none
         XCTAssertFalse(flow.complete(statuses: micUnknown, tapInstalled: true))
     }
+
+    // MARK: - readyToAutoArm (Setup-pane silent re-arm after grants land)
+
+    func testReadyToAutoArmWhenAllGrantedAndEngineDown() {
+        XCTAssertTrue(flow.readyToAutoArm(
+            statuses: allGranted, engineArmed: false, alreadyAttempted: false))
+    }
+
+    func testNotReadyWhileAnyPermissionMissing() {
+        var statuses = allGranted
+        statuses["input_monitoring"] = false
+        XCTAssertFalse(flow.readyToAutoArm(
+            statuses: statuses, engineArmed: false, alreadyAttempted: false))
+    }
+
+    func testNotReadyWhileProbeUnknown() {
+        var statuses = allGranted
+        statuses["microphone"] = Bool?.none
+        XCTAssertFalse(flow.readyToAutoArm(
+            statuses: statuses, engineArmed: false, alreadyAttempted: false))
+    }
+
+    func testNotReadyWhenEngineAlreadyArmed() {
+        XCTAssertFalse(flow.readyToAutoArm(
+            statuses: allGranted, engineArmed: true, alreadyAttempted: false))
+    }
+
+    func testAutoArmIsOneShot() {
+        // A failed attempt (e.g. Input Monitoring grant not reaching the
+        // running process) must not retry at 1 Hz — the relaunch note is the
+        // fix path, not an arm() storm.
+        XCTAssertFalse(flow.readyToAutoArm(
+            statuses: allGranted, engineArmed: false, alreadyAttempted: true))
+    }
 }

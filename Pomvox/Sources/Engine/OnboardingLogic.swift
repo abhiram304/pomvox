@@ -43,4 +43,15 @@ struct OnboardingFlow {
     func complete(statuses: [String: Bool?], tapInstalled: Bool) -> Bool {
         tapInstalled && Self.permissions.allSatisfy { statuses[$0.key] ?? nil == true }
     }
+
+    /// The Setup pane's 1 Hz poll asks this after every probe refresh: once
+    /// every grant is green and the engine is still down, fire ONE silent
+    /// arm(). One-shot because a grant that doesn't reach the running process
+    /// (Input Monitoring) makes arm() fail every time — the relaunch note is
+    /// that path's fix, not a retry loop.
+    func readyToAutoArm(statuses: [String: Bool?], engineArmed: Bool,
+                        alreadyAttempted: Bool) -> Bool {
+        !engineArmed && !alreadyAttempted
+            && Self.permissions.allSatisfy { statuses[$0.key] ?? nil == true }
+    }
 }
