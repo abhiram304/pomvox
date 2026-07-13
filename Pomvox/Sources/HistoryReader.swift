@@ -65,6 +65,38 @@ struct HistoryReader {
         return rows
     }
 
+    /// The engine's purge-proof all-time counters, when this db has them.
+    /// nil on a pre-lifetime file (no `lifetime_stats` table) — callers fall
+    /// back to the windowed row sums rather than showing zero.
+    func lifetimeTotals() -> (words: Int, dictations: Int)? {
+        guard databaseExists else { return nil }
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else {
+            sqlite3_close(db)
+            return nil
+        }
+        defer { sqlite3_close(db) }
+        sqlite3_busy_timeout(db, 200)
+
+        let sql = "SELECT key, value FROM lifetime_stats WHERE key IN ('total_words', 'total_dictations')"
+        var stmt: OpaquePointer?
+        // Prepare fails when the table doesn't exist — that IS the old-db signal.
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+
+        var words = 0
+        var dictations = 0
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let value = Int(sqlite3_column_int64(stmt, 1))
+            switch Self.text(stmt, 0) {
+            case "total_words": words = value
+            case "total_dictations": dictations = value
+            default: break
+            }
+        }
+        return (words, dictations)
+    }
+
     // MARK: - Stats (the numbers the Home dashboard shows)
 
     /// `now` is injectable so the 30-day window is deterministic in tests.

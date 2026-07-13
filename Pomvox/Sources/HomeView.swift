@@ -43,11 +43,13 @@ struct HomeView: View {
 
     private var cards: some View {
         HStack(spacing: 14) {
-            StatCard(label: "Words dictated", value: model.stats.totalWords.formatted(),
-                     meta: "across this Mac's history",
+            StatCard(label: "Words dictated",
+                     value: (model.stats.lifetimeWords ?? model.stats.totalWords).formatted(),
+                     meta: "all-time on this Mac",
                      spark: tailSpark(8), feature: true)
-            StatCard(label: "Dictations", value: model.stats.dictationCount.formatted(),
-                     meta: "kept on this Mac", spark: tailSpark(8))
+            StatCard(label: "Dictations",
+                     value: (model.stats.lifetimeDictations ?? model.stats.dictationCount).formatted(),
+                     meta: "all-time on this Mac", spark: tailSpark(8))
             StatCard(label: "Avg. speed", value: "\(model.stats.averageWPM)", unit: "wpm",
                      meta: "Computed here · compared to nobody", spark: tailSpark(8))
         }

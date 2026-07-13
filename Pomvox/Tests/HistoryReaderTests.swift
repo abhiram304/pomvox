@@ -174,4 +174,24 @@ final class HistoryReaderTests: XCTestCase {
         let r = [dictation(daysAgo: 0, words: 0), dictation(daysAgo: 1, words: 2)]
         XCTAssertEqual(HistoryReader().streak(rows: r, now: now, calendar: utc), 1)  // grace → yesterday
     }
+
+    // MARK: - lifetime totals (read side)
+
+    func testLifetimeTotalsSurfaceThroughReader() throws {
+        let path = NSTemporaryDirectory() + "pomvox-lifetime-\(UUID().uuidString).db"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let s = try XCTUnwrap(HistoryStore(path: path, retentionDays: 7))
+        s.add(ts: 1.0, rawText: "r", finalText: "one two", cleanupStatus: "ok", timingsJson: "")
+        s.close()
+        let t = try XCTUnwrap(HistoryReader(path: path).lifetimeTotals())
+        XCTAssertEqual(t.words, 2)
+        XCTAssertEqual(t.dictations, 1)
+    }
+
+    func testLifetimeTotalsNilWhenTableMissing() throws {
+        // Old-format db (the fixture has no lifetime table): the Hub falls
+        // back to the windowed sum instead of showing zero.
+        let path = try makeDB(fixture())
+        XCTAssertNil(HistoryReader(path: path).lifetimeTotals())
+    }
 }

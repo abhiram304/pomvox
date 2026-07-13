@@ -18,7 +18,12 @@ final class HubModel: ObservableObject {
         let loaded = reader.load()
         let nowDate = Date()
         rows = loaded
-        stats = reader.stats(rows: loaded, now: nowDate)
+        var s = reader.stats(rows: loaded, now: nowDate)
+        if let lifetime = reader.lifetimeTotals() {
+            s.lifetimeWords = lifetime.words
+            s.lifetimeDictations = lifetime.dictations
+        }
+        stats = s
         heatmap = reader.heatmap(rows: loaded, now: nowDate, calendar: .current)
     }
 
