@@ -7,6 +7,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [0.1.10] — 2026-07-12
+
 ### Added
 
 - **The first dictation no longer looks frozen while the model warms up.** The
@@ -14,7 +18,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   cost, during which the HUD used to sit on a static "finishing…". It now shows a
   subtle shimmering placeholder so the wait reads as "working", replaced by your
   real text the moment it's ready. Every later dictation in the session is
-  already warm and shows the plain label.
+  already warm and shows the plain label. (#71)
 
 - **Cleanup now picks a model size that fits your Mac, and asks before skipping
   it.** A fresh install defaults the cleanup model to a size that fits comfortably
@@ -22,14 +26,14 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   16 GB+ (the 8B preset is still available, just never auto-selected). And on a
   low-memory Mac, instead of silently leaving cleanup off (as in 0.1.9), the Hub
   now shows a one-time prompt explaining the memory tradeoff so you can turn it on
-  if you want it, rather than wondering why the feature is missing.
+  if you want it, rather than wondering why the feature is missing. (#70)
 
 - **Your first dictation is warmed up during setup, not on first use.** On a
   fresh install the models are now warmed the first time the engine arms — while
   you're still reading the Setup screen — by running a throwaway pass through
   both the speech and cleanup models. That moves the one-time cold-start cost off
   your very first real dictation, so it feels fast instead of slow. Later
-  launches keep the lazy behavior.
+  launches keep the lazy behavior. (#69)
 
 - **The cleanup model no longer sits in memory when you're not using it.** The
   ~2.3 GB cleanup LLM used to load at launch and stay resident. Now the small,
@@ -38,7 +42,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   so app startup isn't blocked. It's also evicted after ~5 minutes idle and
   reloaded on next use, so bursty, occasional use doesn't cost ~2.3 GB of
   resident memory around the clock. Both timings are configurable
-  (`[cleanup] preload_delay_s` / `idle_evict_s`).
+  (`[cleanup] preload_delay_s` / `idle_evict_s`). (#68)
 
 - **Cold-start latency is now instrumented.** The first dictation after launch
   can feel slow, and it was never clear which stage dominated. The native engine
@@ -49,7 +53,17 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   logs whether a compiled `.mlmodelc` was already on disk and whether it changed
   since the previous launch. When usage stats are enabled, an anonymous,
   content-free `cold_start` event carries the numeric per-stage timings and the
-  cache hit/miss (telemetry schema v2).
+  cache hit/miss (telemetry schema v2). (#67)
+
+### Fixed
+
+- **The "Words dictated" number no longer shrinks over time.** The Home
+  dashboard's totals were summed from the rows currently in your history, so the
+  7-day retention purge (and any manual delete) quietly erased them — a rolling
+  window labeled like a lifetime total. Lifetime counts are now stored
+  separately: deleting history never rewrites the past, and the cards honestly
+  say "all-time on this Mac". Pre-upgrade databases seed the counters from the
+  surviving rows (the best on-disk truth). (#76)
 
 ## [0.1.9] — 2026-07-09
 
