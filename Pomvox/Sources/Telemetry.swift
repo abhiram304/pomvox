@@ -93,6 +93,14 @@ struct TelemetryProps: Equatable, Sendable {
     var coremlCacheHit: Bool?
 }
 
+extension TelemetryProps {
+    /// Error-only props. `code` is enum-shaped (`^[a-z0-9_]{1,40}$`) — the
+    /// sanitizer drops anything else.
+    static func error(_ code: String) -> TelemetryProps {
+        var p = TelemetryProps(); p.errorCode = code; return p
+    }
+}
+
 struct TelemetryEvent: Equatable, Sendable {
     let event: TelemetryEventName
     let ts: Int                  // epoch milliseconds

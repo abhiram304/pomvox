@@ -334,7 +334,7 @@ final class NativeEngine: ObservableObject {
 
     /// One enum-shaped code, never a message (the contract forbids free text).
     private nonisolated func errorProps(_ code: String) -> TelemetryProps {
-        var p = TelemetryProps(); p.errorCode = code; return p
+        .error(code)
     }
 
     /// Log the cold-start breakdown and emit the anonymous `cold_start` event
@@ -993,6 +993,7 @@ final class NativeEngine: ObservableObject {
     private func onWake(reason: String) {
         panicReset(reason: "system \(reason)")
         capture.markStale()   // a post-sleep engine can deliver a dead stream
+        hud.markStale()       // a post-sleep panel can refuse to order in
         guard isArmed else { return }
         wakeRecreateTask?.cancel()
         wakeRecreateTask = Task { [weak self] in
