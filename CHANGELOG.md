@@ -9,6 +9,28 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- **The first dictation no longer looks frozen while the model warms up.** The
+  very first dictation after the engine turns on pays a one-time model spin-up
+  cost, during which the HUD used to sit on a static "finishing…". It now shows a
+  subtle shimmering placeholder so the wait reads as "working", replaced by your
+  real text the moment it's ready. Every later dictation in the session is
+  already warm and shows the plain label.
+
+- **Cleanup now picks a model size that fits your Mac, and asks before skipping
+  it.** A fresh install defaults the cleanup model to a size that fits comfortably
+  in memory — the compact Qwen3-1.7B on Macs with ≤ 8 GB of RAM, Qwen3-4B on
+  16 GB+ (the 8B preset is still available, just never auto-selected). And on a
+  low-memory Mac, instead of silently leaving cleanup off (as in 0.1.9), the Hub
+  now shows a one-time prompt explaining the memory tradeoff so you can turn it on
+  if you want it, rather than wondering why the feature is missing.
+
+- **Your first dictation is warmed up during setup, not on first use.** On a
+  fresh install the models are now warmed the first time the engine arms — while
+  you're still reading the Setup screen — by running a throwaway pass through
+  both the speech and cleanup models. That moves the one-time cold-start cost off
+  your very first real dictation, so it feels fast instead of slow. Later
+  launches keep the lazy behavior.
+
 - **The cleanup model no longer sits in memory when you're not using it.** The
   ~2.3 GB cleanup LLM used to load at launch and stay resident. Now the small,
   always-used speech model loads eagerly while the cleanup model loads lazily —

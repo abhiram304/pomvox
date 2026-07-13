@@ -70,9 +70,6 @@ final class NativeEngine: ObservableObject {
     private var cleanupStyle = "polish"
     private var cleanupTimeoutS = 5.0
     private var cleanupModelID = "mlx-community/Qwen3-4B-4bit"
-    // Set when the low-memory first-run default flipped cleanup off; persisted
-    // on the next arm so the choice is visible + editable in Settings.
-    private var applyLowMemCleanupOff = false
 
     // Cleanup LLM residency (items 4 & 5): STT loads eagerly at arm; the ~2.3 GB
     // cleanup model does NOT — it loads on first use or after `preloadDelayS`,
@@ -87,6 +84,10 @@ final class NativeEngine: ObservableObject {
     private var cleanupLoadTask: Task<Void, Never>?
     private var cleanupPreloadTask: Task<Void, Never>?
     private var cleanupResidencyTask: Task<Void, Never>?
+    // Perceived-fast HUD (item 8): the first dictation after arm pays the cold
+    // model spin-up, so the HUD shows a shimmer placeholder for it. True until
+    // the first finalize consumes it.
+    private var coldFirstInference = true
     // STT model id, snapshotted at arm() for the (anonymous) dictation_completed
     // telemetry event — the basename only ever reaches the wire.
     private var sttModelID = "mlx-community/parakeet-tdt-0.6b-v3"
@@ -291,16 +292,37 @@ final class NativeEngine: ObservableObject {
         // arm. Snapshot the prompt hint now (it rides inside the cached prefix),
         // schedule a background preload after a short delay, and start the
         // idle-eviction watchdog. First real use also triggers a load.
+        //
+        // Onboarding warm (item 2): on a fresh install, warm cleanup eagerly
+        // *now* — while the user is still in Setup — so the cold-start cost
+        // lands there instead of on their first real dictation. STT already
+        // warmed during prepare() above. After this first warm, later launches
+        // use the lazy path.
         if cleanupEnabled {
             cleanupHint = dictionary.hint
             cleanupLastUsedAt = nil
             cleanupLoadedAt = nil
-            scheduleCleanupPreload()
+            let onboarding = OnboardingWarm()
+            if onboarding.shouldWarmNow {
+                NSLog("pomvox-engine: first run — warming cleanup now (onboarding)")
+                // Fire-and-forget: ensureCleanupLoaded only spawns the background
+                // load Task and returns, so this eager warm does not block
+                // arm→ready — the cost is paid off the hot path during Setup.
+                // markWarmedOnSuccess persists the one-time flag only once that
+                // background load completes, so an interrupted/failed warm is
+                // retried next launch instead of dropping to a cold first
+                // dictation.
+                ensureCleanupLoaded(markWarmedOnSuccess: true)
+            } else {
+                scheduleCleanupPreload()
+            }
             startCleanupResidencyWatchdog()
         }
 
         registerSleepWakeObservers()
         persist(true)
+        // The first dictation of this armed session gets the cold-start shimmer.
+        coldFirstInference = true
         NSLog("pomvox-engine: ARMED — ready")
         status = .ready
         if pendingTapRecreate {
@@ -330,7 +352,32 @@ final class NativeEngine: ObservableObject {
     /// concurrent triggers (a first-use press racing the delayed preload). The
     /// load is off the hot path — until it's ready, `clean()` returns nil and
     /// the raw transcript pastes, exactly as before.
-    private func ensureCleanupLoaded() {
+    ///
+    /// Returns immediately: the only work done synchronously on the caller's
+    /// actor is the cheap guard and spawning `cleanupLoadTask`; every heavy step
+    /// (the ~2.3 GB `cleanup.prepare()` load + warmup) runs inside that detached
+    /// Task on the cleanup actor. So `arm()` — including the fresh-install
+    /// onboarding warm that calls this eagerly — never waits on it: arm→ready
+    /// stays fast whether cleanup warms now or lazily.
+    ///
+    /// Whether an in-flight cleanup load's completion should be ignored: its
+    /// Task was cancelled (disarm/teardown cancels `cleanupLoadTask`) or the
+    /// engine is no longer armed. `Task.isCancelled` reads the enclosing load
+    /// Task here because this runs synchronously inside that Task's
+    /// `MainActor.run` completion. Used so a load finishing after the session
+    /// ended can't emit telemetry, persist the onboarding flag, or clobber a
+    /// re-arm's fresh load token.
+    private func isStaleCleanupLoad() -> Bool {
+        Task.isCancelled || !isArmed
+    }
+
+    /// `markWarmedOnSuccess` records the one-time onboarding warm once the model
+    /// is actually resident. It's passed per-call and captured as an immutable
+    /// local inside the load Task rather than kept in a shared flag, so there's
+    /// no cross-task mutable state to reason about: the fresh-install arm is the
+    /// sole trigger before the engine reports ready, so its Task owns the load
+    /// and persists the flag on completion; a failed/abandoned load never marks.
+    private func ensureCleanupLoaded(markWarmedOnSuccess: Bool = false) {
         // The guard and the `cleanupLoadTask` assignment below run without an
         // intervening await, and NativeEngine is @MainActor, so two triggers
         // (the delayed preload racing a first-use press) are serialized on the
@@ -339,16 +386,19 @@ final class NativeEngine: ObservableObject {
         guard cleanupEnabled, isArmed, cleanupLoadTask == nil else { return }
         let modelID = cleanupModelID
         let hint = cleanupHint
+        let markWarmed = markWarmedOnSuccess
         let polishGate = LineGate()
         cleanupLoadTask = Task { [cleanup, weak self] in
             if await cleanup.isLoaded {
                 await MainActor.run {
-                    guard let self else { return }
+                    guard let self, !self.isStaleCleanupLoad() else { return }
                     self.cleanupLoadTask = nil
                     // Already resident (e.g. preload finished before this
                     // first-use trigger): reset the idle clock so a fresh use
                     // isn't measured from the old load time.
                     self.cleanupLoadedAt = CFAbsoluteTimeGetCurrent()
+                    // The model is warm — an onboarding warm counts as done.
+                    if markWarmed { OnboardingWarm().markWarmed() }
                 }
                 return
             }
@@ -363,6 +413,13 @@ final class NativeEngine: ObservableObject {
             }
             await MainActor.run {
                 guard let self else { return }
+                // If this load's Task was cancelled (disarm/teardown) or the
+                // session otherwise ended while the ~2.3 GB load was in flight,
+                // drop the completion entirely: it must not emit telemetry,
+                // persist the onboarding flag, or clobber a subsequent re-arm's
+                // fresh load token. Cancellation is cooperative (prepare() does
+                // not poll it), so honoring it here is the single checkpoint.
+                guard !self.isStaleCleanupLoad() else { return }
                 self.polishLoad = nil
                 self.cleanupLoadTask = nil
                 switch outcome {
@@ -371,8 +428,15 @@ final class NativeEngine: ObservableObject {
                     // completes, so a slow (~2.3 GB first-run) load isn't
                     // counted as idle time against the model.
                     self.cleanupLoadedAt = CFAbsoluteTimeGetCurrent()
-                    // Report the deferred cleanup-load stage as its own
-                    // cold_start event (the STT stages were emitted at arm).
+                    // The eager onboarding warm (if any) succeeded — record it
+                    // now, gated on the completed load rather than up front.
+                    if markWarmed { OnboardingWarm().markWarmed() }
+                    // Exactly one cold_start per load, structurally: prepare()
+                    // returns `.loaded` only to the single deduped Task that
+                    // actually brought the model up — concurrent triggers get
+                    // `.skipped` or the already-resident early return above, and
+                    // the stale-load guard drops a cancelled completion — so no
+                    // extra dedup flag is needed.
                     var c = ColdStartTimings(); c.cleanupLoadMs = outcome.prepareMs
                     self.emitColdStart(c)
                 case .skipped:
@@ -520,21 +584,36 @@ final class NativeEngine: ObservableObject {
         // out of the box instead of the ~2.5 GB armed+cleanup cost swapping. An
         // existing config or an explicit key is always honored — this can only
         // supply a default for an absent key on a brand-new install.
-        let configExists = FileManager.default.fileExists(atPath: configPath)
+        //
+        // The choice is no longer persisted silently (item 7): the engine runs
+        // with the in-memory default, and the Hub shows a one-time prompt
+        // (LowMemoryCleanupModel) that writes the user's explicit choice — so a
+        // low-memory user understands the tradeoff instead of a missing feature.
+        let physicalMemory = ProcessInfo.processInfo.physicalMemory
+        let lowMem = MemoryTier.isLowMemory(physicalMemory)
+        // The fresh-state default is keyed on whether the one-time low-memory
+        // prompt has been answered — NOT on config-file existence. persist(true)
+        // writes config.toml at the end of every arm(), so a file-existence
+        // heuristic flipped the low-memory default back on at the second arm
+        // (and the model to 4B), loading the ~2.3 GB LLM on exactly the low-RAM
+        // Macs this guards. Engine and Hub are one process, so the engine reads
+        // the same flag the Hub's LowMemoryCleanupModel writes.
+        let lowMemPrompted = UserDefaults.standard.bool(forKey: LowMemoryCleanupModel.promptedKey)
         let cleanupKeyPresent = doc.bool("cleanup", "enabled") != nil
-        let cleanupDefault = MemoryTier.firstRunCleanupDefault(
-            configExists: configExists,
-            physicalMemoryBytes: ProcessInfo.processInfo.physicalMemory)
-        cleanupEnabled = doc.bool("cleanup", "enabled") ?? cleanupDefault
-        applyLowMemCleanupOff = !cleanupKeyPresent && !configExists && !cleanupEnabled
-        if applyLowMemCleanupOff {
-            let gb = Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824
+        cleanupEnabled = doc.bool("cleanup", "enabled")
+            ?? MemoryTier.firstRunCleanupDefault(isLowMemory: lowMem, lowMemPrompted: lowMemPrompted)
+        if lowMem, !cleanupKeyPresent, !cleanupEnabled {
+            let gb = Double(physicalMemory) / 1_073_741_824
             NSLog("pomvox-engine: low-memory Mac (%.1f GB) — cleanup off by default "
-                  + "on first run (enable in Settings ▸ Models)", gb)
+                  + "until the Hub prompt is answered", gb)
         }
         cleanupStyle = doc.string("cleanup", "style") ?? "polish"
         cleanupTimeoutS = doc.double("cleanup", "timeout_s") ?? 5.0
-        cleanupModelID = doc.string("cleanup", "model") ?? "mlx-community/Qwen3-4B-4bit"
+        // Item 6: memory-aware model-size default (1.7B on ≤8 GB, 4B on 16 GB+)
+        // when no explicit [cleanup] model key. Keyed on the memory tier, not on
+        // config-file existence, so the compact model survives a re-arm.
+        cleanupModelID = doc.string("cleanup", "model")
+            ?? MemoryTier.firstRunCleanupModel(physicalMemoryBytes: physicalMemory)
         // Residency tuning (items 4 & 5): how long after arm to preload cleanup
         // in the background, and how long idle before evicting it. 0 disables.
         cleanupPreloadDelayS = doc.double("cleanup", "preload_delay_s")
@@ -694,7 +773,13 @@ final class NativeEngine: ObservableObject {
         endVadSession()
         draftTask?.cancel(); draftTask = nil
         status = .transcribing
-        bus.post(.state("transcribing", ""))
+        // The first finalize after arm pays the cold spin-up: mark its HUD
+        // states so the renderer shimmers a placeholder (item 8). Consumed here
+        // so every later dictation this session uses the plain label.
+        let cold = coldFirstInference
+        coldFirstInference = false
+        let coldMark = cold ? HudConst.coldStartMark : ""
+        bus.post(.state("transcribing", coldMark))
         // First real use warms cleanup (if the delayed preload hasn't already)
         // and marks it used so the idle-evict clock resets. The load is off the
         // hot path — this dictation still pastes raw if cleanup isn't ready yet.
@@ -738,7 +823,7 @@ final class NativeEngine: ObservableObject {
             // The draft loop is already stopped (`finishing`), so the GPU pass
             // never overlaps STT on the ANE.
             if doCleanup, !raw.isEmpty {
-                self.bus.post(.state("polishing", ""))
+                self.bus.post(.state("polishing", coldMark))
                 let (cleaned, status) = await self.cleanupWithWatchdog(
                     raw: raw, style: style, timeoutS: timeoutS)
                 text = cleaned
@@ -1036,12 +1121,6 @@ final class NativeEngine: ObservableObject {
     private func persist(_ enabled: Bool) {
         var doc = ConfigDocument.load(path: configPath)
         doc.set("engine", "native", bool: enabled)
-        // Record the low-memory first-run cleanup-off default (arming only), so
-        // it survives restarts and is visible + editable in Settings ▸ Models.
-        if enabled, applyLowMemCleanupOff {
-            doc.set("cleanup", "enabled", bool: false)
-            applyLowMemCleanupOff = false
-        }
         try? doc.write(to: configPath)
     }
 }

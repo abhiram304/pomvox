@@ -48,6 +48,12 @@ enum HudConst {
     static let pillSize = CGSize(width: 420.0, height: 64.0)
     static let margin: Double = 24.0
 
+    /// Marker the engine puts in a `transcribing`/`polishing` state's detail on
+    /// the first (cold) dictation after arm, so the HUD shows a shimmer
+    /// placeholder while the cold model spins up (item 8) instead of a static
+    /// "finishing…" that reads as stuck.
+    static let coldStartMark = "cold"
+
     // dBFS range mapped onto the 0..1 level bars.
     static let levelFloorDbfs: Double = -60.0
     static let levelCeilDbfs: Double = -10.0
@@ -167,6 +173,10 @@ struct HudViewModel: Equatable {
     var level: Double = 0.0
     var endpointFraction: Double = 0.0   // 0..1 progress toward VAD auto-stop
     var hideAt: Double? = nil
+    /// The cold-first-dictation shimmer cue (item 8): true while transcribing/
+    /// polishing the first utterance after arm, so the renderer animates a
+    /// skeleton shimmer instead of a static label.
+    var placeholder: Bool = false
 
     var visible: Bool { state != "hidden" }
 }
@@ -212,6 +222,7 @@ final class HudStateMachine {
             } else if (name == "transcribing" || name == "polishing") && vm.visible {
                 vm.state = name
                 vm.status = "finishing…"
+                vm.placeholder = (detail == HudConst.coldStartMark)
                 vm.hideAt = nil
             } else if name == "idle" && (vm.state == "recording" || vm.state == "transcribing" || vm.state == "polishing") {
                 vm = hiddenVM

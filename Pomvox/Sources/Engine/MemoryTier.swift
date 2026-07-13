@@ -24,14 +24,38 @@ enum MemoryTier {
 
     /// The default for `[cleanup] enabled` when the key is absent.
     ///
-    /// - An existing config (`configExists == true`) always defaults to `true` —
-    ///   this never changes behavior for a machine that has run Pomvox before.
-    /// - A fresh install on a low-memory Mac defaults to `false` (raw dictation).
-    /// - A fresh install on a 16 GB+ Mac defaults to `true` (unchanged).
-    static func firstRunCleanupDefault(
-        configExists: Bool, physicalMemoryBytes: UInt64
-    ) -> Bool {
-        if configExists { return true }
-        return !isLowMemory(physicalMemoryBytes)
+    /// - A 16 GB+ Mac defaults to `true` (unchanged).
+    /// - A low-memory Mac defaults to `false` *until the one-time low-memory
+    ///   prompt has been answered* (`lowMemPrompted`), then follows the normal
+    ///   `true` default — the off default only exists to avoid surprising a
+    ///   low-memory user with the ~2.3 GB load before they've been asked.
+    ///
+    /// Keyed on prompt state, deliberately **not** on config-file existence: the
+    /// engine writes `config.toml` via `persist(true)` at the end of every
+    /// successful `arm()`, so a file-existence heuristic flipped the low-memory
+    /// default back **on** at the second arm (and the model default to 4B),
+    /// eagerly loading the cleanup LLM on exactly the low-RAM Macs this guards —
+    /// even while the unanswered prompt still claimed cleanup was off. Because
+    /// engine and Hub share one process, the engine reads the same
+    /// `LowMemoryCleanupModel.promptedKey` the prompt writes.
+    static func firstRunCleanupDefault(isLowMemory: Bool, lowMemPrompted: Bool) -> Bool {
+        if !isLowMemory { return true }
+        return lowMemPrompted
+    }
+
+    // MARK: - Memory-aware cleanup model size (item 6)
+
+    /// The compact cleanup model for low-memory Macs (~1.4 GB resident).
+    static let compactCleanupModel = "mlx-community/Qwen3-1.7B-4bit"
+    /// The standard cleanup model for 16 GB+ Macs (~2.3 GB resident).
+    static let standardCleanupModel = "mlx-community/Qwen3-4B-4bit"
+
+    /// The `[cleanup] model` default for the current machine when the key is
+    /// absent: the smallest model that fits comfortably. A low-memory Mac gets
+    /// the 1.7B model; 16 GB+ gets 4B (the previous unconditional default). The
+    /// 8B preset is offered in Settings but never auto-selected — it only fits
+    /// higher-RAM machines, so the user opts into it explicitly.
+    static func firstRunCleanupModel(physicalMemoryBytes: UInt64) -> String {
+        isLowMemory(physicalMemoryBytes) ? compactCleanupModel : standardCleanupModel
     }
 }

@@ -12,6 +12,11 @@ final class HudRenderModel: ObservableObject {
     @Published var stableDraft = ""
     @Published var volatileDraft = ""
     @Published var showDraft = true
+    /// Whether the HUD pill is actually on screen (window occlusion state). The
+    /// shimmer's `repeatForever` sweep pauses when this is false so an off-screen
+    /// / occluded HUD costs ~0% CPU. `HudController` keeps it in sync from the
+    /// panel's occlusion notifications.
+    @Published var windowVisible = true
 }
 
 /// SwiftUI content of the floating HUD pill. A dumb view over `HudRenderModel` —
@@ -85,6 +90,13 @@ struct HudView: View {
                 + Text(model.volatileDraft).foregroundColor(.gray))
                 .font(.system(size: 13))
                 .lineLimit(1).truncationMode(.head)
+        } else if vm.placeholder && (vm.state == "transcribing" || vm.state == "polishing") {
+            // Cold first inference (item 8): a moving skeleton so the wait reads
+            // as "working", not "stuck", while the model spins up. Its sweep is
+            // gated on the pill actually being on screen. The explicit
+            // working-state check means a stale `placeholder` can never render a
+            // shimmer over a terminal (done/error/cancelled) frame.
+            HudShimmerBar(animating: model.windowVisible).frame(width: 180, height: 10)
         } else {
             EmptyView()
         }
@@ -105,6 +117,46 @@ struct HudView: View {
         case "done": return "Done. \(vm.final)"
         default: return vm.status
         }
+    }
+}
+
+/// A shimmering skeleton line shown only during the first (cold) dictation's
+/// transcribe/polish wait. It lives for a brief, one-time window per armed
+/// session and conveys "working" instead of a frozen label.
+///
+/// The `repeatForever` sweep is paused whenever the pill isn't actually on
+/// screen (`animating == false`), so an occluded / off-screen HUD holds the
+/// "~0% CPU when idle" budget — a `repeatForever` animation otherwise keeps
+/// redrawing at the display refresh rate. Note the gate is window *occlusion*,
+/// not `controlActiveState` (which `Waveform` in the Hub uses): the HUD is a
+/// non-activating panel shown *over* the user's active app, so its
+/// `controlActiveState` reads `.inactive` during normal dictation — gating on
+/// that would suppress the shimmer exactly when it's needed.
+private struct HudShimmerBar: View {
+    var animating: Bool
+    @State private var atEnd = false
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color.white.opacity(0.12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(LinearGradient(
+                            colors: [.clear, .white.opacity(0.4), .clear],
+                            startPoint: .leading, endPoint: .trailing))
+                        .offset(x: (atEnd ? 1 : -1) * w)
+                        .animation(
+                            animating
+                                ? .linear(duration: 1.1).repeatForever(autoreverses: false)
+                                : nil,   // nil explicitly cancels the repeatForever when paused
+                            value: atEnd)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+        }
+        .onAppear { atEnd = animating }
+        .onChange(of: animating) { _, active in atEnd = active }
     }
 }
 

@@ -23,9 +23,13 @@ model = "mlx-community/parakeet-tdt-0.6b-v3"
 [cleanup]
 # LLM cleanup adds ~2.3 GB while armed. On a fresh install on a low-memory Mac
 # (<= 8 GB, e.g. an 8 GB MacBook) the native engine defaults this to off so raw
-# dictation works without swapping — set it here to override. Existing configs
+# dictation works without swapping, and the Hub shows a one-time prompt so you
+# can turn it on knowing the tradeoff — set it here to override. Existing configs
 # are never changed automatically.
 enabled = true
+# Cleanup model. A fresh install picks a size that fits your Mac's RAM: the
+# compact Qwen3-1.7B-4bit on <= 8 GB machines, Qwen3-4B-4bit on 16 GB+. The
+# larger Qwen3-8B-4bit is available but only sensible on higher-RAM machines.
 model = "mlx-community/Qwen3-4B-4bit"
 style = "polish"  # "light" = fillers/punctuation only; "polish" also smooths rambles
 timeout_s = 5.0   # hard deadline; on timeout the raw transcript is inserted
