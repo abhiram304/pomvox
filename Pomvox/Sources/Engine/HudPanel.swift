@@ -160,6 +160,14 @@ final class HudController {
     // MARK: - panel lifecycle
 
     private func ensurePanel() {
+        // Drop any observer from a previous panel before building a new one:
+        // NotificationCenter retains block observers strongly and `deinit` only
+        // removes the last, so a panel rebuild (e.g. a future orderFront
+        // self-heal) would otherwise leak the prior observer and keep firing it.
+        if let occlusionObserver {
+            NotificationCenter.default.removeObserver(occlusionObserver)
+            self.occlusionObserver = nil
+        }
         let size = HudConst.pillSize
         let panel = NonActivatingPanel(
             contentRect: NSRect(x: 0, y: 0, width: size.width, height: size.height),

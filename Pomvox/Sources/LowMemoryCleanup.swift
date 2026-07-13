@@ -48,32 +48,31 @@ final class LowMemoryCleanupModel: ObservableObject {
             alreadyPrompted: defaults.bool(forKey: Self.promptedKey))
     }
 
-    /// Turn cleanup on and switch to the compact model for this Mac. Takes effect
-    /// on the next engine arm (models are snapshot-at-arm), like any model change.
+    /// Turn cleanup on. Takes effect on the next engine arm (models are
+    /// snapshot-at-arm), like any model change — see the sheet copy, which says
+    /// so. Seeds the compact model only when the user hasn't chosen one.
     func enableCleanup() {
-        writeCleanup(enabled: true, model: recommendedModel)
+        writeChoice(enabled: true)
         finish()
     }
 
     /// Keep cleanup off — but record the explicit choice so we don't re-ask.
-    ///
-    /// Pin the memory-appropriate (compact) model alongside the off choice, but
-    /// only when the user hasn't already chosen a model explicitly. Writing the
-    /// off choice *creates* the config file, which flips `loadEngineConfig`'s
-    /// "fresh install?" heuristic (`configExists`) to true; without a model key
-    /// a later manual enable would fall back to the standard 4B default on this
-    /// low-memory Mac, defeating item 6. Seeding compact here preserves that
-    /// guarantee, while the `== nil` check never overwrites an explicit choice.
     func keepOff() {
-        let existingModel = ConfigDocument.load(path: configPath).string("cleanup", "model")
-        writeCleanup(enabled: false, model: existingModel == nil ? recommendedModel : nil)
+        writeChoice(enabled: false)
         finish()
     }
 
-    private func writeCleanup(enabled: Bool, model: String?) {
+    /// Persist the enabled choice, and seed the memory-appropriate (compact)
+    /// model **only when the user hasn't already chosen one** — so a later manual
+    /// enable on this low-memory Mac stays compact (item 6) without overwriting
+    /// an explicit `cleanup.model` the user set. The config is loaded exactly
+    /// once (both the model check and the writes share this `doc`).
+    private func writeChoice(enabled: Bool) {
         var doc = ConfigDocument.load(path: configPath)
         doc.set("cleanup", "enabled", bool: enabled)
-        if let model { doc.set("cleanup", "model", string: model) }
+        if doc.string("cleanup", "model") == nil {
+            doc.set("cleanup", "model", string: recommendedModel)
+        }
         try? doc.write(to: configPath)
     }
 
@@ -97,7 +96,9 @@ enum LowMemoryCleanupCopy {
         + "language model to fix filler words and punctuation — it adds about 1.4 GB of "
         + "memory while active (we'd use the compact model on your Mac). Dictation works "
         + "great without it, so it's off by default here. Enable it anyway?"
-    static let footer = "You can change this anytime in Settings → Models."
+    static let footer =
+        "Enabling takes effect the next time the engine starts (turn it off and on in "
+        + "the menu bar to apply now). You can change this anytime in Settings → Models."
 }
 
 /// One-time low-memory cleanup choice. Equal-weight buttons, no dark pattern —

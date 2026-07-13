@@ -590,28 +590,30 @@ final class NativeEngine: ObservableObject {
         // (LowMemoryCleanupModel) that writes the user's explicit choice — so a
         // low-memory user understands the tradeoff instead of a missing feature.
         let physicalMemory = ProcessInfo.processInfo.physicalMemory
-        // Use the existence captured by the same read that produced `doc`, not a
-        // separate stat: a fresh `fileExists` here could disagree with what
-        // `doc` actually loaded (a config written between the two calls), which
-        // would give the model/cleanup defaults an inconsistent view of whether
-        // this is a fresh install.
-        let configExists = doc.fileExisted
-        let cleanupDefault = MemoryTier.firstRunCleanupDefault(
-            configExists: configExists, physicalMemoryBytes: physicalMemory)
-        cleanupEnabled = doc.bool("cleanup", "enabled") ?? cleanupDefault
-        if !cleanupEnabled, !configExists {
+        let lowMem = MemoryTier.isLowMemory(physicalMemory)
+        // The fresh-state default is keyed on whether the one-time low-memory
+        // prompt has been answered — NOT on config-file existence. persist(true)
+        // writes config.toml at the end of every arm(), so a file-existence
+        // heuristic flipped the low-memory default back on at the second arm
+        // (and the model to 4B), loading the ~2.3 GB LLM on exactly the low-RAM
+        // Macs this guards. Engine and Hub are one process, so the engine reads
+        // the same flag the Hub's LowMemoryCleanupModel writes.
+        let lowMemPrompted = UserDefaults.standard.bool(forKey: LowMemoryCleanupModel.promptedKey)
+        let cleanupKeyPresent = doc.bool("cleanup", "enabled") != nil
+        cleanupEnabled = doc.bool("cleanup", "enabled")
+            ?? MemoryTier.firstRunCleanupDefault(isLowMemory: lowMem, lowMemPrompted: lowMemPrompted)
+        if lowMem, !cleanupKeyPresent, !cleanupEnabled {
             let gb = Double(physicalMemory) / 1_073_741_824
             NSLog("pomvox-engine: low-memory Mac (%.1f GB) — cleanup off by default "
-                  + "on first run (the Hub prompts to enable it)", gb)
+                  + "until the Hub prompt is answered", gb)
         }
         cleanupStyle = doc.string("cleanup", "style") ?? "polish"
         cleanupTimeoutS = doc.double("cleanup", "timeout_s") ?? 5.0
         // Item 6: memory-aware model-size default (1.7B on ≤8 GB, 4B on 16 GB+)
-        // for a fresh install; an existing config keeps the prior 4B default.
-        let cleanupModelDefault = configExists
-            ? MemoryTier.standardCleanupModel
-            : MemoryTier.firstRunCleanupModel(physicalMemoryBytes: physicalMemory)
-        cleanupModelID = doc.string("cleanup", "model") ?? cleanupModelDefault
+        // when no explicit [cleanup] model key. Keyed on the memory tier, not on
+        // config-file existence, so the compact model survives a re-arm.
+        cleanupModelID = doc.string("cleanup", "model")
+            ?? MemoryTier.firstRunCleanupModel(physicalMemoryBytes: physicalMemory)
         // Residency tuning (items 4 & 5): how long after arm to preload cleanup
         // in the background, and how long idle before evicting it. 0 disables.
         cleanupPreloadDelayS = doc.double("cleanup", "preload_delay_s")

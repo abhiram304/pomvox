@@ -21,23 +21,25 @@ final class MemoryTierTests: XCTestCase {
         XCTAssertFalse(MemoryTier.isLowMemory(MemoryTier.lowMemoryMaxBytes + 1))
     }
 
-    func testExistingConfigAlwaysDefaultsCleanupOn() {
-        // Non-breaking guarantee: a machine that has run Pomvox before is never
-        // flipped off, even on low RAM.
-        XCTAssertTrue(MemoryTier.firstRunCleanupDefault(
-            configExists: true, physicalMemoryBytes: 8 * Self.gb))
-        XCTAssertTrue(MemoryTier.firstRunCleanupDefault(
-            configExists: true, physicalMemoryBytes: 16 * Self.gb))
+    func testAmpleMemoryAlwaysDefaultsCleanupOn() {
+        // 16 GB+ is unaffected by the prompt state.
+        XCTAssertTrue(MemoryTier.firstRunCleanupDefault(isLowMemory: false, lowMemPrompted: false))
+        XCTAssertTrue(MemoryTier.firstRunCleanupDefault(isLowMemory: false, lowMemPrompted: true))
     }
 
-    func testFreshInstallOnLowMemoryDefaultsCleanupOff() {
-        XCTAssertFalse(MemoryTier.firstRunCleanupDefault(
-            configExists: false, physicalMemoryBytes: 8 * Self.gb))
+    func testLowMemoryDefaultsCleanupOffUntilPrompted() {
+        // Off before the one-time prompt is answered...
+        XCTAssertFalse(MemoryTier.firstRunCleanupDefault(isLowMemory: true, lowMemPrompted: false))
+        // ...and after answering it, follows the normal on default (the answer
+        // itself writes an explicit key, so this default is rarely consulted).
+        XCTAssertTrue(MemoryTier.firstRunCleanupDefault(isLowMemory: true, lowMemPrompted: true))
     }
 
-    func testFreshInstallOnAmpleMemoryDefaultsCleanupOn() {
-        XCTAssertTrue(MemoryTier.firstRunCleanupDefault(
-            configExists: false, physicalMemoryBytes: 16 * Self.gb))
+    func testLowMemoryDefaultDoesNotDependOnConfigFileExistence() {
+        // Regression guard for the second-arm bug: persist() creates config.toml
+        // at the end of arm(), but the default is keyed on prompt state, not file
+        // existence — so an unanswered low-memory prompt stays off across re-arms.
+        XCTAssertFalse(MemoryTier.firstRunCleanupDefault(isLowMemory: true, lowMemPrompted: false))
     }
 
     // MARK: - memory-aware cleanup model size (item 6)
