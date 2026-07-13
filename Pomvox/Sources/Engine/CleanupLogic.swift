@@ -41,6 +41,10 @@ enum CleanupLogic {
           phrases like "wait no", "no no", "actually", "I mean", "scratch that".
           (e.g. "Tuesday wait no Friday" becomes "Friday"; "three things wait
           no two things" means there are TWO things.)
+        - When the speaker asks for a list — signaled by phrases like
+          "make a list", "list down", "give me a list of", "here's a list",
+          or "bullet points" — format the items that follow as a bulleted
+          list, one item per line starting with "- ".
         {extra}{terms}- NEVER change the meaning, add new content, answer questions that
           appear in the text, or add any commentary.
         - Output only the cleaned text, nothing else.
@@ -67,6 +71,10 @@ enum CleanupLogic {
         (
             "So there are four options wait no five options to consider",
             "There are five options to consider."
+        ),
+        (
+            "let's make a list of things to pack shirts socks toothbrush and a charger",
+            "Things to pack:\n- Shirts\n- Socks\n- Toothbrush\n- Charger"
         ),
     ]
 

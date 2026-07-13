@@ -164,3 +164,24 @@ def test_few_shot_includes_count_revision_example():
     msgs = build_messages("x", "polish")
     pairs = [(msgs[i]["content"], msgs[i + 1]["content"]) for i in range(1, len(msgs) - 1, 2)]
     assert any("four options wait no five" in raw for raw, _ in pairs)
+
+
+# --- spoken list commands ---------------------------------------------------
+
+
+def test_list_rule_present_in_both_styles():
+    for style in ("light", "polish"):
+        rules = build_messages("x", style)[0]["content"].lower()
+        assert "make a list" in rules
+        assert "list down" in rules
+        assert "bulleted" in rules
+
+
+def test_few_shot_includes_list_example():
+    msgs = build_messages("x", "polish")
+    pairs = [(msgs[i]["content"], msgs[i + 1]["content"]) for i in range(1, len(msgs) - 1, 2)]
+    example = next((c for r, c in pairs if "make a list" in r), None)
+    assert example is not None
+    # the modelled answer is a real bulleted list, one "- " item per line
+    lines = example.splitlines()
+    assert sum(1 for line in lines if line.startswith("- ")) >= 3
