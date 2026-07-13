@@ -22,6 +22,7 @@ final class HudController {
     private let model = HudRenderModel()
     private var panel: NonActivatingPanel?
     private var panelFailed = false
+    private var occlusionObserver: NSObjectProtocol?
 
     private var enabled = true
     private var position: String
@@ -179,6 +180,32 @@ final class HudController {
         hosting.frame = NSRect(x: 0, y: 0, width: size.width, height: size.height)
         panel.contentView = hosting
         self.panel = panel
+
+        // Seed visibility from the panel's actual occlusion at creation rather
+        // than assuming visible: a panel built while occluded (background launch,
+        // display off) then wouldn't animate a shimmer until the first occlusion
+        // callback arrives. A freshly-built, not-yet-ordered-front panel reads
+        // not-visible, which is correct — show() flips it true when it appears.
+        model.windowVisible = panel.occlusionState.contains(.visible)
+
+        // Track on-screen occlusion so the shimmer's repeatForever sweep pauses
+        // when the pill isn't visible (Space switch, display sleep, ordered
+        // out) — an idle HUD must not keep redrawing at the refresh rate.
+        // Capture the panel and model weakly (not via a strong self): the
+        // observer must never extend either's lifetime past HudController.
+        occlusionObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification,
+            object: panel, queue: .main
+        ) { [weak self, weak model] _ in
+            Task { @MainActor in
+                guard let self, let model, let panel = self.panel else { return }
+                model.windowVisible = panel.occlusionState.contains(.visible)
+            }
+        }
+    }
+
+    deinit {
+        if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
     }
 
     private func show(_ panel: NSPanel) {
@@ -200,6 +227,10 @@ final class HudController {
             panel.animator().alphaValue = 1.0
         }
         panel.orderFrontRegardless()           // never makeKeyAndOrderFront
+        // The pill is now front; mark it visible immediately so a shimmer shown
+        // this cycle animates without waiting for the first occlusion callback
+        // (which can lag the order-front). Occlusion updates take over after.
+        model.windowVisible = true
         NSLog("hud: show at (%.0f, %.0f) screen=%@", f.x, f.y,
               screen?.localizedName ?? "<none>")
         scheduleShowProbe()
