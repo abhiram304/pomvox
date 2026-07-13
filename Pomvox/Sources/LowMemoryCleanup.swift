@@ -56,8 +56,16 @@ final class LowMemoryCleanupModel: ObservableObject {
     }
 
     /// Keep cleanup off — but record the explicit choice so we don't re-ask.
+    ///
+    /// Persist the memory-appropriate (compact) model alongside the off choice.
+    /// Writing this key *creates* the config file, which flips
+    /// `loadEngineConfig`'s "fresh install?" heuristic (`configExists`) to true;
+    /// without pinning the model now, a later manual enable would fall back to
+    /// the standard 4B default on this low-memory Mac, defeating item 6. Pinning
+    /// the compact model here is harmless while cleanup is off and keeps that
+    /// guarantee if the user enables it later.
     func keepOff() {
-        writeCleanup(enabled: false, model: nil)
+        writeCleanup(enabled: false, model: recommendedModel)
         finish()
     }
 
