@@ -4,6 +4,40 @@ import Foundation
 
 enum TranscriberError: Error { case notLoaded }
 
+/// The STT half of a cold-start breakdown (item 3), returned by `prepare()`.
+/// `alreadyLoaded` marks a warm re-arm where nothing loaded, so the engine can
+/// skip emitting a bogus all-zero cold-start event.
+struct SttLoadTiming: Sendable {
+    var weightLoadMs: Double = 0
+    var coremlCompileMs: Double = 0
+    var aneWarmupMs: Double = 0
+    var alreadyLoaded: Bool = false
+}
+
+/// Thread-safe marker for the download→compile transition. FluidAudio's progress
+/// callback fires on an arbitrary queue; we note the instant `downloading` flips
+/// false (bytes down, CoreML compiling) so weight-load and compile time separate.
+private final class LoadPhase: @unchecked Sendable {
+    private let lock = NSLock()
+    private var sawDownload = false
+    private var compileStartAt: Double?
+
+    func note(downloading: Bool, now: Double) {
+        lock.lock(); defer { lock.unlock() }
+        if downloading {
+            sawDownload = true
+        } else if sawDownload, compileStartAt == nil {
+            compileStartAt = now
+        }
+    }
+
+    /// (whether any download happened, when compile began if it did).
+    func snapshot() -> (downloaded: Bool, compileStartAt: Double?) {
+        lock.lock(); defer { lock.unlock() }
+        return (sawDownload, compileStartAt)
+    }
+}
+
 /// FluidAudio Parakeet TDT 0.6b on the Neural Engine (M0 result 1: PASS,
 /// 3–8× the GPU path); the version (v3 default, v2 selectable) comes from
 /// `[stt] model`. Reuses the `native/` bench's load + transcribe pattern.
@@ -29,19 +63,26 @@ actor Transcriber {
     /// CoreML is compiling — so the UI can show a live percentage instead of a
     /// silent "Preparing…". `model` is resolved from `[stt] model` (defaults to
     /// the shipped v3) — the loader picks the matching FluidAudio version.
+    @discardableResult
     func prepare(
         model: SttModel = .default,
         onProgress: (@Sendable (Double, Bool) -> Void)? = nil
-    ) async throws {
-        if asr != nil, loadedModel == model { return }
+    ) async throws -> SttLoadTiming {
+        if asr != nil, loadedModel == model { return SttLoadTiming(alreadyLoaded: true) }
         // Switching models: free the old CoreML graph before loading the new
         // one so we don't hold both resident (~600 MB each) on low-RAM Macs.
         await asr?.cleanup()
         asr = nil
         loadedModel = nil
+
+        // Split weight fetch (network) from CoreML compile/load: the phase
+        // marker records when the download callback stops reporting bytes.
+        let phase = LoadPhase()
+        let loadStart = CFAbsoluteTimeGetCurrent()
         let models = try await AsrModels.downloadAndLoad(version: model.fluidVersion) { progress in
             let downloading: Bool
             if case .downloading = progress.phase { downloading = true } else { downloading = false }
+            phase.note(downloading: downloading, now: CFAbsoluteTimeGetCurrent())
             onProgress?(progress.fractionCompleted, downloading)
         }
         let manager = AsrManager(config: .default)
@@ -49,8 +90,37 @@ actor Transcriber {
         decoderLayers = await manager.decoderLayerCount
         asr = manager
         loadedModel = model
-        // Warm the ANE so the first real utterance hits the fast path.
-        _ = try? await transcribe([Float](repeating: 0, count: 16000))
+        let loadEnd = CFAbsoluteTimeGetCurrent()
+
+        // Warm the ANE so the first real utterance hits the fast path. A warmup
+        // failure is non-fatal — the model is loaded and the first real
+        // utterance still works, just without the pre-warm — but it must not be
+        // swallowed: a throw here can foreshadow a runtime problem on the first
+        // real transcription, so log it loudly instead of silently reporting a
+        // zero warmup span.
+        let warmStart = CFAbsoluteTimeGetCurrent()
+        do {
+            _ = try await transcribe([Float](repeating: 0, count: 16000))
+        } catch {
+            NSLog("stt: ANE warmup FAILED (model loaded, first utterance not pre-warmed): %@",
+                  String(describing: error))
+        }
+        let warmEnd = CFAbsoluteTimeGetCurrent()
+
+        let (downloaded, compileStartAt) = phase.snapshot()
+        var timing = SttLoadTiming(alreadyLoaded: false)
+        if downloaded, let compileStartAt {
+            timing.weightLoadMs = (compileStartAt - loadStart) * 1000
+            timing.coremlCompileMs = (loadEnd - compileStartAt) * 1000
+        } else {
+            // No network fetch this launch (warm byte cache): the whole load is
+            // the CoreML compile/load stage — large here means the compiled
+            // graph wasn't reused.
+            timing.weightLoadMs = 0
+            timing.coremlCompileMs = (loadEnd - loadStart) * 1000
+        }
+        timing.aneWarmupMs = (warmEnd - warmStart) * 1000
+        return timing
     }
 
     /// Batch-transcribe 16 kHz mono samples; returns the raw transcript.

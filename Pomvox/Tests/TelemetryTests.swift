@@ -125,7 +125,7 @@ final class TelemetryTests: XCTestCase {
     // MARK: - JSON shape (exact contract; unknown fields reject the whole batch)
 
     private let env = TelemetryEnv(
-        schemaVersion: 1, installID: "11111111-2222-4333-8444-555555555555",
+        schemaVersion: 2, installID: "11111111-2222-4333-8444-555555555555",
         appVersion: "0.1.0", osVersion: "macOS 15.7.4", arch: "arm64")
 
     private func decode(_ data: Data) -> [String: Any] {
@@ -138,7 +138,7 @@ final class TelemetryTests: XCTestCase {
         let obj = decode(data)
         XCTAssertEqual(Set(obj.keys),
                        ["schema_version", "install_id", "app_version", "os_version", "arch", "events"])
-        XCTAssertEqual(obj["schema_version"] as? Int, 1)
+        XCTAssertEqual(obj["schema_version"] as? Int, 2)
         XCTAssertEqual(obj["install_id"] as? String, "11111111-2222-4333-8444-555555555555")
         XCTAssertEqual(obj["arch"] as? String, "arm64")
     }
@@ -166,6 +166,34 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(p["duration_ms"] as? Int, 1234)
         XCTAssertEqual(p["cleanup"] as? Bool, true)
         XCTAssertEqual(events[0]["event"] as? String, "dictation_completed")
+    }
+
+    func testColdStartEventEmitsNumericBreakdownProps() throws {
+        var props = TelemetryProps()
+        props.sttWeightLoadMs = 1200
+        props.coremlCompileMs = 37_000
+        props.aneWarmupMs = 300
+        props.cleanupLoadMs = 1500
+        props.coremlCacheHit = false
+        let ev = TelemetryEvent(event: .coldStart, ts: 1_730_000_002_000, props: props)
+        let data = try TelemetryEncoder.encodeBatch(env: env, events: [ev])
+        let events = decode(data)["events"] as! [[String: Any]]
+        XCTAssertEqual(events[0]["event"] as? String, "cold_start")
+        let p = events[0]["props"] as! [String: Any]
+        XCTAssertEqual(Set(p.keys),
+                       ["stt_weight_load_ms", "coreml_compile_ms", "ane_warmup_ms",
+                        "cleanup_load_ms", "coreml_cache_hit"])
+        XCTAssertEqual(p["coreml_compile_ms"] as? Int, 37_000)
+        XCTAssertEqual(p["coreml_cache_hit"] as? Bool, false)
+    }
+
+    func testColdStartDurationsAreClampedToContractRange() {
+        var props = TelemetryProps()
+        props.coremlCompileMs = -5
+        props.cleanupLoadMs = 99_999_999
+        let cleaned = TelemetrySanitizer.clean(props)
+        XCTAssertEqual(cleaned.coremlCompileMs, 0)
+        XCTAssertEqual(cleaned.cleanupLoadMs, 86_400_000)
     }
 
     func testEncoderSanitizesContentOutOfProps() throws {
@@ -307,7 +335,7 @@ final class TelemetryTests: XCTestCase {
 
     func testEnvBuilderShape() {
         let e = TelemetryEnvBuilder.current(installID: "abc")
-        XCTAssertEqual(e.schemaVersion, 1)
+        XCTAssertEqual(e.schemaVersion, 2)
         XCTAssertEqual(e.installID, "abc")
         XCTAssertTrue(e.osVersion.hasPrefix("macOS "), "got \(e.osVersion)")
         XCTAssertFalse(e.appVersion.isEmpty)

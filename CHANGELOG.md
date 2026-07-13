@@ -7,7 +7,27 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **The cleanup model no longer sits in memory when you're not using it.** The
+  ~2.3 GB cleanup LLM used to load at launch and stay resident. Now the small,
+  always-used speech model loads eagerly while the cleanup model loads lazily —
+  on your first dictation or a short delay after launch, whichever comes first —
+  so app startup isn't blocked. It's also evicted after ~5 minutes idle and
+  reloaded on next use, so bursty, occasional use doesn't cost ~2.3 GB of
+  resident memory around the clock. Both timings are configurable
+  (`[cleanup] preload_delay_s` / `idle_evict_s`).
+
+- **Cold-start latency is now instrumented.** The first dictation after launch
+  can feel slow, and it was never clear which stage dominated. The native engine
+  now measures the four cold-start stages separately — STT weight load, CoreML
+  compile/load, Neural Engine warmup, and cleanup-LLM load — and logs a
+  breakdown. It also verifies the CoreML compile cache actually persists across
+  launches (the ~37 s compile should happen once, not every launch): each load
+  logs whether a compiled `.mlmodelc` was already on disk and whether it changed
+  since the previous launch. When usage stats are enabled, an anonymous,
+  content-free `cold_start` event carries the numeric per-stage timings and the
+  cache hit/miss (telemetry schema v2).
 
 ## [0.1.9] — 2026-07-09
 
