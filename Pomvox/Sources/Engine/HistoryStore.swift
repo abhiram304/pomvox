@@ -37,6 +37,18 @@ final class HistoryStore: @unchecked Sendable {
         CREATE INDEX IF NOT EXISTS idx_history_ts ON history(ts);
         """
 
+    /// Purge-proof all-time counters behind the Home card ("Words dictated").
+    /// ADDITIVE next to the frozen `history` schema — the M1 contract above is
+    /// untouched and the Python engine keeps working against this file (its
+    /// CREATE IF NOT EXISTS never sees this table). Retention deletes rows;
+    /// it must never rewrite how much was ever dictated.
+    private static let lifetimeSchema = """
+        CREATE TABLE IF NOT EXISTS lifetime_stats (
+            key TEXT PRIMARY KEY,
+            value INTEGER NOT NULL
+        );
+        """
+
     let path: String
     let retentionDays: Int
 
@@ -65,7 +77,8 @@ final class HistoryStore: @unchecked Sendable {
         sqlite3_busy_timeout(db, 2000)
         guard sqlite3_exec(db, "PRAGMA journal_mode=WAL", nil, nil, nil) == SQLITE_OK,
               sqlite3_exec(db, "PRAGMA user_version=1", nil, nil, nil) == SQLITE_OK,
-              sqlite3_exec(db, Self.schema, nil, nil, nil) == SQLITE_OK else {
+              sqlite3_exec(db, Self.schema, nil, nil, nil) == SQLITE_OK,
+              sqlite3_exec(db, Self.lifetimeSchema, nil, nil, nil) == SQLITE_OK else {
             sqlite3_close(handle)
             return nil
         }
@@ -73,6 +86,7 @@ final class HistoryStore: @unchecked Sendable {
             try? FileManager.default.setAttributes(
                 [.posixPermissions: 0o600], ofItemAtPath: path)
         }
+        seedLifetimeIfEmpty()
     }
 
     deinit { close() }
@@ -97,7 +111,16 @@ final class HistoryStore: @unchecked Sendable {
             if let appHint { bindText(stmt, 5, appHint) } else { sqlite3_bind_null(stmt, 5) }
             if let durationS { sqlite3_bind_double(stmt, 6, durationS) } else { sqlite3_bind_null(stmt, 6) }
             bindText(stmt, 7, timingsJson)
-            if sqlite3_step(stmt) != SQLITE_DONE { logSQLError("add step") }
+            guard sqlite3_step(stmt) == SQLITE_DONE else { logSQLError("add step"); return }
+            bumpLifetimeLocked(words: Dictation.countWords(finalText), dictations: 1)
+        }
+    }
+
+    /// The purge-proof counters behind the Home card. (0, 0) on a fresh db.
+    func lifetimeTotals() -> (words: Int, dictations: Int) {
+        withLock {
+            (scalarIntLocked("SELECT value FROM lifetime_stats WHERE key = 'total_words'"),
+             scalarIntLocked("SELECT value FROM lifetime_stats WHERE key = 'total_dictations'"))
         }
     }
 
@@ -200,6 +223,59 @@ final class HistoryStore: @unchecked Sendable {
               let store = HistoryStore(path: path, retentionDays: retentionDays) else { return 0 }
         defer { store.close() }
         return store.purge(now: now)
+    }
+
+    // MARK: - lifetime counters (internals)
+
+    /// First open of a pre-lifetime db: start the counters from the rows still
+    /// on disk — a lower bound of the true lifetime, and the best truth
+    /// available. No-op once any counter row exists.
+    private func seedLifetimeIfEmpty() {
+        withLock {
+            guard scalarIntLocked("SELECT COUNT(*) FROM lifetime_stats") == 0 else { return }
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, "SELECT final_text FROM history", -1, &stmt, nil)
+                    == SQLITE_OK else {
+                logSQLError("lifetime seed prepare"); return
+            }
+            var words = 0, count = 0
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                words += Dictation.countWords(columnText(stmt, 0))
+                count += 1
+            }
+            sqlite3_finalize(stmt)
+            guard count > 0 else { return }
+            bumpLifetimeLocked(words: words, dictations: count)
+            NSLog("history: lifetime counters seeded from %d rows", count)
+        }
+    }
+
+    /// Caller holds `lock`. Upsert so the very first bump creates the rows.
+    private func bumpLifetimeLocked(words: Int, dictations: Int) {
+        let sql = """
+            INSERT INTO lifetime_stats (key, value) VALUES (?, ?) \
+            ON CONFLICT(key) DO UPDATE SET value = value + excluded.value
+            """
+        for (key, delta) in [("total_words", words), ("total_dictations", dictations)] {
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                logSQLError("lifetime bump prepare"); return
+            }
+            defer { sqlite3_finalize(stmt) }
+            bindText(stmt, 1, key)
+            sqlite3_bind_int64(stmt, 2, Int64(delta))
+            if sqlite3_step(stmt) != SQLITE_DONE { logSQLError("lifetime bump step") }
+        }
+    }
+
+    /// One-row integer query; 0 when no row. Caller holds `lock`.
+    private func scalarIntLocked(_ sql: String) -> Int {
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            logSQLError("scalar prepare"); return 0
+        }
+        defer { sqlite3_finalize(stmt) }
+        return sqlite3_step(stmt) == SQLITE_ROW ? Int(sqlite3_column_int64(stmt, 0)) : 0
     }
 
     // MARK: - helpers

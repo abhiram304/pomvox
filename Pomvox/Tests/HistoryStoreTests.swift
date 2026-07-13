@@ -177,4 +177,65 @@ final class HistoryStoreTests: XCTestCase {
         add(again, ts: 2.0)
         XCTAssertEqual(again.list().count, 2)
     }
+
+    // MARK: - lifetime totals (purge-proof "Words dictated")
+
+    func testAddIncrementsLifetimeTotals() throws {
+        let s = try store()
+        add(s, ts: 1.0, final: "one two three")
+        add(s, ts: 2.0, final: "four five")
+        let t = s.lifetimeTotals()
+        XCTAssertEqual(t.words, 5)
+        XCTAssertEqual(t.dictations, 2)
+    }
+
+    func testPurgeDoesNotReduceLifetimeTotals() throws {
+        // THE bug this table exists to fix: retention prunes rows, the Home
+        // card's "Words dictated" must not shrink with them.
+        let s = try store(retentionDays: 7)
+        let now = 1_000_000.0
+        add(s, ts: now - 8 * 86_400, final: "ancient words here")
+        add(s, ts: now, final: "fresh")
+        s.purge(now: now)
+        XCTAssertEqual(s.list().count, 1)          // the row is gone…
+        let t = s.lifetimeTotals()
+        XCTAssertEqual(t.words, 4)                  // …the words are not
+        XCTAssertEqual(t.dictations, 2)
+    }
+
+    func testUserDeletesKeepLifetimeTotals() throws {
+        // Lifetime means "ever dictated" — deleting rows (privacy) does not
+        // rewrite the past.
+        let s = try store()
+        add(s, ts: 1.0, final: "keep me counted")
+        s.delete(id: s.list()[0].id)
+        s.deleteAll()
+        let t = s.lifetimeTotals()
+        XCTAssertEqual(t.words, 3)
+        XCTAssertEqual(t.dictations, 1)
+    }
+
+    func testPreUpgradeDatabaseSeedsLifetimeFromSurvivingRows() throws {
+        // A db written before the lifetime table existed: first open seeds the
+        // counters from the rows on disk, so the stat starts at today's truth
+        // instead of zero.
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        var raw: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(dbPath, &raw), SQLITE_OK)
+        let old = """
+            CREATE TABLE history (id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL,
+              raw_text TEXT NOT NULL, final_text TEXT NOT NULL, cleanup_status TEXT NOT NULL,
+              app_hint TEXT, duration_s REAL, timings_json TEXT);
+            INSERT INTO history (ts, raw_text, final_text, cleanup_status, timings_json)
+              VALUES (1.0, 'r', 'three words here', 'ok', ''),
+                     (2.0, 'r', 'two more', 'ok', '');
+            """
+        XCTAssertEqual(sqlite3_exec(raw, old, nil, nil, nil), SQLITE_OK)
+        sqlite3_close(raw)
+
+        let s = try store()
+        let t = s.lifetimeTotals()
+        XCTAssertEqual(t.words, 5)
+        XCTAssertEqual(t.dictations, 2)
+    }
 }
