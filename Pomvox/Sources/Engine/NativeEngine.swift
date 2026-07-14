@@ -542,6 +542,33 @@ final class NativeEngine: ObservableObject {
         status = .off
     }
 
+    /// Synchronous teardown on app termination (menu Quit / ⌘Q → NSApp.terminate,
+    /// which does *not* call disarm()). The Python engine gets this for free via
+    /// `atexit.register(pidfile.release, …)`; the native app had no equivalent, so
+    /// a Quit left the pidfile on disk, the CGEvent tap installed (still swallowing
+    /// Fn), and the HUD pill on screen until the OS reaped the process — leaving
+    /// Quit, the HUD, and the engine state out of sync (and, on pid reuse, a stale
+    /// pidfile that makes the next launch report "blocked").
+    ///
+    /// Unlike disarm(), this deliberately does NOT persist(false) or resetMachine:
+    /// quitting must not silently turn "arm on launch" off. It only releases the
+    /// OS-facing resources so a Quit leaves nothing behind. Safe to call when
+    /// idle/disarmed — every step is a no-op then.
+    func prepareForTermination() {
+        unregisterSleepWakeObservers()
+        pendingTapRecreate = false
+        tap?.stop(); tap = nil
+        draftTask?.cancel(); draftTask = nil
+        stopCleanupResidency()
+        endVadSession()
+        capture.stop()
+        capture.onBlock = nil
+        hud.teardown()          // drop the pill now, no fade — Quit must not leave it up
+        history?.close(); history = nil
+        pidfile.release()       // the one thing that outlives the process: the on-disk lock
+        status = .off
+    }
+
     /// Read `[hud]`/`[vad]`/`[cleanup]` from config.toml (defaults match
     /// `config.py`) and build the HUD config + the energy-only endpointer.
     private func loadEngineConfig() {
