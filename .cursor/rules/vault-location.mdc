@@ -1,0 +1,17 @@
+---
+description: Project vault location for Pomvox development
+alwaysApply: true
+---
+
+# Pomvox vault location
+
+Use the following directory as the vault for all development work on this
+project. It applies to this repository only — do not use it for other projects,
+and do not ask the user to re-specify it.
+
+- **Vault path:** `/Users/maanasagadey/Desktop/projects/VAULT/pomvox_vault`
+
+When a task refers to "the vault" (e.g. reading, writing, or storing files,
+notes, artifacts, or working data for this project), resolve it to the path
+above without prompting. If the path does not exist yet, create it before using
+it.
