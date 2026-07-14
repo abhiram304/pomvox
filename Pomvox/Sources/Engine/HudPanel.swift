@@ -229,6 +229,23 @@ final class HudController {
         if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
     }
 
+    /// Synchronous, fade-free teardown for app termination: stop the timers,
+    /// drop the occlusion observer, and order the pill out *now*. `disarm()`'s
+    /// bus-driven hide fades over 0.25 s and renders on a later run-loop turn —
+    /// too late when the process is about to exit, which is how a Quit could
+    /// leave the pill on screen. Idempotent: a nil panel is a no-op.
+    func teardown() {
+        waveTimer?.invalidate(); waveTimer = nil
+        hideTimer?.invalidate(); hideTimer = nil
+        if let occlusionObserver {
+            NotificationCenter.default.removeObserver(occlusionObserver)
+            self.occlusionObserver = nil
+        }
+        panel?.orderOut(nil)
+        panel = nil
+        prevState = "hidden"
+    }
+
     private func show(_ panel: NSPanel) {
         showGen.beginShow()
         orderIn(panel)

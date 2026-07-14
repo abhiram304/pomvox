@@ -32,6 +32,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    /// Menu Quit / ⌘Q go through NSApp.terminate, which never calls the engine's
+    /// disarm(). Tear the engine down here so a Quit releases the pidfile, the
+    /// CGEvent tap, and the HUD pill instead of leaking them until the OS reaps
+    /// the process — the parity gap with the Python engine's atexit release, and
+    /// the desync behind "quit but still running / HUD stuck". Force-quit and
+    /// SIGKILL skip this (no delegate hook fires), but then the OS reclaims the
+    /// tap and the leftover pidfile is a dead pid the next launch overwrites.
+    func applicationWillTerminate(_ notification: Notification) {
+        NativeEngine.shared.prepareForTermination()
+    }
+
     // MARK: - launch posture
 
     /// The SMAppService login launch arrives as a kAEOpenApplication Apple

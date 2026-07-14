@@ -19,6 +19,16 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   the paste latency path and the change-count guard still lets a real copy win, so
   your clipboard is preserved as before.
 
+- **Quitting Pomvox now fully shuts it down.** "Quit Pomvox" (and ⌘Q) went
+  straight to `NSApp.terminate`, which never ran the engine's teardown — so a
+  quit could leave the lock file (`~/.pomvox/engine.pid`) on disk, the global
+  hotkey tap still installed, and the HUD pill on screen until macOS happened to
+  reap the process. Because Pomvox lives in the menu bar, it also doesn't appear
+  in the Force Quit window, so a lingering instance was hard to kill. Quit now
+  releases the hotkey tap, the mic, the HUD, and the lock file synchronously
+  (matching the Python engine's exit cleanup), without disturbing your "arm on
+  launch" preference — so quit, Force Quit, and the HUD stay in sync.
+
 ## [0.1.10] — 2026-07-12
 
 ### Added
