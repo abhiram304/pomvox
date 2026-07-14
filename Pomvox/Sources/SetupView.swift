@@ -18,6 +18,10 @@ struct SetupView: View {
     @State private var statuses: [String: Bool?] = [:]
     @State private var selfTestText = ""
     @FocusState private var testFieldFocused: Bool
+    // One silent arm() per Setup visit, fired the tick the last grant lands —
+    // closes the fresh-install gap where Fn stays dead after granting because
+    // nothing re-arms until the menu-bar toggle or a relaunch (M3 report).
+    @State private var autoArmAttempted = false
 
     private let flow = OnboardingFlow()
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -54,6 +58,12 @@ struct SetupView: View {
 
     private func refresh() {
         statuses = Permissions.statuses()
+        if flow.readyToAutoArm(statuses: statuses, engineArmed: engine.isArmed,
+                               alreadyAttempted: autoArmAttempted) {
+            autoArmAttempted = true
+            NSLog("pomvox-engine: setup poll — grants landed, silent auto-arm")
+            Task { await engine.arm(interactive: false) }
+        }
     }
 
     // MARK: - sections
