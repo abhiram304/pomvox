@@ -45,6 +45,14 @@ final class PasterTests: XCTestCase {
         XCTAssertEqual(pb.string(forType: .string), "dictated")  // recoverable, not lost
     }
 
+    /// Regression guard for the intermittent "pastes previous text" bug: the
+    /// restore must not fire so soon that a slow-to-paste app reads the restored
+    /// prior clipboard instead of the staged transcript. 0.15 s was too short;
+    /// keep a comfortable margin over typical app paste-handling latency.
+    func testRestoreDelayIsGenerousEnoughToOutlastASlowPaste() {
+        XCTAssertGreaterThanOrEqual(Paster.restoreDelay, 0.3)
+    }
+
     func testRestoreYieldsToARealUserCopyDuringTheDelay() {
         let pb = freshPasteboard()
         pb.clearContents(); pb.setString("old", forType: .string)
