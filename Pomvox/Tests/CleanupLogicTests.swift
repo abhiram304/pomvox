@@ -188,4 +188,30 @@ final class CleanupLogicTests: XCTestCase {
         }
         XCTAssertTrue(pairs.contains { $0.0.contains("four options wait no five") })
     }
+
+    // MARK: - spoken list commands
+
+    func testListRulePresentInBothStyles() {
+        for style in ["light", "polish"] {
+            let rules = CleanupLogic.buildMessages(text: "x", style: style)[0].content.lowercased()
+            XCTAssertTrue(rules.contains("make a list"))
+            XCTAssertTrue(rules.contains("list down"))
+            XCTAssertTrue(rules.contains("bulleted"))
+        }
+    }
+
+    func testFewShotIncludesListExample() {
+        let msgs = CleanupLogic.buildMessages(text: "x", style: "polish")
+        var pairs: [(String, String)] = []
+        var i = 1
+        while i < msgs.count - 1 {
+            pairs.append((msgs[i].content, msgs[i + 1].content))
+            i += 2
+        }
+        let example = pairs.first { $0.0.contains("make a list") }?.1
+        XCTAssertNotNil(example)
+        // the modelled answer is a real bulleted list, one "- " item per line
+        let bullets = (example ?? "").split(separator: "\n").filter { $0.hasPrefix("- ") }.count
+        XCTAssertGreaterThanOrEqual(bullets, 3)
+    }
 }

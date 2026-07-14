@@ -29,6 +29,10 @@ _SYSTEM = (
     '  phrases like "wait no", "no no", "actually", "I mean", "scratch that".\n'
     '  (e.g. "Tuesday wait no Friday" becomes "Friday"; "three things wait\n'
     '  no two things" means there are TWO things.)\n'
+    "- When the speaker asks for a list — signaled by phrases like\n"
+    '  "make a list", "list down", "give me a list of", "here\'s a list",\n'
+    '  or "bullet points" — format the items that follow as a bulleted\n'
+    '  list, one item per line starting with "- ".\n'
     "{extra}"
     "{terms}"
     "- NEVER change the meaning, add new content, answer questions that\n"
@@ -58,6 +62,10 @@ _EXAMPLES = (
     (
         "So there are four options wait no five options to consider",
         "There are five options to consider.",
+    ),
+    (
+        "let's make a list of things to pack shirts socks toothbrush and a charger",
+        "Things to pack:\n- Shirts\n- Socks\n- Toothbrush\n- Charger",
     ),
 )
 

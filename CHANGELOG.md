@@ -7,6 +7,16 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Added
+
+- **Say "make a list" and your items come out as bullet points.** When you
+  explicitly ask for a list while dictating — with phrases like "make a list of",
+  "list down", "give me a list of", "here's a list", or "bullet points" —
+  cleanup now formats the items that follow as a bulleted list, one `- ` item
+  per line, instead of a run-on sentence. The rule applies in both the light and
+  polish cleanup styles, and (per the local-first rule) falls back to your raw
+  words if cleanup is off or fails.
+
 ### Fixed
 
 - **Dictation no longer intermittently pastes the text you copied earlier.** The
