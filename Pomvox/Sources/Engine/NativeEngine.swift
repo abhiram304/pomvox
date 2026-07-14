@@ -550,10 +550,11 @@ final class NativeEngine: ObservableObject {
     /// Quit, the HUD, and the engine state out of sync (and, on pid reuse, a stale
     /// pidfile that makes the next launch report "blocked").
     ///
-    /// Unlike disarm(), this deliberately does NOT persist(false) or resetMachine:
-    /// quitting must not silently turn "arm on launch" off. It only releases the
-    /// OS-facing resources so a Quit leaves nothing behind. Safe to call when
-    /// idle/disarmed — every step is a no-op then.
+    /// Unlike disarm(), this deliberately does NOT persist(false): quitting must
+    /// not silently turn "arm on launch" off. It otherwise mirrors disarm()'s
+    /// resource release (tap, mic, HUD, history, pidfile, hotkey machine) so a
+    /// Quit leaves nothing behind. Safe to call when idle/disarmed — every step
+    /// is a no-op then.
     func prepareForTermination() {
         unregisterSleepWakeObservers()
         pendingTapRecreate = false
@@ -566,6 +567,7 @@ final class NativeEngine: ObservableObject {
         hud.teardown()          // drop the pill now, no fade — Quit must not leave it up
         history?.close(); history = nil
         pidfile.release()       // the one thing that outlives the process: the on-disk lock
+        resetMachine()          // clear the PTT machine's in-flight state, as disarm() does
         status = .off
     }
 
