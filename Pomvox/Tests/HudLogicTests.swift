@@ -316,4 +316,44 @@ final class HudLogicTests: XCTestCase {
         let vm = m.apply([.result: .result("ok", "ghost")], now: 1.0)
         XCTAssertFalse(vm.visible)
     }
+
+    // MARK: - stale panel rebuild (post-sleep window-server wedge)
+
+    func testStaleHiddenPanelRebuilds() {
+        XCTAssertTrue(hudShouldRebuildStale(stale: true, prevState: "hidden"))
+    }
+
+    func testStaleVisiblePanelWaits() {
+        // Never yank a panel that is currently displaying — the wedge only
+        // matters at the next show, and the show-probe self-heal covers it.
+        XCTAssertFalse(hudShouldRebuildStale(stale: true, prevState: "recording"))
+    }
+
+    func testFreshPanelIsLeftAlone() {
+        XCTAssertFalse(hudShouldRebuildStale(stale: false, prevState: "hidden"))
+    }
+
+    func testFreshVisiblePanelIsLeftAlone() {
+        XCTAssertFalse(hudShouldRebuildStale(stale: false, prevState: "recording"))
+    }
+
+    // MARK: - show-generation tracker (heal-once / fade-race bookkeeping)
+
+    func testBeginShowInvalidatesOlderGenerations() {
+        var t = ShowGenerationTracker()
+        t.beginShow()
+        let first = t.current
+        t.beginShow()
+        XCTAssertFalse(t.isCurrent(first))
+        XCTAssertTrue(t.isCurrent(t.current))
+    }
+
+    func testFreshTrackerIsItsOwnCurrent() {
+        // Work captured before any show (gen 0) stands down after the first.
+        var t = ShowGenerationTracker()
+        let preShow = t.current
+        XCTAssertTrue(t.isCurrent(preShow))
+        t.beginShow()
+        XCTAssertFalse(t.isCurrent(preShow))
+    }
 }

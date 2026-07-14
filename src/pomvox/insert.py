@@ -8,7 +8,17 @@ import threading
 log = logging.getLogger(__name__)
 
 KEYCODE_V = 9
-RESTORE_DELAY_S = 0.15
+# How long to leave the staged transcript on the clipboard before restoring the
+# user's prior contents. The synthesized ⌘V is asynchronous — the target app
+# reads the clipboard only when it processes the keystroke on its own main
+# thread — so this delay must comfortably outlast that handling. At the old
+# 0.15 s a busy or slow-to-focus app (launching, Electron, system under load)
+# could still be mid-paste when the restore fired, so it read the *restored*
+# prior clipboard and pasted the previously-copied text instead of the
+# transcript. Restoring off-thread keeps this off the paste latency path, and
+# the changeCount guard still lets a real user copy win, so a longer wait is
+# safe and only widens the recovery window.
+RESTORE_DELAY_S = 0.5
 # Community convention (nspasteboard.org): clipboard managers that honor it
 # (Maccy, Paste, Alfred, …) skip items carrying this type, so dictations
 # don't pile up in clipboard history regardless of Pomvox's own settings.
