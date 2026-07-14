@@ -28,7 +28,17 @@ enum Paster {
     /// that honor it skip items carrying this type, so dictations don't pile up
     /// in clipboard history.
     static let concealedType = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
-    static let restoreDelay: TimeInterval = 0.15
+    /// How long to leave the staged transcript on the clipboard before restoring
+    /// the user's prior contents. The synthesized ⌘V is asynchronous — the target
+    /// app reads the clipboard only when it processes the keystroke on its own
+    /// main thread — so this delay must comfortably outlast that handling. At the
+    /// old 0.15 s a busy or slow-to-focus app (launching, Electron, system under
+    /// load) could still be mid-paste when the restore fired, so it read the
+    /// *restored* prior clipboard and pasted the previously-copied text instead of
+    /// the transcript. It's off the critical key-up→paste path (the paste is
+    /// already posted), and the changeCount guard still lets a real user copy win,
+    /// so a longer wait is safe and only widens the recovery window.
+    static let restoreDelay: TimeInterval = 0.5
 
     /// Stage `text` on `pb` marked concealed; return the resulting changeCount.
     /// The restore path deliberately does not re-mark the user's original
