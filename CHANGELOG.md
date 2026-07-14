@@ -9,6 +9,16 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Fixed
 
+- **Dictation no longer intermittently pastes the text you copied earlier.** The
+  synthesized ⌘V is asynchronous — the target app reads the clipboard only when
+  it gets around to handling the keystroke — but Pomvox restored your prior
+  clipboard just 0.15 s later. A busy or slow-to-focus app (launching, Electron,
+  system under load) could still be mid-paste when that restore fired, so it read
+  the restored clipboard and pasted your previously-copied text instead of the
+  transcript. The restore now waits long enough to outlast a slow paste; it's off
+  the paste latency path and the change-count guard still lets a real copy win, so
+  your clipboard is preserved as before.
+
 - **Quitting Pomvox now fully shuts it down.** "Quit Pomvox" (and ⌘Q) went
   straight to `NSApp.terminate`, which never ran the engine's teardown — so a
   quit could leave the lock file (`~/.pomvox/engine.pid`) on disk, the global
