@@ -69,6 +69,10 @@ final class NativeEngine: ObservableObject {
     private let capture = AudioCapture()
     private let transcriber = Transcriber()
     private let cleanup = CleanupEngine()
+
+    /// UI access for the rule editor's variant suggestions — read-only use of
+    /// the actor; `cleanup` is a `let`, so this is safe off the main actor.
+    nonisolated var variantSuggester: CleanupEngine { cleanup }
     private var tap: EventTap?
     private let configPath: String
 

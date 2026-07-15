@@ -64,3 +64,24 @@ enum VariantGenerator {
         return words
     }
 }
+
+/// Clean an LLM "list the mishearings" response into chip-ready variants:
+/// strip bullets/numbering, lowercase, drop echoes of the term itself, drop
+/// anything over 5 words (explanatory prose, not a variant), dedupe, cap at 6.
+func parseVariantLines(_ raw: String, term: String) -> [String] {
+    var out: [String] = []
+    for line in raw.components(separatedBy: "\n") {
+        var t = line.trimmingCharacters(in: .whitespaces)
+        while let first = t.first, "-*•0123456789. )".contains(first) {
+            t.removeFirst()
+        }
+        t = t.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !t.isEmpty,
+              t.caseInsensitiveCompare(term) != .orderedSame,
+              t.components(separatedBy: " ").count <= 5,
+              !out.contains(t) else { continue }
+        out.append(t)
+        if out.count == 6 { break }
+    }
+    return out
+}

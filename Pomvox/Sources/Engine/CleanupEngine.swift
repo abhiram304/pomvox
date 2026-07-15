@@ -311,6 +311,43 @@ actor CleanupEngine: CleanupCleaning {
         }
     }
 
+    /// One-shot "what might the STT model write for ⟨term⟩?" generation for
+    /// the rule editor's suggestion chips. Empty (not nil — chips are additive,
+    /// there's no error state to surface) when the model isn't resident — the
+    /// editor's heuristics are the floor and this is opportunistic garnish; it
+    /// must never trigger a 2.3 GB load.
+    func suggestVariants(for term: String, timeoutS: Double = 8.0) async -> [String] {
+        guard let container else { return [] }
+        let deadline = CFAbsoluteTimeGetCurrent() + timeoutS
+        let chat: [Chat.Message] = [
+            .system("""
+            You help a dictation app anticipate speech-to-text errors. \
+            Given a word, list up to 5 plausible ways an STT model might \
+            mistranscribe it when spoken aloud. One per line, lowercase, \
+            no explanations, no numbering.
+            """),
+            .user(term),
+        ]
+        let raw: String? = try? await container.perform { context in
+            let lmInput = try await context.processor.prepare(
+                input: UserInput(chat: chat, additionalContext: ["enable_thinking": false]))
+            let tokens = lmInput.text.tokens.asArray(Int.self)
+            let params = GenerateParameters(maxTokens: 80, temperature: 0.0)
+            let stream = try MLXLMCommon.generate(
+                input: LMInput(tokens: MLXArray(tokens.map(Int32.init))),
+                cache: nil, parameters: params, context: context)
+            var parts: [String] = []
+            for await generation in stream {
+                if case .chunk(let piece) = generation {
+                    parts.append(piece)
+                    if CFAbsoluteTimeGetCurrent() > deadline { return parts.joined() }
+                }
+            }
+            return parts.joined()
+        }
+        return parseVariantLines(raw ?? "", term: term)
+    }
+
     /// Tokenize one cleanup request through the model's chat template.
     /// Qwen3 is a hybrid-thinking model: without enable_thinking=false it
     /// emits <think> blocks and blows the latency budget.

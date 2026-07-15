@@ -408,6 +408,21 @@ struct RuleEditorSheet: View {
         suggestions = VariantGenerator.heuristicVariants(for: term)
             .filter { !already.contains($0) }
         accepted = Set(suggestions).subtracting(rejected)   // pre-checked, but respect explicit rejections
+
+        // LLM-backed extras join a few seconds later, opportunistically, on
+        // top of the always-available heuristic floor above. They arrive
+        // UNCHECKED (accepted is untouched here) — a previously-rejected
+        // string reappearing from the model stays unchecked automatically.
+        let current = target
+        Task {
+            let llm = await NativeEngine.shared.variantSuggester.suggestVariants(for: current)
+            await MainActor.run {
+                guard current == target else { return }   // stale — target changed since this refresh
+                let known = Set((sources + suggestions).map { $0.lowercased() })
+                let fresh = llm.filter { !known.contains($0) }
+                suggestions.append(contentsOf: fresh)
+            }
+        }
     }
 
     private func effectiveSources() -> [String] {
