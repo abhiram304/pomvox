@@ -118,7 +118,10 @@ enum DictionaryDocument {
 
     private static func quote(_ s: String) -> String {
         "\"" + s.replacingOccurrences(of: "\\", with: "\\\\")
-             .replacingOccurrences(of: "\"", with: "\\\"") + "\""
+             .replacingOccurrences(of: "\"", with: "\\\"")
+             .replacingOccurrences(of: "\n", with: "\\n")
+             .replacingOccurrences(of: "\t", with: "\\t")
+             .replacingOccurrences(of: "\r", with: "\\r") + "\""
     }
 
     private static func unquote(_ s: String, line: Int) throws -> String {
@@ -132,6 +135,7 @@ enum DictionaryDocument {
                 switch ch {
                 case "n": out.append("\n")
                 case "t": out.append("\t")
+                case "r": out.append("\r")
                 default: out.append(ch)   // \" and \\ (and anything else, literally)
                 }
                 escaped = false

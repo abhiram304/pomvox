@@ -134,7 +134,8 @@ The Hub window (menu bar → **Open Hub…**, or the Dock icon while it's open):
   apply, even with cleanup off. A live test box shows exactly what your rules
   do to any text before you dictate a word. Add a rule straight from
   **History** ("Fix this…" on a mistake), or from anywhere with the
-  configurable quick-add hotkey (default `⌘⇧D`) — no need to open the Hub.
+  configurable quick-add hotkey (e.g. `cmd+shift+d` under `[hotkey]
+  quick_add`; off by default) — no need to open the Hub.
   Edits hot-apply to an armed engine (no re-arm), and words/rules import and
   export as plain `.txt` / `.csv` for backup or sharing.
 - **Setup** — the live permission checklist and insertion self-test.

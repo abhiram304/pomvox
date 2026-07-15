@@ -13,6 +13,13 @@ import SwiftUI
 /// the page shows the error + a "Reload" button for after they fix it.
 @MainActor
 final class DictionaryStore: ObservableObject {
+    /// The one instance the app actually reads/writes through (QuickAdd panel
+    /// + the Hub's Dictionary page). Any other instance — e.g. one a test
+    /// constructs directly — still resyncs via the didChange observer below,
+    /// but routing the app itself through a single instance avoids relying on
+    /// that resync for every edit (see the C1 clobber postmortem).
+    @MainActor static let shared = DictionaryStore()
+
     @Published private(set) var file = DictionaryFile()
     @Published private(set) var parseError: String?
     /// True from a words-affecting save until the engine posts
@@ -30,6 +37,20 @@ final class DictionaryStore: ObservableObject {
             forName: .pomvoxDictionaryHintApplied, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.applyingHint = false }
+        }
+        // Belt-and-braces resync: any *other* DictionaryStore instance
+        // pointed at the same files (tests construct their own) picks up a
+        // save made elsewhere instead of clobbering it on its next write.
+        // Skip saves this same instance just posted (object === self) —
+        // reloadFromDisk() never saves, so there's no loop risk either way.
+        NotificationCenter.default.addObserver(
+            forName: .pomvoxDictionaryDidChange, object: nil, queue: .main
+        ) { [weak self] notification in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let sender = notification.object as? DictionaryStore, sender === self { return }
+                self.reloadFromDisk()
+            }
         }
         reloadFromDisk()
         migrateLegacyIfNeeded()
@@ -131,7 +152,7 @@ final class DictionaryStore: ObservableObject {
             return
         }
         if wordsChanged { applyingHint = true }
-        NotificationCenter.default.post(name: .pomvoxDictionaryDidChange, object: nil)
+        NotificationCenter.default.post(name: .pomvoxDictionaryDidChange, object: self)
         TelemetryClient.shared.emit(.dictionaryEdited)
     }
 }

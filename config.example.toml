@@ -13,6 +13,8 @@ ptt = "fn"           # hold to talk; use "right_option" if Fn proves flaky
 toggle = "fn+space"  # hands-free: start recording
 stop = ""            # optional extra stop key; fn tap / fn+space always stop
 cancel = "esc"       # discard the utterance (nothing inserts); "" disables
+quick_add = ""       # chord like "cmd+shift+d"; empty = disabled; needs at
+                     # least one modifier; restart required
 
 [stt]
 # Speech model. The native engine loads the matching FluidAudio Parakeet TDT

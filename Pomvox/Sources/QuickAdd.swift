@@ -61,7 +61,7 @@ final class QuickAddPanel: NSPanel {
 final class QuickAddController {
     private var binding: (flags: NSEvent.ModifierFlags, keyCode: UInt16)?
     private var panel: QuickAddPanel?
-    private let store = DictionaryStore()
+    private let store = DictionaryStore.shared
 
     func start(bindingString: String) {
         guard !bindingString.isEmpty else { return }
@@ -125,6 +125,7 @@ private struct QuickAddView: View {
     let close: () -> Void
     @State private var word = ""
     @State private var misheard = ""
+    @State private var errorText: String?
     @FocusState private var wordFocused: Bool
 
     var body: some View {
@@ -137,6 +138,9 @@ private struct QuickAddView: View {
             TextField("Misheard as… (optional — makes a fixup rule)", text: $misheard)
                 .textFieldStyle(.roundedBorder).font(Typo.ui(13))
                 .onSubmit(save)
+            if let errorText {
+                Text(errorText).font(Typo.ui(11)).foregroundStyle(.red)
+            }
             HStack {
                 Text("↩ save · esc close").font(Typo.ui(10.5)).foregroundStyle(Palette.muted)
                 Spacer()
@@ -149,6 +153,10 @@ private struct QuickAddView: View {
     }
 
     private func save() {
+        guard store.parseError == nil else {
+            errorText = "Dictionary file has an error — fix it in the Dictionary page first."
+            return
+        }
         let w = word.trimmingCharacters(in: .whitespaces)
         guard !w.isEmpty else { return }
         let heard = misheard.trimmingCharacters(in: .whitespaces)
@@ -159,7 +167,7 @@ private struct QuickAddView: View {
                                         enabled: true, origin: "manual"),
                          replacingID: nil)
         }
-        word = ""; misheard = ""
+        word = ""; misheard = ""; errorText = nil
         close()
     }
 }

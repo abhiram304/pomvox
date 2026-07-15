@@ -92,6 +92,12 @@ final class DictionaryDocumentTests: XCTestCase {
         XCTAssertThrowsError(try DictionaryDocument.parse("[mystery]\nkey = \"v\""))
     }
 
+    func testNewlineAndTabInValuesRoundTrip() throws {
+        let file = DictionaryFile(schema: 1, words: ["multi\nline", "tab\there"], rules: [])
+        let parsed = try DictionaryDocument.parse(DictionaryDocument.serialize(file))
+        XCTAssertEqual(parsed.words, ["multi\nline", "tab\there"])
+    }
+
     func testRuleIDIsStableAndOrderInsensitive() {
         let a = DictionaryRule(sources: ["B", "a"], target: "T", enabled: true, origin: "manual")
         let b = DictionaryRule(sources: ["a", "b"], target: "t", enabled: false, origin: "history")

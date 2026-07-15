@@ -107,4 +107,16 @@ final class DictionaryStoreTests: XCTestCase {
         XCTAssertFalse(notified)
         XCTAssertFalse(FileManager.default.fileExists(atPath: dictPath))
     }
+
+    func testSecondStoreInstanceSeesExternalSave() {
+        let a = DictionaryStore(path: dictPath, configPath: cfgPath)
+        let b = DictionaryStore(path: dictPath, configPath: cfgPath)
+        a.addWord("Kubernetes")
+        // b must resync from the didChange notification, not stay on its
+        // launch-era snapshot (the C1 clobber bug).
+        XCTAssertEqual(b.file.words, ["Kubernetes"])
+        b.addWord("MLX")
+        XCTAssertEqual(b.file.words, ["Kubernetes", "MLX"])   // merged, not clobbered
+        XCTAssertEqual(a.file.words, ["Kubernetes", "MLX"])
+    }
 }

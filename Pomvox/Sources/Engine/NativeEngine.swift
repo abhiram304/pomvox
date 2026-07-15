@@ -690,7 +690,8 @@ final class NativeEngine: ObservableObject {
     /// Hot-apply a dictionary edit (posted by DictionaryStore on every save).
     /// Rules take effect on the next utterance immediately (they run post-
     /// transcription). A words change re-bakes the cleanup prompt prefix in
-    /// the background; dictation during the rebuild uses the old hint.
+    /// the background; dictation during the rebuild uses the new hint
+    /// uncached (slower that one time, never stale).
     func reloadDictionary() {
         let doc = ConfigDocument.load(path: configPath)
         let dictEnabled = doc.bool("dictionary", "enabled") ?? true
@@ -949,7 +950,7 @@ final class NativeEngine: ObservableObject {
                 self.status = .ready
                 return (hint, pastedAt)
             }
-            if !applied.fired.isEmpty, !text.isEmpty {
+            if !applied.fired.isEmpty {
                 DictionaryStatsStore.shared.record(applied.fired)
             }
             // Anonymous telemetry, emitted here for the same reason history is —

@@ -19,7 +19,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   with cleanup off, and both words and rules hot-apply to an already-armed
   engine — no restart. Add a rule straight from **History**'s "Fix this…" on a
   mistake, or from anywhere with a configurable quick-add hotkey (`[hotkey]
-  quick_add`, default `⌘⇧D`). Words and rules import/export as plain `.txt` /
+  quick_add`, e.g. `cmd+shift+d`; off by default). Words and rules import/export as plain `.txt` /
   `.csv` from the Dictionary page. Existing `config.toml` `[dictionary]`
   entries are auto-migrated into the new `~/.pomvox/dictionary.toml` on first
   launch.

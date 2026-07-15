@@ -9,7 +9,7 @@ struct PomvoxApp: App {
     @StateObject private var engine = NativeEngine.shared
     @StateObject private var telemetry = TelemetryModel()
     @StateObject private var lowMemCleanup = LowMemoryCleanupModel()
-    @StateObject private var dictionary = DictionaryStore()
+    @ObservedObject private var dictionary: DictionaryStore = .shared
 
     var body: some Scene {
         // A single Window (not WindowGroup): the Hub. The AppDelegate keeps it
