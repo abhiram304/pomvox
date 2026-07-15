@@ -169,4 +169,15 @@ final class PomvoxDictionaryTests: XCTestCase {
         let d = PomvoxDictionary(file: DictionaryFile(rules: [rule(["um"], "")]))
         XCTAssertEqual(d.apply("um um um."), "")
     }
+
+    func testWipeAtEndWithTrailingWhitespaceKeepsPunctuation() {
+        let d = PomvoxDictionary(file: DictionaryFile(rules: [rule(["um"], "")]))
+        XCTAssertEqual(d.apply("stop it um. "), "stop it.")
+        XCTAssertEqual(d.apply("stop it um.\n"), "stop it.")
+    }
+
+    func testWholeTranscriptWipeWithTrailingWhitespace() {
+        let d = PomvoxDictionary(file: DictionaryFile(rules: [rule(["um"], "")]))
+        XCTAssertEqual(d.apply("um um um. "), "")
+    }
 }

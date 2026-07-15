@@ -88,12 +88,14 @@ func compileRules(_ rules: [DictionaryRule]) -> [CompiledRule] {
         }
         let isWipe = rule.target.isEmpty
         var pattern = "(?<!\\w)" + NSRegularExpression.escapedPattern(for: stripped) + "(?!\\w)"
-        // Absorb one trailing punctuation mark, but only when something follows
-        // it — a sentence-ending mark at the very end of the input belongs to
-        // whatever real content precedes it (kept by tidyAfterWipe), not to the
-        // wiped word. (Fully-punctuation leftovers, e.g. a whole-transcript
-        // wipe, still collapse to "" via tidyAfterWipe's no-word-chars check.)
-        if isWipe { pattern += "(?:[.,!?;:](?!\\z))?" }
+        // Absorb one trailing punctuation mark, but only when something other
+        // than trailing whitespace follows it — a sentence-ending mark at the
+        // very end of the input (possibly followed only by whitespace, e.g. a
+        // trailing space/newline from LLM cleanup output) belongs to whatever
+        // real content precedes it (kept by tidyAfterWipe), not to the wiped
+        // word. (Fully-punctuation leftovers, e.g. a whole-transcript wipe,
+        // still collapse to "" via tidyAfterWipe's no-word-chars check.)
+        if isWipe { pattern += "(?:[.,!?;:](?!\\s*\\z))?" }
         guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
         else {
             NSLog("dictionary: bad replacement pattern for %@", stripped)
