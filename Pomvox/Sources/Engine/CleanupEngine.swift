@@ -79,6 +79,20 @@ actor CleanupEngine: CleanupCleaning {
     /// so the hint rides inside the prefilled prefix.
     func setTermsHint(_ hint: String) { termsHint = hint }
 
+    /// Hot-apply a dictionary words edit: swap the hint and, if the model is
+    /// resident, rebuild the per-style prefix caches so the change takes
+    /// effect on the next utterance — seconds of background prefill instead
+    /// of a full re-arm. When the model isn't loaded this just stores the
+    /// hint; the next prepare()/buildPrefixCaches bakes it in.
+    func updateTermsHint(_ hint: String) async {
+        guard hint != termsHint else { return }
+        termsHint = hint
+        guard container != nil else { return }
+        prefixCaches = [:]
+        await buildPrefixCaches()
+        NSLog("cleanup: prefix caches rebuilt for new dictionary hint")
+    }
+
     /// Download (first run, ~2.3 GB), load, and warm the model. Idempotent.
     /// Mirrors Python: a load failure leaves the engine unloaded (raw pastes,
     /// status timeout); a warmup failure still leaves it usable.
