@@ -961,6 +961,7 @@ final class NativeEngine: ObservableObject {
                 props.sttModel = sttModelTelemetryID
                 props.cleanup = doCleanup
                 props.cleanupStatus = cleanupStatus?.rawValue ?? "off"
+                props.dictionaryFired = applied.fired.isEmpty ? nil : applied.fired.count
                 TelemetryClient.shared.emit(.dictationCompleted, props: props)
                 if doCleanup {
                     var used = TelemetryProps()

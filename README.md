@@ -129,6 +129,14 @@ The Hub window (menu bar → **Open Hub…**, or the Dock icon while it's open):
   (default 7; `0` keeps nothing, `enabled = false` writes nothing).
 - **Settings** — models, hotkeys, cleanup, HUD, launch-at-login. Cleanup/HUD
   edits apply live; model changes re-arm.
+- **Dictionary** — words the cleanup model should spell your way, plus
+  many-to-one misheard-term fixup rules ("pom box" → "Pomvox") that always
+  apply, even with cleanup off. A live test box shows exactly what your rules
+  do to any text before you dictate a word. Add a rule straight from
+  **History** ("Fix this…" on a mistake), or from anywhere with the
+  configurable quick-add hotkey (default `⌘⇧D`) — no need to open the Hub.
+  Edits hot-apply to an armed engine (no re-arm), and words/rules import and
+  export as plain `.txt` / `.csv` for backup or sharing.
 - **Setup** — the live permission checklist and insertion self-test.
 
 ## Configuration
@@ -143,6 +151,10 @@ Settings are edited in the Hub; everything also lives in `~/.pomvox/config.toml`
 - `[history]` — `retention_days`, `enabled`.
 - `[engine] native` — the native engine toggle (the app owns this; the Hub flips
   it).
+- `[dictionary] enabled` — gates the feature; words and rules themselves live in
+  `~/.pomvox/dictionary.toml` (edited from the Hub's **Dictionary** page, and
+  auto-migrated from this file's `[dictionary]` section on first launch if that
+  file doesn't exist yet).
 
 Anything model-shaped is a config value, never a constant — swap STT and cleanup
 models to trade speed for quality on your hardware.

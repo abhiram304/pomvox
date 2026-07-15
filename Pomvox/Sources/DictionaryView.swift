@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The Dictionary page: words the cleanup model should spell your way,
@@ -65,6 +66,16 @@ struct DictionaryView: View {
                 sectionHeader("Fixups",
                               subtitle: "When Pomvox hears the left side, it writes the right side. Always applied — even with cleanup off.")
                 Spacer()
+                Menu {
+                    Button("Import words (.txt)…") { importFile(kind: .words) }
+                    Button("Import rules (.csv)…") { importFile(kind: .rules) }
+                    Divider()
+                    Button("Export words (.txt)…") { exportFile(kind: .words) }
+                    Button("Export rules (.csv)…") { exportFile(kind: .rules) }
+                } label: {
+                    Chip(text: "Import / Export", systemImage: "square.and.arrow.up.on.square")
+                }
+                .menuStyle(.borderlessButton).fixedSize()
                 Button {
                     editorState = RuleEditorState(editing: nil)
                 } label: {
@@ -115,6 +126,36 @@ struct DictionaryView: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title).font(Typo.display(17)).foregroundStyle(Palette.ink)
             Text(subtitle).font(Typo.ui(12)).foregroundStyle(Palette.muted)
+        }
+    }
+
+    // MARK: - Import / export
+
+    private enum InterchangeKind { case words, rules }
+
+    private func importFile(kind: InterchangeKind) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.begin { resp in
+            guard resp == .OK, let url = panel.url,
+                  let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+            switch kind {
+            case .words: DictionaryInterchange.parseWordList(text).forEach(store.addWord)
+            case .rules: DictionaryInterchange.parseRulesCSV(text)
+                .forEach { store.upsert($0, replacingID: nil) }
+            }
+        }
+    }
+
+    private func exportFile(kind: InterchangeKind) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = kind == .words ? "pomvox-words.txt" : "pomvox-rules.csv"
+        panel.begin { resp in
+            guard resp == .OK, let url = panel.url else { return }
+            let text = kind == .words
+                ? DictionaryInterchange.wordList(store.file.words)
+                : DictionaryInterchange.rulesCSV(store.file.rules)
+            try? text.write(to: url, atomically: true, encoding: .utf8)
         }
     }
 

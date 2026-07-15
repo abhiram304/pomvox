@@ -132,5 +132,6 @@ final class DictionaryStore: ObservableObject {
         }
         if wordsChanged { applyingHint = true }
         NotificationCenter.default.post(name: .pomvoxDictionaryDidChange, object: nil)
+        TelemetryClient.shared.emit(.dictionaryEdited)
     }
 }

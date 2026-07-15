@@ -77,6 +77,9 @@ sounds = true              # start/stop cues for eyes-off dictation
 
 [dictionary]
 enabled = true
+# v0.2: words + rules now live in ~/.pomvox/dictionary.toml (auto-migrated on
+# first launch; this section is read only if that file doesn't exist).
+# "enabled" here still gates the feature.
 # `words`: proper nouns / jargon the LLM should spell your way. Injected into
 # the cleanup prompt (restart required to change). Example:
 # words = ["Salammagari", "parakeet-mlx", "MLX", "Pomvox"]

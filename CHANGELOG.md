@@ -9,6 +9,21 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- **Dictionary v2: a real editor for words and misheard-term fixups.** A new
+  **Dictionary** page in the Hub replaces the old config-file-only workflow:
+  words the cleanup model should spell your way, plus many-to-one fixup rules
+  ("pom box" → "Pomvox") with per-rule enable/disable and hit counts, a live
+  test box that shows exactly what your rules do to any text, variant
+  suggestions when you add a rule, and a banner (with line number) if you
+  hand-edit `dictionary.toml` into something invalid. Rules always apply, even
+  with cleanup off, and both words and rules hot-apply to an already-armed
+  engine — no restart. Add a rule straight from **History**'s "Fix this…" on a
+  mistake, or from anywhere with a configurable quick-add hotkey (`[hotkey]
+  quick_add`, default `⌘⇧D`). Words and rules import/export as plain `.txt` /
+  `.csv` from the Dictionary page. Existing `config.toml` `[dictionary]`
+  entries are auto-migrated into the new `~/.pomvox/dictionary.toml` on first
+  launch.
+
 - **Say "make a list" and your items come out as bullet points.** When you
   explicitly ask for a list while dictating — with phrases like "make a list of",
   "list down", "give me a list of", "here's a list", or "bullet points" —

@@ -187,6 +187,34 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(p["coreml_cache_hit"] as? Bool, false)
     }
 
+    func testDictionaryFiredClampedToContractRange() {
+        XCTAssertEqual(TelemetrySanitizer.dictionaryFired(3), 3)
+        XCTAssertEqual(TelemetrySanitizer.dictionaryFired(-5), 0)
+        XCTAssertEqual(TelemetrySanitizer.dictionaryFired(99_999), 10_000)
+    }
+
+    func testDictationEventCarriesDictionaryFiredCount() throws {
+        var props = TelemetryProps()
+        props.durationMs = 1234
+        props.dictionaryFired = 2
+        let ev = TelemetryEvent(event: .dictationCompleted, ts: 1_730_000_003_000, props: props)
+        let data = try TelemetryEncoder.encodeBatch(env: env, events: [ev])
+        let events = decode(data)["events"] as! [[String: Any]]
+        let p = events[0]["props"] as! [String: Any]
+        XCTAssertEqual(Set(p.keys), ["duration_ms", "dictionary_fired"])
+        XCTAssertEqual(p["dictionary_fired"] as? Int, 2)
+    }
+
+    func testDictionaryEditedEventNameAndNoContentLeaks() throws {
+        // dictionaryEdited carries no props at all — just the fact an edit
+        // happened, never the word/rule content.
+        let ev = TelemetryEvent(event: .dictionaryEdited, ts: 1_730_000_004_000)
+        let data = try TelemetryEncoder.encodeBatch(env: env, events: [ev])
+        let events = decode(data)["events"] as! [[String: Any]]
+        XCTAssertEqual(events[0]["event"] as? String, "dictionary_edited")
+        XCTAssertEqual(Set(events[0].keys), ["event", "ts"], "no props on this event")
+    }
+
     func testColdStartDurationsAreClampedToContractRange() {
         var props = TelemetryProps()
         props.coremlCompileMs = -5
