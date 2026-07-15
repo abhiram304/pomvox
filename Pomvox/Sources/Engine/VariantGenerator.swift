@@ -1,0 +1,67 @@
+import Foundation
+
+/// Deterministic "what might the STT model write instead?" candidates for a
+/// dictionary target. These become PRE-CHECKED, EDITABLE chips in the rule
+/// editor — never silently added (the VoiceInk lesson). The LLM-backed
+/// generator (CleanupEngine.suggestVariants) merges on top when the cleanup
+/// model is resident; these heuristics are the always-available floor.
+///
+/// All variants are lowercase: rule matching is case-insensitive, so a
+/// case-only variant would be a no-op, and lowercase reads as "heard text".
+enum VariantGenerator {
+
+    static func heuristicVariants(for term: String) -> [String] {
+        let t = term.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty else { return [] }
+        var out: [String] = []
+        func add(_ v: String) {
+            let s = v.trimmingCharacters(in: .whitespaces).lowercased()
+            guard !s.isEmpty, s.caseInsensitiveCompare(t) != .orderedSame,
+                  !out.contains(s) else { return }
+            out.append(s)
+        }
+
+        // 1. Hump/digit/punctuation split: "ChargeBee" → "charge bee",
+        //    "Qwen3" → "qwen 3", "parakeet-mlx" → "parakeet mlx".
+        add(splitWords(t).joined(separator: " "))
+
+        // 2. Acronyms (any all-caps run of 2+): "GPT" → "g p t" (letter names
+        //    often transcribe spaced) and "gpt" (the smooshed run-on).
+        if t.count >= 2, t.allSatisfy({ $0.isUppercase && $0.isLetter }) {
+            add(t.map(String.init).joined(separator: " "))
+            add(t.lowercased())
+        }
+
+        // 3. Hyphen/underscore ↔ space (covered by 1 for mixed terms, but a
+        //    lowercase "foo-bar" has no humps, so do it explicitly).
+        if t.contains("-") || t.contains("_") {
+            add(t.replacingOccurrences(of: "-", with: " ")
+                 .replacingOccurrences(of: "_", with: " "))
+        }
+        return out
+    }
+
+    /// Split on case humps, letter↔digit boundaries, and separators.
+    /// "ChargeBee" → ["Charge", "Bee"]; "Qwen3" → ["Qwen", "3"].
+    private static func splitWords(_ s: String) -> [String] {
+        var words: [String] = []
+        var current = ""
+        var prev: Character? = nil
+        for ch in s {
+            if ch == "-" || ch == "_" || ch == " " {
+                if !current.isEmpty { words.append(current); current = "" }
+            } else if let p = prev,
+                      (ch.isUppercase && p.isLowercase)
+                          || (ch.isNumber && !p.isNumber)
+                          || (!ch.isNumber && p.isNumber) {
+                if !current.isEmpty { words.append(current); current = "" }
+                current.append(ch)
+            } else {
+                current.append(ch)
+            }
+            prev = ch
+        }
+        if !current.isEmpty { words.append(current) }
+        return words
+    }
+}
