@@ -5,6 +5,7 @@ struct HistoryView: View {
     @EnvironmentObject var reinserter: ReinsertController
     @State private var query = ""
     @State private var confirmingDeleteAll = false
+    @State private var fixState: RuleEditorState?
 
     private var results: [Dictation] { model.search(query) }
 
@@ -21,13 +22,17 @@ struct HistoryView: View {
                         EmptyResults(searching: !query.isEmpty)
                     } else {
                         ForEach(Array(results.enumerated()), id: \.element.id) { idx, d in
-                            DictationRow(dictation: d, dateStyle: .calendar, showDelete: true)
+                            DictationRow(dictation: d, dateStyle: .calendar, showDelete: true,
+                                         onFix: { fixState = RuleEditorState(
+                                             editing: nil, seedSources: [],
+                                             referenceTranscript: $0.raw) })
                             if idx < results.count - 1 { Divider().overlay(Palette.hair) }
                         }
                     }
                 }
             }
         }
+        .sheet(item: $fixState) { RuleEditorSheet(state: $0) }
     }
 
     private var metaBar: some View {

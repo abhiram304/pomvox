@@ -257,6 +257,7 @@ struct DictationRow: View {
     let dictation: Dictation
     var dateStyle: WhenStyle = .relative
     var showDelete: Bool = false
+    var onFix: ((Dictation) -> Void)? = nil
     @State private var hovering = false
     @EnvironmentObject private var model: HubModel
     @EnvironmentObject private var reinserter: ReinsertController
@@ -328,6 +329,14 @@ struct DictationRow: View {
             RowButton(symbol: "doc.on.doc", label: "Copy", action: copy)
             RowButton(symbol: "arrow.uturn.left", label: "Re-insert") {
                 reinserter.start(text: dictation.final)
+            }
+            if let onFix {
+                Button { onFix(dictation) } label: {
+                    Image(systemName: "character.book.closed")
+                }
+                .buttonStyle(.plain).foregroundStyle(Palette.muted)
+                .help("Fix a misheard word…")
+                .accessibilityLabel("Fix a misheard word from this dictation")
             }
             if showDelete {
                 RowButton(symbol: "trash", label: "Delete", danger: true) { model.delete(dictation) }
