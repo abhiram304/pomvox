@@ -11,7 +11,6 @@ final class VariantGeneratorTests: XCTestCase {
     func testAcronymLetterSpacing() {
         let v = VariantGenerator.heuristicVariants(for: "GPT")
         XCTAssertTrue(v.contains("g p t"))
-        XCTAssertTrue(v.contains("gpt"))   // smooshed lowercase run-on
     }
 
     func testHyphenAndSpaceVariants() {

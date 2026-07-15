@@ -26,10 +26,9 @@ enum VariantGenerator {
         add(splitWords(t).joined(separator: " "))
 
         // 2. Acronyms (any all-caps run of 2+): "GPT" → "g p t" (letter names
-        //    often transcribe spaced) and "gpt" (the smooshed run-on).
+        //    often transcribe spaced).
         if t.count >= 2, t.allSatisfy({ $0.isUppercase && $0.isLetter }) {
             add(t.map(String.init).joined(separator: " "))
-            add(t.lowercased())
         }
 
         // 3. Hyphen/underscore ↔ space (covered by 1 for mixed terms, but a
