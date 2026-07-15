@@ -252,12 +252,180 @@ struct FlowLayout: Layout {
     }
 }
 
-/// Placeholder until Task 10 lands the real editor.
+/// Rule editor: target ("what Pomvox should write"), sources ("what it
+/// hears"), generated variant suggestions as toggleable chips (visible,
+/// consented — never silently added), an optional tappable transcript (the
+/// add-from-History path seeds it), and a live preview against sample text.
 struct RuleEditorSheet: View {
     let state: RuleEditorState
+    @EnvironmentObject var store: DictionaryStore
     @Environment(\.dismiss) private var dismiss
+
+    @State private var target = ""
+    @State private var sources: [String] = []
+    @State private var newSource = ""
+    @State private var suggestions: [String] = []       // offered, not yet accepted
+    @State private var accepted: Set<String> = []       // checked suggestion chips
+    @State private var previewText = ""
+
+    private var isEditing: Bool { state.editing != nil }
+
     var body: some View {
-        VStack { Text("Rule editor (Task 10)"); Button("Close") { dismiss() } }
-            .padding(30)
+        VStack(alignment: .leading, spacing: 18) {
+            Text(isEditing ? "Edit fixup" : "New fixup")
+                .font(Typo.display(18)).foregroundStyle(Palette.ink)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("POMVOX SHOULD WRITE").font(Typo.ui(10, .semibold)).tracking(0.6)
+                    .foregroundStyle(Palette.muted)
+                TextField("e.g. Pomvox — leave empty to remove the heard words", text: $target)
+                    .textFieldStyle(.roundedBorder).font(Typo.ui(13))
+                    .onChange(of: target) { _, t in refreshSuggestions(for: t) }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("WHEN IT HEARS").font(Typo.ui(10, .semibold)).tracking(0.6)
+                    .foregroundStyle(Palette.muted)
+                FlowLayout(spacing: 6) {
+                    ForEach(sources, id: \.self) { s in
+                        HStack(spacing: 4) {
+                            Text(s).font(Typo.ui(12.5))
+                            Button { sources.removeAll { $0 == s } } label: {
+                                Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Remove \(s)")
+                        }
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(Palette.pane2))
+                    }
+                    TextField("add what it hears…", text: $newSource)
+                        .textFieldStyle(.plain).font(Typo.ui(12.5)).frame(width: 140)
+                        .onSubmit { addSource(newSource); newSource = "" }
+                }
+            }
+
+            if !suggestions.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("LIKELY MISHEARINGS — TAP TO INCLUDE")
+                        .font(Typo.ui(10, .semibold)).tracking(0.6).foregroundStyle(Palette.muted)
+                    FlowLayout(spacing: 6) {
+                        ForEach(suggestions, id: \.self) { v in
+                            let on = accepted.contains(v)
+                            Button {
+                                if on { accepted.remove(v) } else { accepted.insert(v) }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                                        .font(.system(size: 10))
+                                    Text(v).font(Typo.ui(12.5))
+                                }
+                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .background(Capsule().fill(on ? Palette.sel : Palette.pane2))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(on ? "Exclude" : "Include") variant \(v)")
+                        }
+                    }
+                }
+            }
+
+            if let transcript = state.referenceTranscript {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("FROM YOUR TRANSCRIPT — TAP THE WORDS IT GOT WRONG")
+                        .font(Typo.ui(10, .semibold)).tracking(0.6).foregroundStyle(Palette.muted)
+                    FlowLayout(spacing: 4) {
+                        ForEach(Array(tokenize(transcript).enumerated()), id: \.offset) { _, word in
+                            Button { appendToPendingSource(word) } label: {
+                                Text(word).font(Typo.ui(12.5))
+                                    .padding(.horizontal, 6).padding(.vertical, 2)
+                                    .background(RoundedRectangle(cornerRadius: 5).fill(Palette.pane2))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    if !newSource.isEmpty {
+                        Text("building: “\(newSource)” — press return to add")
+                            .font(Typo.ui(11)).foregroundStyle(Palette.muted)
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("PREVIEW").font(Typo.ui(10, .semibold)).tracking(0.6)
+                    .foregroundStyle(Palette.muted)
+                TextField("type a sentence to test this rule…", text: $previewText)
+                    .textFieldStyle(.roundedBorder).font(Typo.ui(12.5))
+                if !previewText.isEmpty {
+                    Text(previewApplied())
+                        .font(Typo.ui(12.5)).foregroundStyle(Palette.ember)
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(isEditing ? "Save" : "Add rule") { save() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(effectiveSources().isEmpty)
+            }
+        }
+        .padding(26)
+        .frame(width: 480)
+        .onAppear {
+            if let r = state.editing {
+                target = r.target
+                sources = r.sources
+            } else {
+                sources = state.seedSources
+            }
+            refreshSuggestions(for: target)
+        }
+    }
+
+    private func addSource(_ s: String) {
+        let t = s.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty, !sources.contains(where: { $0.caseInsensitiveCompare(t) == .orderedSame })
+        else { return }
+        sources.append(t)
+    }
+
+    /// Word-picker taps build a phrase in the pending-source field so
+    /// multi-word mishearings ("pom box") are two taps, then return.
+    private func appendToPendingSource(_ word: String) {
+        newSource = newSource.isEmpty ? word : newSource + " " + word
+    }
+
+    private func refreshSuggestions(for term: String) {
+        let already = Set(sources.map { $0.lowercased() })
+        suggestions = VariantGenerator.heuristicVariants(for: term)
+            .filter { !already.contains($0) }
+        accepted = Set(suggestions)   // pre-checked, user unchecks noise
+    }
+
+    private func effectiveSources() -> [String] {
+        sources + suggestions.filter { accepted.contains($0) }
+    }
+
+    private func previewApplied() -> String {
+        let rule = DictionaryRule(sources: effectiveSources(), target: target,
+                                  enabled: true, origin: "manual")
+        return PomvoxDictionary(file: DictionaryFile(rules: [rule]))
+            .apply(previewText)
+    }
+
+    private func save() {
+        let origin = state.editing?.origin
+            ?? (state.referenceTranscript != nil ? "history"
+                : accepted.isEmpty ? "manual" : "variant")
+        store.upsert(
+            DictionaryRule(sources: effectiveSources(), target: target,
+                           enabled: state.editing?.enabled ?? true, origin: origin),
+            replacingID: state.editing?.id)
+        dismiss()
+    }
+
+    private func tokenize(_ text: String) -> [String] {
+        text.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
     }
 }
