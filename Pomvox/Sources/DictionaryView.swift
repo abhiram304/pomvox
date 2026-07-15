@@ -388,6 +388,20 @@ struct RuleEditorSheet: View {
             }
             refreshSuggestions(for: target)
         }
+        .task(id: target) {
+            // Debounce: one LLM request per pause in typing, auto-cancelled by
+            // SwiftUI on the next keystroke or when the sheet closes — a burst
+            // of keystrokes must not queue generate() calls ahead of clean().
+            guard !target.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+            let llm = await NativeEngine.shared.variantSuggester.suggestVariants(for: target)
+            guard !Task.isCancelled, !llm.isEmpty else { return }
+            let known = Set((sources + suggestions).map { $0.lowercased() })
+            let fresh = llm.filter { !known.contains($0.lowercased()) }
+            suggestions.append(contentsOf: fresh)
+            // LLM extras arrive UNCHECKED — accepted is deliberately untouched.
+        }
     }
 
     private func addSource(_ s: String) {
@@ -408,21 +422,6 @@ struct RuleEditorSheet: View {
         suggestions = VariantGenerator.heuristicVariants(for: term)
             .filter { !already.contains($0) }
         accepted = Set(suggestions).subtracting(rejected)   // pre-checked, but respect explicit rejections
-
-        // LLM-backed extras join a few seconds later, opportunistically, on
-        // top of the always-available heuristic floor above. They arrive
-        // UNCHECKED (accepted is untouched here) — a previously-rejected
-        // string reappearing from the model stays unchecked automatically.
-        let current = target
-        Task {
-            let llm = await NativeEngine.shared.variantSuggester.suggestVariants(for: current)
-            await MainActor.run {
-                guard current == target else { return }   // stale — target changed since this refresh
-                let known = Set((sources + suggestions).map { $0.lowercased() })
-                let fresh = llm.filter { !known.contains($0) }
-                suggestions.append(contentsOf: fresh)
-            }
-        }
     }
 
     private func effectiveSources() -> [String] {

@@ -318,6 +318,7 @@ actor CleanupEngine: CleanupCleaning {
     /// must never trigger a 2.3 GB load.
     func suggestVariants(for term: String, timeoutS: Double = 8.0) async -> [String] {
         guard let container else { return [] }
+        guard !Task.isCancelled else { return [] }
         let deadline = CFAbsoluteTimeGetCurrent() + timeoutS
         let chat: [Chat.Message] = [
             .system("""
@@ -341,6 +342,7 @@ actor CleanupEngine: CleanupCleaning {
                 if case .chunk(let piece) = generation {
                     parts.append(piece)
                     if CFAbsoluteTimeGetCurrent() > deadline { return parts.joined() }
+                    if Task.isCancelled { return parts.joined() }
                 }
             }
             return parts.joined()
