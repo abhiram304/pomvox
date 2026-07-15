@@ -83,4 +83,13 @@ final class SettingsStoreTests: XCTestCase {
         SettingsIO.applyAll(v, to: &doc)
         XCTAssertEqual(SettingsIO.read(doc), v)
     }
+
+    func testQuickAddHotkeyRoundTrips() {
+        var v = SettingsValues.defaults
+        XCTAssertEqual(v.quickAdd, "")
+        v.quickAdd = "cmd+shift+d"
+        var doc = ConfigDocument(text: "")
+        SettingsIO.applyAll(v, to: &doc)
+        XCTAssertEqual(SettingsIO.read(doc).quickAdd, "cmd+shift+d")
+    }
 }
