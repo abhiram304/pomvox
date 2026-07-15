@@ -85,4 +85,26 @@ final class DictionaryStoreTests: XCTestCase {
         let raw = try String(contentsOfFile: dictPath, encoding: .utf8)
         XCTAssertTrue(raw.contains("broken"))
     }
+
+    func testBlockedEditsDoNotMutateInMemoryFile() throws {
+        try "words = [broken".write(toFile: dictPath, atomically: true, encoding: .utf8)
+        let store = DictionaryStore(path: dictPath, configPath: cfgPath)
+        XCTAssertNotNil(store.parseError)
+        store.addWord("X")
+        store.upsert(DictionaryRule(sources: ["a b"], target: "AB",
+                                    enabled: true, origin: "manual"), replacingID: nil)
+        XCTAssertEqual(store.file, DictionaryFile())   // untouched, not phantom-edited
+    }
+
+    func testNoOpMutationsDoNotSaveOrNotify() {
+        let store = DictionaryStore(path: dictPath, configPath: cfgPath)
+        var notified = false
+        let token = NotificationCenter.default.addObserver(
+            forName: .pomvoxDictionaryDidChange, object: nil, queue: nil) { _ in notified = true }
+        defer { NotificationCenter.default.removeObserver(token) }
+        store.removeRule(id: "no-such-id")
+        store.removeWord("no-such-word")
+        XCTAssertFalse(notified)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dictPath))
+    }
 }

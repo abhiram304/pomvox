@@ -56,6 +56,7 @@ final class DictionaryStore: ObservableObject {
     // MARK: - Words
 
     func addWord(_ word: String) {
+        guard parseError == nil else { return }
         let w = word.trimmingCharacters(in: .whitespaces)
         guard !w.isEmpty, !file.words.contains(w) else { return }
         file.words.append(w)
@@ -63,6 +64,7 @@ final class DictionaryStore: ObservableObject {
     }
 
     func removeWord(_ word: String) {
+        guard parseError == nil else { return }
         guard let i = file.words.firstIndex(of: word) else { return }
         file.words.remove(at: i)
         save(wordsChanged: true)
@@ -75,26 +77,40 @@ final class DictionaryStore: ObservableObject {
     /// new one). Sources are trimmed/deduped; a rule with no sources is a
     /// delete.
     func upsert(_ rule: DictionaryRule, replacingID: String?) {
+        guard parseError == nil else { return }
         var r = rule
         var seen = Set<String>()
         r.sources = r.sources
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
         r.target = r.target.trimmingCharacters(in: .whitespaces)
+        var changed = false
         if let old = replacingID, let i = file.rules.firstIndex(where: { $0.id == old }) {
-            if r.sources.isEmpty { file.rules.remove(at: i) } else { file.rules[i] = r }
+            if r.sources.isEmpty {
+                file.rules.remove(at: i)
+                changed = true
+            } else if file.rules[i] != r {
+                file.rules[i] = r
+                changed = true
+            }
         } else if !r.sources.isEmpty, !file.rules.contains(where: { $0.id == r.id }) {
             file.rules.append(r)
+            changed = true
         }
+        guard changed else { return }
         save()
     }
 
     func removeRule(id: String) {
+        guard parseError == nil else { return }
+        let before = file.rules.count
         file.rules.removeAll { $0.id == id }
+        guard file.rules.count != before else { return }
         save()
     }
 
     func setRuleEnabled(id: String, _ enabled: Bool) {
+        guard parseError == nil else { return }
         guard let i = file.rules.firstIndex(where: { $0.id == id }) else { return }
         file.rules[i].enabled = enabled
         save()
