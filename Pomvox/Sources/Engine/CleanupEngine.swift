@@ -57,6 +57,12 @@ actor CleanupEngine: CleanupCleaning {
     private var preparing = false
     private var prefixCaches: [String: PrefixEntry] = [:]
 
+    /// Whether a hint-triggered prefix-cache rebuild is in flight. Coalesces
+    /// overlapping updateTermsHint calls the way `preparing` coalesces
+    /// prepare(): later calls just set the hint; the in-flight loop notices
+    /// and rebuilds again, so the latest hint always wins.
+    private var rebuildingHint = false
+
     /// Bumped on every successful load. The idle-eviction watchdog snapshots it
     /// before deciding to evict and passes it to `unload(ifGeneration:)`, so a
     /// load that races in after the decision (but before the unload lands on
@@ -83,13 +89,35 @@ actor CleanupEngine: CleanupCleaning {
     /// resident, rebuild the per-style prefix caches so the change takes
     /// effect on the next utterance — seconds of background prefill instead
     /// of a full re-arm. When the model isn't loaded this just stores the
-    /// hint; the next prepare()/buildPrefixCaches bakes it in.
+    /// hint; the next prepare() bakes it in.
+    ///
+    /// Reentrancy: the actor suspends inside buildPrefixCaches, so a second
+    /// edit or the idle-eviction unload can interleave. The loop re-checks
+    /// the hint after every rebuild (latest wins), and a load-generation or
+    /// container change mid-rebuild discards the orphaned work — mirroring
+    /// prepare()'s `preparing` + `loadGeneration` guards.
     func updateTermsHint(_ hint: String) async {
         guard hint != termsHint else { return }
         termsHint = hint
-        guard container != nil else { return }
-        prefixCaches = [:]
-        await buildPrefixCaches()
+        guard container != nil, !rebuildingHint else { return }
+        rebuildingHint = true
+        defer { rebuildingHint = false }
+        var builtFor: String? = nil
+        while builtFor != termsHint {
+            guard container != nil else { return }   // evicted mid-loop; prepare() rebakes
+            let target = termsHint
+            let generation = loadGeneration
+            prefixCaches = [:]
+            await buildPrefixCaches()
+            if container == nil || loadGeneration != generation {
+                // Unload or a fresh load interleaved: that path owns the
+                // caches now (unload cleared them; prepare rebuilds with the
+                // current hint). Drop our orphaned work.
+                if container == nil { prefixCaches = [:] }
+                return
+            }
+            builtFor = target
+        }
         NSLog("cleanup: prefix caches rebuilt for new dictionary hint")
     }
 
