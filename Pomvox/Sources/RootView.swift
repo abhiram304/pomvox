@@ -1,17 +1,19 @@
 import SwiftUI
 
 enum NavItem: String, CaseIterable, Identifiable {
-    case home, history, settings, setup
+    case home, history, dictionary, settings, setup
     var id: String { rawValue }
     var title: String {
         switch self {
         case .home: "Home"; case .history: "History"
+        case .dictionary: "Dictionary"
         case .settings: "Settings"; case .setup: "Setup"
         }
     }
     var symbol: String {
         switch self {
         case .home: "house"; case .history: "clock.arrow.circlepath"
+        case .dictionary: "character.book.closed"
         case .settings: "gearshape"; case .setup: "checkmark.shield"
         }
     }
@@ -77,10 +79,11 @@ struct RootView: View {
 
     @ViewBuilder private var detail: some View {
         switch selection {
-        case .home:     HomeView(goToHistory: { selection = .history })
-        case .history:  HistoryView()
-        case .settings: SettingsView()
-        case .setup:    SetupView()
+        case .home:       HomeView(goToHistory: { selection = .history })
+        case .history:    HistoryView()
+        case .dictionary: DictionaryView()
+        case .settings:   SettingsView()
+        case .setup:      SetupView()
         }
     }
 }
