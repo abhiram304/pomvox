@@ -17,6 +17,20 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   polish cleanup styles, and (per the local-first rule) falls back to your raw
   words if cleanup is off or fails.
 
+### Changed
+
+- **Cleanup is now more conservative — it leans toward leaving your words as
+  spoken.** The cleanup system prompt was rewritten around an explicit
+  "when in doubt, under-clean" principle: filler words are removed only when
+  they're true disfluencies (so "like" survives in "it works like a charm"),
+  the model must not summarize/shorten/expand or reorder/reformat your content,
+  and it no longer guesses at possible mishearings or homophones. Spoken
+  self-corrections are resolved only when the follow-up clearly *replaces*
+  something in the same slot ("Tuesday wait no Friday" → "Friday"); a phrase
+  that *adds or narrows* is kept ("send it Tuesday, I mean before noon" keeps
+  both), and "actually" used for emphasis is left alone. The prompt stays
+  byte-for-byte identical across the Python and Swift engines.
+
 ### Fixed
 
 - **Dictation no longer intermittently pastes the text you copied earlier.** The

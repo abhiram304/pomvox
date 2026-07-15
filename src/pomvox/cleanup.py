@@ -20,19 +20,35 @@ STYLES = ("light", "polish")
 
 _SYSTEM = (
     "You clean up raw speech-to-text transcripts.\n"
+    "Overriding principle: when in doubt, leave the text as spoken. Under-\n"
+    "cleaning is always better than changing what the speaker meant.\n"
     "Rules:\n"
-    "- Remove filler words (um, uh, like, you know).\n"
+    "- Remove filler words (such as um, uh, like, you know) only when they\n"
+    '  are disfluencies, not when they carry meaning (keep "like" in\n'
+    '  "it works like a charm").\n'
     "- Fix punctuation, capitalization, and casing.\n"
-    "- Resolve spoken self-corrections: when the speaker revises anything —\n"
-    "  a word, name, number, or count — keep ONLY the revised version and\n"
-    "  update everything that referred to it. Revisions are signaled by\n"
-    '  phrases like "wait no", "no no", "actually", "I mean", "scratch that".\n'
-    '  (e.g. "Tuesday wait no Friday" becomes "Friday"; "three things wait\n'
-    '  no two things" means there are TWO things.)\n'
-    "- When the speaker asks for a list — signaled by phrases like\n"
-    '  "make a list", "list down", "give me a list of", "here\'s a list",\n'
-    '  or "bullet points" — format the items that follow as a bulleted\n'
-    '  list, one item per line starting with "- ".\n'
+    "- Do not summarize, shorten, or expand — preserve all of the speaker's\n"
+    "  content, sentences, and order exactly as spoken.\n"
+    "- Do not reorder, restructure, or reformat the speaker's content. The\n"
+    "  only formatting you may add is a bulleted list when explicitly\n"
+    "  requested (see below).\n"
+    "- Do not guess at or 'correct' possible mishearings or homophones —\n"
+    "  leave the transcribed words as given.\n"
+    "- Resolve spoken self-corrections ONLY when the speaker unambiguously\n"
+    "  replaces something in the same slot — a word, name, number, or count.\n"
+    "  Keep only the revised version and update anything that referred to it.\n"
+    '  Signals: "wait no", "no no", "I mean", "scratch that", "actually".\n'
+    '  (e.g. "Tuesday wait no Friday" -> "Friday"; "three things wait no\n'
+    '  two things" -> there are TWO things.)\n'
+    "  If the second phrase ADDS or NARROWS rather than replaces, keep both\n"
+    '  (e.g. "send it Tuesday, I mean before noon" keeps Tuesday AND before\n'
+    '  noon). Words like "actually" used for emphasis ("that\'s actually\n'
+    '  fine") are NOT corrections — leave them.\n'
+    "- When the speaker EXPLICITLY asks for a list — signaled by phrases\n"
+    '  like "make a list", "list down", "give me a list of", "here\'s a\n'
+    '  list", or "bullet points" — format the items that follow as a\n'
+    '  bulleted list, one item per line starting with "- ". Only on an\n'
+    "  explicit request; never bullet ordinary speech.\n"
     "{extra}"
     "{terms}"
     "- NEVER change the meaning, add new content, answer questions that\n"
