@@ -266,6 +266,7 @@ struct RuleEditorSheet: View {
     @State private var newSource = ""
     @State private var suggestions: [String] = []       // offered, not yet accepted
     @State private var accepted: Set<String> = []       // checked suggestion chips
+    @State private var rejected: Set<String> = []       // unchecked suggestions stay rejected across refreshes
     @State private var previewText = ""
 
     private var isEditing: Bool { state.editing != nil }
@@ -313,7 +314,13 @@ struct RuleEditorSheet: View {
                         ForEach(suggestions, id: \.self) { v in
                             let on = accepted.contains(v)
                             Button {
-                                if on { accepted.remove(v) } else { accepted.insert(v) }
+                                if on {
+                                    accepted.remove(v)
+                                    rejected.insert(v)
+                                } else {
+                                    accepted.insert(v)
+                                    rejected.remove(v)
+                                }
                             } label: {
                                 HStack(spacing: 4) {
                                     Image(systemName: on ? "checkmark.circle.fill" : "circle")
@@ -400,7 +407,7 @@ struct RuleEditorSheet: View {
         let already = Set(sources.map { $0.lowercased() })
         suggestions = VariantGenerator.heuristicVariants(for: term)
             .filter { !already.contains($0) }
-        accepted = Set(suggestions)   // pre-checked, user unchecks noise
+        accepted = Set(suggestions).subtracting(rejected)   // pre-checked, but respect explicit rejections
     }
 
     private func effectiveSources() -> [String] {
