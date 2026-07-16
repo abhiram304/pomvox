@@ -57,6 +57,12 @@ actor CleanupEngine: CleanupCleaning {
     private var preparing = false
     private var prefixCaches: [String: PrefixEntry] = [:]
 
+    /// Whether a hint-triggered prefix-cache rebuild is in flight. Coalesces
+    /// overlapping updateTermsHint calls the way `preparing` coalesces
+    /// prepare(): later calls just set the hint; the in-flight loop notices
+    /// and rebuilds again, so the latest hint always wins.
+    private var rebuildingHint = false
+
     /// Bumped on every successful load. The idle-eviction watchdog snapshots it
     /// before deciding to evict and passes it to `unload(ifGeneration:)`, so a
     /// load that races in after the decision (but before the unload lands on
@@ -78,6 +84,42 @@ actor CleanupEngine: CleanupCleaning {
     /// Set the dictionary prompt hint. Must precede `prepare()`/`buildPrefixCaches`
     /// so the hint rides inside the prefilled prefix.
     func setTermsHint(_ hint: String) { termsHint = hint }
+
+    /// Hot-apply a dictionary words edit: swap the hint and, if the model is
+    /// resident, rebuild the per-style prefix caches so the change takes
+    /// effect on the next utterance — seconds of background prefill instead
+    /// of a full re-arm. When the model isn't loaded this just stores the
+    /// hint; the next prepare() bakes it in.
+    ///
+    /// Reentrancy: the actor suspends inside buildPrefixCaches, so a second
+    /// edit or the idle-eviction unload can interleave. The loop re-checks
+    /// the hint after every rebuild (latest wins), and a load-generation or
+    /// container change mid-rebuild discards the orphaned work — mirroring
+    /// prepare()'s `preparing` + `loadGeneration` guards.
+    func updateTermsHint(_ hint: String) async {
+        guard hint != termsHint else { return }
+        termsHint = hint
+        guard container != nil, !rebuildingHint else { return }
+        rebuildingHint = true
+        defer { rebuildingHint = false }
+        var builtFor: String? = nil
+        while builtFor != termsHint {
+            guard container != nil else { return }   // evicted mid-loop; prepare() rebakes
+            let target = termsHint
+            let generation = loadGeneration
+            prefixCaches = [:]
+            await buildPrefixCaches()
+            if container == nil || loadGeneration != generation {
+                // Unload or a fresh load interleaved: that path owns the
+                // caches now (unload cleared them; prepare rebuilds with the
+                // current hint). Drop our orphaned work.
+                if container == nil { prefixCaches = [:] }
+                return
+            }
+            builtFor = target
+        }
+        NSLog("cleanup: prefix caches rebuilt for new dictionary hint")
+    }
 
     /// Download (first run, ~2.3 GB), load, and warm the model. Idempotent.
     /// Mirrors Python: a load failure leaves the engine unloaded (raw pastes,
@@ -267,6 +309,45 @@ actor CleanupEngine: CleanupCleaning {
             }
             return parts.joined()
         }
+    }
+
+    /// One-shot "what might the STT model write for ⟨term⟩?" generation for
+    /// the rule editor's suggestion chips. Empty (not nil — chips are additive,
+    /// there's no error state to surface) when the model isn't resident — the
+    /// editor's heuristics are the floor and this is opportunistic garnish; it
+    /// must never trigger a 2.3 GB load.
+    func suggestVariants(for term: String, timeoutS: Double = 8.0) async -> [String] {
+        guard let container else { return [] }
+        guard !Task.isCancelled else { return [] }
+        let deadline = CFAbsoluteTimeGetCurrent() + timeoutS
+        let chat: [Chat.Message] = [
+            .system("""
+            You help a dictation app anticipate speech-to-text errors. \
+            Given a word, list up to 5 plausible ways an STT model might \
+            mistranscribe it when spoken aloud. One per line, lowercase, \
+            no explanations, no numbering.
+            """),
+            .user(term),
+        ]
+        let raw: String? = try? await container.perform { context in
+            let lmInput = try await context.processor.prepare(
+                input: UserInput(chat: chat, additionalContext: ["enable_thinking": false]))
+            let tokens = lmInput.text.tokens.asArray(Int.self)
+            let params = GenerateParameters(maxTokens: 80, temperature: 0.0)
+            let stream = try MLXLMCommon.generate(
+                input: LMInput(tokens: MLXArray(tokens.map(Int32.init))),
+                cache: nil, parameters: params, context: context)
+            var parts: [String] = []
+            for await generation in stream {
+                if case .chunk(let piece) = generation {
+                    parts.append(piece)
+                    if CFAbsoluteTimeGetCurrent() > deadline { return parts.joined() }
+                    if Task.isCancelled { return parts.joined() }
+                }
+            }
+            return parts.joined()
+        }
+        return parseVariantLines(raw ?? "", term: term)
     }
 
     /// Tokenize one cleanup request through the model's chat template.

@@ -2,6 +2,14 @@ import ApplicationServices
 import Foundation
 import SwiftUI
 
+extension Notification.Name {
+    /// Posted by DictionaryStore after every save; the engine hot-reloads.
+    static let pomvoxDictionaryDidChange = Notification.Name("app.pomvox.dictionaryDidChange")
+    /// Posted by the engine when a changed words-hint has been re-baked into
+    /// the cleanup prefix caches (drives the page's "applying…" indicator).
+    static let pomvoxDictionaryHintApplied = Notification.Name("app.pomvox.dictionaryHintApplied")
+}
+
 /// The native dictation engine, off by default behind the "Native engine (beta)"
 /// toggle. M5 adds the live UX the Python HUD has: a never-steals-focus NSPanel
 /// HUD with two-tone streaming drafts (incremental re-transcription on a ~1 s
@@ -61,6 +69,10 @@ final class NativeEngine: ObservableObject {
     private let capture = AudioCapture()
     private let transcriber = Transcriber()
     private let cleanup = CleanupEngine()
+
+    /// UI access for the rule editor's variant suggestions — read-only use of
+    /// the actor; `cleanup` is a `let`, so this is safe off the main actor.
+    nonisolated var variantSuggester: CleanupEngine { cleanup }
     private var tap: EventTap?
     private let configPath: String
 
@@ -149,6 +161,11 @@ final class NativeEngine: ObservableObject {
             // The default schedule already runs on the main thread.
             MainActor.assumeIsolated { hud.render(payloads) }
         })
+        NotificationCenter.default.addObserver(
+            forName: .pomvoxDictionaryDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reloadDictionary() }
+        }
     }
 
     var isArmed: Bool {
@@ -654,10 +671,10 @@ final class NativeEngine: ObservableObject {
         historyRetentionDays = doc.int("history", "retention_days") ?? 7
 
         let dictEnabled = doc.bool("dictionary", "enabled") ?? true
-        dictionary = PomvoxDictionary(
-            words: doc.stringArray("dictionary", "words") ?? [],
-            replacements: doc.stringTable("dictionary.replacements").map { ($0.key, $0.value) },
-            enabled: dictEnabled)
+        let loaded = DictionaryLoader.load(
+            configPath: configPath,
+            dictionaryPath: DictionaryPaths.dictionaryPath())
+        dictionary = PomvoxDictionary(file: loaded.file, enabled: dictEnabled)
 
         vadEnabled = doc.bool("vad", "enabled") ?? true
         let detector = EndpointDetector(
@@ -668,6 +685,31 @@ final class NativeEngine: ObservableObject {
         let ep = Endpointer(backend: EnergyGateBackend(), detector: detector,
                             maxSessionS: doc.double("vad", "max_session_s") ?? 600.0)
         vadLock.lock(); endpointer = ep; vadLock.unlock()
+    }
+
+    /// Hot-apply a dictionary edit (posted by DictionaryStore on every save).
+    /// Rules take effect on the next utterance immediately (they run post-
+    /// transcription). A words change re-bakes the cleanup prompt prefix in
+    /// the background; dictation during the rebuild uses the new hint
+    /// uncached (slower that one time, never stale).
+    func reloadDictionary() {
+        let doc = ConfigDocument.load(path: configPath)
+        let dictEnabled = doc.bool("dictionary", "enabled") ?? true
+        let loaded = DictionaryLoader.load(
+            configPath: configPath,
+            dictionaryPath: DictionaryPaths.dictionaryPath())
+        dictionary = PomvoxDictionary(file: loaded.file, enabled: dictEnabled)
+        NSLog("dictionary: hot-reloaded (%d rules)", loaded.file.rules.count)
+        let hint = dictionary.hint
+        if cleanupEnabled, hint != cleanupHint {
+            cleanupHint = hint
+            Task { [cleanup] in
+                await cleanup.updateTermsHint(hint)
+                NotificationCenter.default.post(name: .pomvoxDictionaryHintApplied, object: nil)
+            }
+        } else {
+            NotificationCenter.default.post(name: .pomvoxDictionaryHintApplied, object: nil)
+        }
     }
 
     // MARK: - hotkey path (event-tap thread)
@@ -865,7 +907,8 @@ final class NativeEngine: ObservableObject {
             // Custom-word fixups run last so a misheard proper noun is corrected
             // whether cleanup polished the text, fell back to raw, or is off
             // (mirrors app.py). `final_text` stored in history reflects them.
-            text = dict.apply(text)
+            let applied = dict.applyReporting(text)
+            text = applied.text
             let (appHint, pastedAt): (String?, Double?) = await MainActor.run {
                 guard !text.isEmpty else {
                     let peak = peakDbfs(samples)
@@ -907,6 +950,9 @@ final class NativeEngine: ObservableObject {
                 self.status = .ready
                 return (hint, pastedAt)
             }
+            if !applied.fired.isEmpty {
+                DictionaryStatsStore.shared.record(applied.fired)
+            }
             // Anonymous telemetry, emitted here for the same reason history is —
             // strictly after the paste, off the latency path. Fire-and-forget;
             // a true no-op unless the user opted in. Never any text.
@@ -916,6 +962,7 @@ final class NativeEngine: ObservableObject {
                 props.sttModel = sttModelTelemetryID
                 props.cleanup = doCleanup
                 props.cleanupStatus = cleanupStatus?.rawValue ?? "off"
+                props.dictionaryFired = applied.fired.isEmpty ? nil : applied.fired.count
                 TelemetryClient.shared.emit(.dictationCompleted, props: props)
                 if doCleanup {
                     var used = TelemetryProps()

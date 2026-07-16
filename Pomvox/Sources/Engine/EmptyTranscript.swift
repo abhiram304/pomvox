@@ -42,7 +42,7 @@ enum EmptyTranscriptCause: Equatable {
         case .silentAudio: "mic captured silence — check your input device"
         case .noSpeech: nil
         case .dictionaryWiped:
-            "your replacement rules removed every word — check Settings ▸ Dictionary"
+            "your replacement rules removed every word — check the Dictionary page"
         }
     }
 }

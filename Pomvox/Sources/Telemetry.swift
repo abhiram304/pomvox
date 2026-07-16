@@ -73,6 +73,7 @@ enum TelemetryEventName: String, Sendable {
     case coldStart = "cold_start"
     case error
     case settingChanged = "setting_changed"
+    case dictionaryEdited = "dictionary_edited"
 }
 
 /// The complete set of properties an event may carry. There is deliberately no
@@ -91,6 +92,10 @@ struct TelemetryProps: Equatable, Sendable {
     var aneWarmupMs: Int?
     var cleanupLoadMs: Int?
     var coremlCacheHit: Bool?
+    // `dictation_completed`'s `dictionaryFired` — how many fixup rules fired on
+    // this utterance. A count, not content: no rule text, no source/target
+    // words ride here.
+    var dictionaryFired: Int?
 }
 
 extension TelemetryProps {
@@ -139,6 +144,10 @@ enum TelemetrySanitizer {
         matches(s, "^[a-z0-9_]{1,40}$") ? s : nil
     }
 
+    /// Clamp like `durationMs` — a count is always meaningful, a nonsensical one
+    /// just pins to a bound. 10k is far past any plausible fired-rule count.
+    static func dictionaryFired(_ n: Int) -> Int { max(0, min(n, 10_000)) }
+
     /// Every field validated-or-dropped. Idempotent, so encoding twice is safe.
     static func clean(_ p: TelemetryProps) -> TelemetryProps {
         var out = TelemetryProps()
@@ -154,6 +163,7 @@ enum TelemetrySanitizer {
         if let v = p.aneWarmupMs { out.aneWarmupMs = durationMs(v) }
         if let v = p.cleanupLoadMs { out.cleanupLoadMs = durationMs(v) }
         out.coremlCacheHit = p.coremlCacheHit
+        if let v = p.dictionaryFired { out.dictionaryFired = dictionaryFired(v) }
         return out
     }
 
@@ -196,6 +206,7 @@ enum TelemetryEncoder {
         if let v = p.aneWarmupMs { o["ane_warmup_ms"] = v }
         if let v = p.cleanupLoadMs { o["cleanup_load_ms"] = v }
         if let v = p.coremlCacheHit { o["coreml_cache_hit"] = v }
+        if let v = p.dictionaryFired { o["dictionary_fired"] = v }
         return o
     }
 

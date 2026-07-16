@@ -327,6 +327,13 @@ private struct HotkeysPane: View {
                     KeyPicker(presets: SettingsSchema.cancelPresets, selection: $model.values.cancel)
                 }
             }
+            SettingsGroup("Quick add") {
+                SettingRow(title: "Quick-add to Dictionary",
+                           desc: "e.g. cmd+shift+d — leave empty to disable. Needs at least one modifier.",
+                           restart: true) {
+                    QuickAddHotkeyField(value: $model.values.quickAdd)
+                }
+            }
             let conflicts = SettingsSchema.hotkeyConflicts(choice)
             if !conflicts.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
@@ -718,6 +725,33 @@ private struct ModelField: View {
                 }
                 .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
             }
+            if let error {
+                Text(error).font(Typo.ui(11)).foregroundStyle(Palette.ember)
+            }
+        }
+    }
+}
+
+/// Free-text chord field for `[hotkey] quick_add` — no preset menu (unlike
+/// the other hotkey rows) since any modifier+key combo is valid. Mirrors
+/// ModelField's text-field-plus-inline-error idiom; validity is judged with
+/// the same parser QuickAddController uses, so what's shown as invalid here
+/// is exactly what would be silently disabled at launch.
+private struct QuickAddHotkeyField: View {
+    @Binding var value: String
+    private var error: String? {
+        guard !value.isEmpty, QuickAddHotkey.parse(value) == nil else { return nil }
+        return "Needs at least one modifier (e.g. cmd+shift+d)."
+    }
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 5) {
+            TextField("cmd+shift+d", text: $value)
+                .textFieldStyle(.plain).font(Typo.ui(12.5)).foregroundStyle(Palette.ink)
+                .frame(width: 160)
+                .padding(.horizontal, 9).padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: 7).fill(Palette.pane2))
+                .overlay(RoundedRectangle(cornerRadius: 7)
+                    .stroke(error == nil ? Palette.hair : Palette.ember, lineWidth: error == nil ? 0.5 : 1))
             if let error {
                 Text(error).font(Typo.ui(11)).foregroundStyle(Palette.ember)
             }

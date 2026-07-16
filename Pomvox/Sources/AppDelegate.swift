@@ -13,6 +13,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `applicationDidFinishLaunching`, so a one-shot close isn't enough.
     private var suppressHubWindowUntil = Date.distantPast
 
+    /// Global chord for the quick-add panel (Dictionary v2 Task 12) — a
+    /// separate NSEvent monitor, not the dictation CGEventTap, so it's live
+    /// even when the engine is off.
+    private let quickAdd = QuickAddController()
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         if Self.launchedAsLoginItem() {
             NSLog("pomvox-app: login-item launch — menu bar only")
@@ -20,6 +25,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         watchHubWindowLifecycle()
         bootstrap()
+        quickAdd.start(bindingString:
+            ConfigDocument.load(path: SettingsModel.defaultPath())
+                .string("hotkey", "quick_add") ?? "")
     }
 
     /// Finder/Dock reopen with no visible window: back to Hub posture and let

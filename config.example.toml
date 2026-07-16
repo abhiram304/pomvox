@@ -13,6 +13,8 @@ ptt = "fn"           # hold to talk; use "right_option" if Fn proves flaky
 toggle = "fn+space"  # hands-free: start recording
 stop = ""            # optional extra stop key; fn tap / fn+space always stop
 cancel = "esc"       # discard the utterance (nothing inserts); "" disables
+quick_add = ""       # chord like "cmd+shift+d"; empty = disabled; needs at
+                     # least one modifier; restart required
 
 [stt]
 # Speech model. The native engine loads the matching FluidAudio Parakeet TDT
@@ -77,6 +79,9 @@ sounds = true              # start/stop cues for eyes-off dictation
 
 [dictionary]
 enabled = true
+# v0.2: words + rules now live in ~/.pomvox/dictionary.toml (auto-migrated on
+# first launch; this section is read only if that file doesn't exist).
+# "enabled" here still gates the feature.
 # `words`: proper nouns / jargon the LLM should spell your way. Injected into
 # the cleanup prompt (restart required to change). Example:
 # words = ["Salammagari", "parakeet-mlx", "MLX", "Pomvox"]

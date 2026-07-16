@@ -22,6 +22,7 @@ struct SettingsValues: Equatable {
     var toggle: String
     var stop: String
     var cancel: String
+    var quickAdd: String
     // Voice
     var vadEnabled: Bool
     var vadSilenceMs: Int
@@ -36,7 +37,7 @@ struct SettingsValues: Equatable {
         hudEnabled: true, hudShowDraft: true, hudPosition: "bottom-center", hudSounds: true,
         sttModel: "mlx-community/parakeet-tdt-0.6b-v3",
         cleanupModel: "mlx-community/Qwen3-4B-4bit",
-        ptt: "fn", toggle: "fn+space", stop: "", cancel: "esc",
+        ptt: "fn", toggle: "fn+space", stop: "", cancel: "esc", quickAdd: "",
         vadEnabled: true, vadSilenceMs: 2000, vadAggressiveness: 2, audioDevice: "",
         historyEnabled: true, retentionDays: 7)
 }
@@ -61,6 +62,7 @@ enum SettingsIO {
             toggle: doc.string("hotkey", "toggle") ?? d.toggle,
             stop: doc.string("hotkey", "stop") ?? d.stop,
             cancel: doc.string("hotkey", "cancel") ?? d.cancel,
+            quickAdd: doc.string("hotkey", "quick_add") ?? d.quickAdd,
             vadEnabled: doc.bool("vad", "enabled") ?? d.vadEnabled,
             vadSilenceMs: doc.int("vad", "silence_ms") ?? d.vadSilenceMs,
             vadAggressiveness: doc.int("vad", "aggressiveness") ?? d.vadAggressiveness,
@@ -127,6 +129,7 @@ enum SettingsIO {
         setString("hotkey", "toggle", v.toggle, c?.toggle)
         setString("hotkey", "stop", v.stop, c?.stop)
         setString("hotkey", "cancel", v.cancel, c?.cancel)
+        setString("hotkey", "quick_add", v.quickAdd, c?.quickAdd)
         setBool("vad", "enabled", v.vadEnabled, c?.vadEnabled)
         setInt("vad", "silence_ms", v.vadSilenceMs, c?.vadSilenceMs)
         setInt("vad", "aggressiveness", v.vadAggressiveness, c?.vadAggressiveness)
@@ -182,8 +185,8 @@ final class SettingsModel: ObservableObject {
         var out: [String] = []
         if values.sttModel != saved.sttModel { out.append("STT model") }
         if values.cleanupModel != saved.cleanupModel { out.append("Cleanup model") }
-        if [values.ptt, values.toggle, values.stop, values.cancel]
-            != [saved.ptt, saved.toggle, saved.stop, saved.cancel] { out.append("Hotkeys") }
+        if [values.ptt, values.toggle, values.stop, values.cancel, values.quickAdd]
+            != [saved.ptt, saved.toggle, saved.stop, saved.cancel, saved.quickAdd] { out.append("Hotkeys") }
         if values.audioDevice != saved.audioDevice { out.append("Input device") }
         return out
     }

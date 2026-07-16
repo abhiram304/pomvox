@@ -99,4 +99,85 @@ final class PomvoxDictionaryTests: XCTestCase {
         let d = PomvoxDictionary(words: ["Pomvox"], replacements: [])
         XCTAssertEqual(d.apply("nothing to change here"), "nothing to change here")
     }
+
+    // MARK: - v2: rules, reporting, wipe tidy-up
+
+    private func rule(_ sources: [String], _ target: String,
+                      enabled: Bool = true) -> DictionaryRule {
+        DictionaryRule(sources: sources, target: target, enabled: enabled, origin: "manual")
+    }
+
+    func testManyToOneRuleAllSourcesRewrite() {
+        let d = PomvoxDictionary(file: DictionaryFile(
+            rules: [rule(["pom box", "palm vox"], "Pomvox")]))
+        XCTAssertEqual(d.apply("try pom box and palm vox"), "try Pomvox and Pomvox")
+    }
+
+    func testDisabledRuleIsSkipped() {
+        let d = PomvoxDictionary(file: DictionaryFile(
+            rules: [rule(["pom box"], "Pomvox", enabled: false)]))
+        XCTAssertEqual(d.apply("try pom box"), "try pom box")
+    }
+
+    func testApplyReportingNamesFiredRules() {
+        let r1 = rule(["pom box"], "Pomvox")
+        let r2 = rule(["never heard"], "Nope")
+        let d = PomvoxDictionary(file: DictionaryFile(rules: [r1, r2]))
+        let out = d.applyReporting("open pom box now")
+        XCTAssertEqual(out.text, "open Pomvox now")
+        XCTAssertEqual(out.fired, [r1.id])
+    }
+
+    func testApplyReportingNoMatchesFiresNothing() {
+        let d = PomvoxDictionary(file: DictionaryFile(rules: [rule(["x y"], "XY")]))
+        XCTAssertEqual(d.applyReporting("hello world").fired, [])
+    }
+
+    func testWordsFileInitFeedsHint() {
+        let d = PomvoxDictionary(file: DictionaryFile(words: ["Pomvox"]))
+        XCTAssertTrue(d.hint.contains("Pomvox"))
+    }
+
+    // The v0.1.8 rough edge: wiping a word must not strand its punctuation.
+    func testWipeAbsorbsTrailingCommaAndSpace() {
+        let d = PomvoxDictionary(file: DictionaryFile(rules: [rule(["um"], "")]))
+        XCTAssertEqual(d.apply("well, um, yes"), "well, yes")
+    }
+
+    func testWipeAbsorbsTrailingPeriod() {
+        let d = PomvoxDictionary(file: DictionaryFile(rules: [rule(["um"], "")]))
+        XCTAssertEqual(d.apply("um. next thing"), "next thing")
+    }
+
+    func testWipeMidSentenceCollapsesDoubleSpace() {
+        let d = PomvoxDictionary(file: DictionaryFile(rules: [rule(["um"], "")]))
+        XCTAssertEqual(d.apply("I um think so"), "I think so")
+    }
+
+    func testWipeAtEndTrims() {
+        let d = PomvoxDictionary(file: DictionaryFile(rules: [rule(["um"], "")]))
+        XCTAssertEqual(d.apply("stop it um."), "stop it.")
+    }
+
+    func testNonWipeRuleLeavesPunctuationAlone() {
+        let d = PomvoxDictionary(file: DictionaryFile(rules: [rule(["mur mur"], "Pomvox")]))
+        XCTAssertEqual(d.apply("hi mur mur."), "hi Pomvox.")
+    }
+
+    func testWholeTranscriptWipeStillPossible() {
+        // The wipe contract depends on this producing "" for classification.
+        let d = PomvoxDictionary(file: DictionaryFile(rules: [rule(["um"], "")]))
+        XCTAssertEqual(d.apply("um um um."), "")
+    }
+
+    func testWipeAtEndWithTrailingWhitespaceKeepsPunctuation() {
+        let d = PomvoxDictionary(file: DictionaryFile(rules: [rule(["um"], "")]))
+        XCTAssertEqual(d.apply("stop it um. "), "stop it.")
+        XCTAssertEqual(d.apply("stop it um.\n"), "stop it.")
+    }
+
+    func testWholeTranscriptWipeWithTrailingWhitespace() {
+        let d = PomvoxDictionary(file: DictionaryFile(rules: [rule(["um"], "")]))
+        XCTAssertEqual(d.apply("um um um. "), "")
+    }
 }
