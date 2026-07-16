@@ -56,8 +56,11 @@ PUBKEY="$(sed -n 's/.*SUPublicEDKey: \(.*\)/\1/p' Pomvox/project.yml | tr -d ' "
 echo "  ✓ $TAG (marketing $SHORT, build $BUILD)"
 
 say "EdDSA-signing $ZIP"
+if [ "$DRY_RUN" = "--dry-run" ] && [ -z "${SIGN_KEY_FILE:-}" ]; then
+  die "SIGN_KEY_FILE is required for --dry-run (never the Keychain key)"
+fi
 BIN="$(scripts/sparkle-tools.sh)"
-if [ "$DRY_RUN" = "--dry-run" ] && [ -n "${SIGN_KEY_FILE:-}" ]; then
+if [ "$DRY_RUN" = "--dry-run" ]; then
   SIGN_OUT="$("$BIN/sign_update" --ed-key-file "$SIGN_KEY_FILE" "$ZIP")"
 else
   SIGN_OUT="$("$BIN/sign_update" "$ZIP")"   # key from login Keychain
@@ -73,13 +76,19 @@ git diff --stat -- "$APPCAST"
 
 if [ "$DRY_RUN" = "--dry-run" ]; then
   say "Dry run: verifying signature locally, then rolling back the appcast"
-  [ -n "${SIGN_KEY_FILE:-}" ] && PUBKEY="$(cat "${SIGN_KEY_FILE}.pub" 2>/dev/null || echo "$PUBKEY")"
-  uv run --frozen python3 - "$ZIP" "$SIG" "$PUBKEY" <<'PY'
+  PUBKEY="$(cat "${SIGN_KEY_FILE}.pub" 2>/dev/null || echo "$PUBKEY")"
+  # Roll back the appcast on EVERY dry-run outcome — the verify must not be
+  # able to leave the tree dirty under set -e.
+  if ! uv run --frozen python3 - "$ZIP" "$SIG" "$PUBKEY" <<'PY'
 import sys; sys.path.insert(0, "scripts")
 from make_appcast import verify_signature
 ok = verify_signature(sys.argv[1], sys.argv[2], sys.argv[3])
 print("  ✓ EdDSA signature verifies" if ok else "  ✗ signature does NOT verify"); sys.exit(0 if ok else 1)
 PY
+  then
+    git checkout -- "$APPCAST"
+    die "dry-run signature verification failed (appcast rolled back)"
+  fi
   git checkout -- "$APPCAST"
   say "Dry run complete (no release created, appcast unchanged)"
   exit 0
