@@ -28,6 +28,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         quickAdd.start(bindingString:
             ConfigDocument.load(path: SettingsModel.defaultPath())
                 .string("hotkey", "quick_add") ?? "")
+
+        // In-app updates (M8): headless Sparkle. Inert in Debug builds unless
+        // POMVOX_UPDATE_FEED is set. Relaunch defers to an in-flight dictation.
+        UpdaterModel.shared.isDictationBusy = {
+            switch NativeEngine.shared.status {
+            case .recording, .transcribing: return true
+            default: return false
+            }
+        }
+        UpdaterModel.shared.start()
     }
 
     /// Finder/Dock reopen with no visible window: back to Hub posture and let

@@ -10,6 +10,7 @@ struct PomvoxApp: App {
     @StateObject private var telemetry = TelemetryModel()
     @StateObject private var lowMemCleanup = LowMemoryCleanupModel()
     @ObservedObject private var dictionary: DictionaryStore = .shared
+    @StateObject private var updater = UpdaterModel.shared
 
     var body: some Scene {
         // A single Window (not WindowGroup): the Hub. The AppDelegate keeps it
@@ -23,6 +24,7 @@ struct PomvoxApp: App {
                 .environmentObject(telemetry)
                 .environmentObject(lowMemCleanup)
                 .environmentObject(dictionary)
+                .environmentObject(updater)
                 .frame(minWidth: 920, minHeight: 600)
                 .onAppear { model.reload() }
         }
