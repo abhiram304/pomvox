@@ -10,8 +10,10 @@ hotkey, speak, and the transcript is inserted into whatever text field is
 focused — in any app. Speech-to-text runs on the Neural Engine and an optional
 cleanup pass runs a local LLM on the GPU. **Your voice and transcripts never
 leave your machine.** The only network calls are the one-time model download
-from Hugging Face and — if you choose to share them on first launch — anonymous,
-content-free usage stats (change anytime in Settings → Privacy).
+from Hugging Face, a once-a-day check for app updates (on by default, off
+anytime in Settings → General), and — if you choose to share them on first
+launch — anonymous, content-free usage stats (change anytime in
+Settings → Privacy).
 
 <p align="center">
   <img src="docs/design/hub-real-home.png" width="820"
@@ -168,7 +170,13 @@ isn't negotiable. The cleanup LLM and speech model both run on-device.
 The only network calls Pomvox ever makes are:
 
 1. The one-time model download from Hugging Face.
-2. **Anonymous usage stats — your explicit choice.** Nothing is sent until you
+2. A once-a-day update check — an anonymous fetch of a public version file
+   (`appcast.xml`) from GitHub. On by default so security fixes actually
+   reach people; turn it off any time in **Settings → General**. Updates
+   install only when you click **Update**, and every download must pass
+   EdDSA signature verification and Apple's notarization checks before a
+   byte of it is trusted.
+3. **Anonymous usage stats — your explicit choice.** Nothing is sent until you
    explicitly choose on first launch: a one-time screen offers two equal buttons
    — **Share anonymous stats** or **No thanks** — with no default and no
    pre-checked box, and a `maySend` gate holds all sending until you pick. Change
