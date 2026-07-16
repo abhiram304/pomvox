@@ -7,6 +7,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-07-15
+
 ### Added
 
 - **Dictionary v2: a real editor for words and misheard-term fixups.** A new
@@ -316,7 +318,10 @@ on Apple Silicon, shipping as a signed, notarized `Pomvox.dmg`.
 - **Python reference engine** (`src/pomvox/`) — the original app, now frozen as a
   runnable reference whose pure-logic modules are the cross-checked test spec.
 
-[Unreleased]: https://github.com/abhiram304/pomvox/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/abhiram304/pomvox/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/abhiram304/pomvox/compare/v0.1.10...v0.2.0
+[0.1.10]: https://github.com/abhiram304/pomvox/compare/v0.1.9...v0.1.10
+[0.1.9]: https://github.com/abhiram304/pomvox/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/abhiram304/pomvox/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/abhiram304/pomvox/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/abhiram304/pomvox/compare/v0.1.5...v0.1.6
