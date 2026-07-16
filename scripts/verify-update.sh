@@ -55,8 +55,10 @@ PUB="$("$BIN/generate_keys" --account "$KEYCHAIN_ACCOUNT" -p)"
 
 build_signed() { # $1=short $2=build $3=pubkey $4=outdir
   ( cd Pomvox && xcodegen generate >/dev/null )
+  # ARCHS=arm64: Pomvox is Apple-Silicon-only (mlx has no x86_64 slice, so a
+  # universal build dies in CreateUniversalBinary on Cmlx).
   xcodebuild -project Pomvox/Pomvox.xcodeproj -scheme Pomvox -configuration Release \
-    -derivedDataPath "$DD" -destination 'generic/platform=macOS' \
+    -derivedDataPath "$DD" -destination 'generic/platform=macOS' ARCHS=arm64 \
     MARKETING_VERSION="$1" CURRENT_PROJECT_VERSION="$2" clean build | tail -2
   # Override the public key + feed inside the built app for the rehearsal:
   PL="$DD/Build/Products/Release/Pomvox.app/Contents/Info.plist"
@@ -95,7 +97,9 @@ EOF
 
 say "Installing OLD into $APPDIR and serving the feed"
 rm -rf "$APPDIR/Pomvox.app"; cp -R "$WORK/old/Pomvox.app" "$APPDIR/"
-( cd "$WORK/feed" && python3 -m http.server "$PORT" >/dev/null 2>&1 ) &
+# --directory (not a cd-subshell) so $SERVER is the python PID itself and the
+# cleanup trap actually frees the port.
+python3 -m http.server "$PORT" --directory "$WORK/feed" >/dev/null 2>&1 &
 SERVER=$!
 sleep 1
 
