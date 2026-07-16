@@ -11,6 +11,7 @@ struct HomeView: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    UpdateBanner().padding(.bottom, 20)
                     greeting.padding(.bottom, 26)
 
                     if model.rows.isEmpty {
