@@ -89,6 +89,18 @@ final class UpdaterModelTests: XCTestCase {
                        "The Internet connection appears to be offline.")
     }
 
+    func testManualCheckFlagResetsAtCycleEndSoLaterScheduledFailureStaysSilent() {
+        let m = UpdaterModel()
+        let err = NSError(domain: "x", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "offline"])
+        m.checkNow()                                        // manual check…
+        m.handleUpdateFound(version: "0.1.12", notesURL: nil) { _ in }
+        m.later()                                           // …ends with Later
+        m.noteUpdateCycleFinished()                         // delegate: cycle over
+        m.showUpdaterError(err) {}                          // later SCHEDULED failure
+        XCTAssertEqual(m.state, .idle)                      // must stay silent
+    }
+
     func testScheduledCheckErrorIsSilentButManualCheckErrorShows() {
         let m = UpdaterModel()
         let err = NSError(domain: "x", code: 1,

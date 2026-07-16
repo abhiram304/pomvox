@@ -119,6 +119,15 @@ final class UpdaterModel: NSObject, ObservableObject {
         lastCheckDate = date
     }
 
+    /// End of a Sparkle update cycle (delegate seam; tests drive it directly).
+    /// Resets the manual-check flag: a cycle that ends via update-found →
+    /// Later never hits the error/not-found callbacks, and a sticky flag
+    /// would misclassify the NEXT scheduled failure as user-initiated.
+    func noteUpdateCycleFinished(date: Date = Date()) {
+        noteCheckCompleted(date: date)
+        userInitiatedCheck = false
+    }
+
     static func lastCheckedLabel(_ date: Date?, now: Date = Date()) -> String {
         guard let date else { return "Never checked" }
         let f = RelativeDateTimeFormatter()
@@ -259,6 +268,6 @@ extension UpdaterModel: SPUUpdaterDelegate {
 
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck,
                  error: Error?) {
-        DispatchQueue.main.async { self.noteCheckCompleted() }
+        DispatchQueue.main.async { self.noteUpdateCycleFinished() }
     }
 }
