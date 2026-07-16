@@ -102,7 +102,7 @@ final class NativeEngine: ObservableObject {
     private var coldFirstInference = true
     // STT model id, snapshotted at arm() for the (anonymous) dictation_completed
     // telemetry event — the basename only ever reaches the wire.
-    private var sttModelID = "mlx-community/parakeet-tdt-0.6b-v3"
+    private var sttModelID = "mlx-community/parakeet-tdt-0.6b-v2"
     // The resolved FluidAudio model the loader actually uses, from [stt] model.
     // Falls back to the shipped default when config names no wired model.
     private var sttModel = SttModel.default
@@ -617,7 +617,7 @@ final class NativeEngine: ObservableObject {
             maxChars: doc.int("hud", "max_chars") ?? 120)
         hud.prepare()
 
-        sttModelID = doc.string("stt", "model") ?? "mlx-community/parakeet-tdt-0.6b-v3"
+        sttModelID = doc.string("stt", "model") ?? "mlx-community/parakeet-tdt-0.6b-v2"
         sttModel = SttModel.resolve(sttModelID)
         if SttModel.parse(sttModelID) == nil {
             NSLog("pomvox-engine: unrecognized [stt] model %@ — using %@",

@@ -18,9 +18,10 @@ quick_add = ""       # chord like "cmd+shift+d"; empty = disabled; needs at
 
 [stt]
 # Speech model. The native engine loads the matching FluidAudio Parakeet TDT
-# 0.6b weights on the Neural Engine; "…-v3" (default) or "…-v2" are supported,
-# and an unrecognized value falls back to v3. Restart required to change.
-model = "mlx-community/parakeet-tdt-0.6b-v3"
+# 0.6b weights on the Neural Engine; "…-v2" (English-only, the default) or
+# "…-v3" (multilingual) are supported, and an unrecognized value falls back
+# to v2. Restart required to change.
+model = "mlx-community/parakeet-tdt-0.6b-v2"
 
 [cleanup]
 # LLM cleanup adds ~2.3 GB while armed. On a fresh install on a low-memory Mac

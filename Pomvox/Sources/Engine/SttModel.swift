@@ -7,16 +7,18 @@ import Foundation
 /// Python engine, which hands the same string to `parakeet-mlx`. The FluidAudio
 /// bridge (`fluidVersion`) is the only part that touches the loader enum.
 ///
-/// Only the English Parakeet TDT 0.6b family is wired today — the ANE fast path
-/// M0 proved (Transcriber). An empty or unrecognized string resolves to
-/// `.default` (the shipped v3), so a typo in config.toml degrades to "works
-/// with the default model" instead of failing to arm.
+/// Only the Parakeet TDT 0.6b family is wired today — the ANE fast path M0
+/// proved (Transcriber). v2 is English-only and the shipped default (the
+/// multilingual v3 transcribes English less accurately, #92); v3 remains
+/// selectable for multilingual dictation. An empty or unrecognized string
+/// resolves to `.default`, so a typo in config.toml degrades to "works with
+/// the default model" instead of failing to arm.
 enum SttModel: String, CaseIterable, Sendable {
     case parakeetV2
     case parakeetV3
 
-    /// The safe fallback: the shipped default model.
-    static let `default` = SttModel.parakeetV3
+    /// The safe fallback: the shipped default model (English-only v2).
+    static let `default` = SttModel.parakeetV2
 
     /// Resolve a `[stt] model` value to a known model, or `nil` when it names
     /// no wired model (caller falls back to `.default`). Matching is on the

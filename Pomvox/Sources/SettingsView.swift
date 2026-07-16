@@ -284,7 +284,7 @@ private struct ModelsPane: View {
                                value: $model.values.sttModel, error: model.errors["stt.model"])
                 }
             }
-            PaneNote("The native engine runs Parakeet v2 or v3 on the Neural Engine; any other id falls back to v3.")
+            PaneNote("The native engine runs Parakeet v2 (English, the default) or v3 (multilingual) on the Neural Engine; any other id falls back to v2.")
             SettingsGroup("Cleanup model") {
                 SettingRow(title: "Model", restart: true) {
                     ModelField(presets: SettingsSchema.cleanupModelPresets,
