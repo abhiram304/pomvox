@@ -248,10 +248,14 @@ extension UpdaterModel: SPUUserDriver {
     func showUpdateInFocus() {}
 
     func dismissUpdateInstallation() {
-        // End of a Sparkle session. Keep an unactioned banner and any error
-        // visible; clear only transient states (checking / upToDate).
+        // End of a Sparkle session. Keep an unactioned banner, any error, and
+        // .upToDate visible — Sparkle fires this one main-queue turn after
+        // showUpdateNotFoundWithError, so clearing .upToDate here would erase
+        // "You're up to date." before Settings ever renders it. It only shows
+        // next to the last-checked time and is overwritten by the next event
+        // anyway. Only .checking is transient enough to clear on session end.
         switch state {
-        case .checking, .upToDate: apply(.dismissed)
+        case .checking: apply(.dismissed)
         default: break
         }
     }

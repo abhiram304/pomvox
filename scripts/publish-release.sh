@@ -41,6 +41,10 @@ SHORT="${TAG#v}"
 say() { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
+if [ -n "$DRY_RUN" ] && [ "$DRY_RUN" != "--dry-run" ]; then
+  die "unknown argument: $DRY_RUN (expected --dry-run)"
+fi
+
 say "Preconditions"
 if [ "$DRY_RUN" != "--dry-run" ]; then
   [ "$(git branch --show-current)" = "main" ] || die "not on main"
