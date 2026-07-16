@@ -56,9 +56,13 @@ if wavs.isEmpty { fail("no WAVs in \(fixturesDir) — run native/scripts/make-fi
 
 var report: [String: Any] = [:]
 
-// --- Batch: AsrManager (Parakeet TDT 0.6b v3 on ANE) ---
+// --- Batch: AsrManager (Parakeet TDT 0.6b on ANE) ---
+// POMVOX_BENCH_STT=v2|v3 selects the model; default v2, the shipped default
+// (#92). Running both over the same fixtures gives an accuracy A/B.
+let benchVersion: AsrModelVersion =
+    ProcessInfo.processInfo.environment["POMVOX_BENCH_STT"] == "v3" ? .v3 : .v2
 let tLoad = now()
-let models = try await AsrModels.downloadAndLoad(version: .v3)
+let models = try await AsrModels.downloadAndLoad(version: benchVersion)
 let asr = AsrManager(config: .default)
 try await asr.loadModels(models)
 let loadS = now() - tLoad
