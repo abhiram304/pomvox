@@ -79,6 +79,34 @@ def test_validate_rejects_malformed_xml_and_missing_signature():
     assert m.validate(unsigned) != []
 
 
+def test_first_item_indentation_matches_later_items():
+    # The empty-feed splice must indent the first item exactly like the ones
+    # insert_item later prepends — the feed is committed and served as-is.
+    one = m.insert_item(EMPTY, make_item(build=9, short="0.1.11"))
+    two = m.insert_item(one, make_item(build=10, short="0.1.12"))
+    assert two.count("\n    <item>") == 2
+
+
+def test_cli_rejects_duplicate_build_cleanly(tmp_path):
+    # A duplicate build must exit 1 with the "appcast INVALID" message, not a
+    # raw Python traceback.
+    import subprocess
+    script = Path(__file__).resolve().parent.parent / "scripts" / "make_appcast.py"
+    appcast = tmp_path / "appcast.xml"
+    appcast.write_text(EMPTY)
+    payload = tmp_path / "Pomvox.zip"
+    payload.write_bytes(b"bytes")
+    cmd = [sys.executable, str(script), "--appcast", str(appcast),
+           "--zip", str(payload), "--tag", "v0.1.11", "--short-version", "0.1.11",
+           "--build", "9", "--signature", "c2ln", "--write"]
+    first = subprocess.run(cmd, capture_output=True, text=True)
+    assert first.returncode == 0
+    second = subprocess.run(cmd, capture_output=True, text=True)
+    assert second.returncode == 1
+    assert "appcast INVALID" in second.stderr
+    assert "Traceback" not in second.stderr
+
+
 def test_verify_signature_roundtrip(tmp_path):
     nacl = pytest.importorskip("nacl.signing")
     payload = tmp_path / "Pomvox.zip"

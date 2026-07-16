@@ -60,7 +60,7 @@ def insert_item(appcast_text: str, item_text: str) -> str:
             f"({max(existing)}) — duplicates and downgrades are refused")
     if "<item>" in appcast_text:
         return appcast_text.replace("    <item>", item_text + "\n    <item>", 1)
-    return appcast_text.replace("</channel>", item_text + "\n  </channel>", 1)
+    return appcast_text.replace("  </channel>", item_text + "\n  </channel>", 1)
 
 
 def validate(appcast_text: str) -> list[str]:
@@ -125,7 +125,11 @@ def main() -> int:
     from pathlib import Path
     length = Path(args.zip).stat().st_size
     item = appcast_item(args.short_version, args.build, args.tag, length, args.signature)
-    updated = insert_item(Path(args.appcast).read_text(), item)
+    try:
+        updated = insert_item(Path(args.appcast).read_text(), item)
+    except ValueError as e:
+        print(f"appcast INVALID: {e}", file=sys.stderr)
+        return 1
     problems = validate(updated)
     if problems:
         for problem in problems:
