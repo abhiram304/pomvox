@@ -117,5 +117,6 @@ final class UpdaterModelTests: XCTestCase {
         let label = Bundle.main.pomvoxVersionLabel
         XCTAssertTrue(label.hasPrefix("Pomvox "), label)
         XCTAssertTrue(label.contains("("), label)
+        XCTAssertFalse(label.contains("?"), label)  // real values, not the "?" fallback
     }
 }
