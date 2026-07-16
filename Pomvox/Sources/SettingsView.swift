@@ -333,7 +333,7 @@ private struct UpdatesGroup: View {
 }
 
 extension Bundle {
-    /// "Pomvox 0.1.11 (9)" — marketing version + monotonic build.
+    /// "Pomvox 0.2.0 (9)" — marketing version + monotonic build.
     var pomvoxVersionLabel: String {
         let v = infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         let b = infoDictionary?["CFBundleVersion"] as? String ?? "?"

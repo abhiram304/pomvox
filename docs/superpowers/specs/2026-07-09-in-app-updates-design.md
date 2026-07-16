@@ -200,7 +200,7 @@ All failures render as inline UI; never a popup.
 Run the extended release script against a **draft** GitHub release + branch
 appcast; point a local build's feed override at the branch raw URL; confirm a
 real over-the-wire update from the GitHub CDN. Then the first real release
-pair validates end-to-end: v0.1.10 ships the updater; v0.1.11 is the first
+pair validates end-to-end: v0.2.0 ships the updater; v0.2.1 is the first
 version delivered by it.
 
 ## Risks

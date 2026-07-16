@@ -20,7 +20,7 @@
 - Commits: conventional commits (`feat(updater): …`), subject ≤ 72 chars, GPG signing is automatic, end body with `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
 - Spec contracts that MUST hold: **never a popup, never any stock Sparkle window** — Sparkle runs headless behind our `SPUUserDriver`; install happens **only on user click**; Debug builds are completely inert (no checks, no UI) unless `POMVOX_UPDATE_FEED` is set; production startup calls `clearFeedURLFromUserDefaults()`; relaunch waits for in-flight dictation; bundle ID `app.pomvox.hub` and team `CT84AT52RS` never change in an update (TCC continuity).
 - Info.plist keys (exact values, from the spec): `SUFeedURL=https://raw.githubusercontent.com/abhiram304/pomvox/main/appcast.xml`, `SUPublicEDKey=<generated>`, `SUEnableAutomaticChecks=YES`, `SUAutomaticallyUpdate=NO`, `SUScheduledCheckInterval=86400`, `SUVerifyUpdateBeforeExtraction=YES`, `SUEnableJavaScript=NO`.
-- Versioning: `sparkle:version` = `CURRENT_PROJECT_VERSION` (monotonic build number — MUST bump every release), `sparkle:shortVersionString` = `MARKETING_VERSION`. The updater ships in the next tagged release (v0.1.11); the first update *delivered through it* is v0.1.12.
+- Versioning: `sparkle:version` = `CURRENT_PROJECT_VERSION` (monotonic build number — MUST bump every release), `sparkle:shortVersionString` = `MARKETING_VERSION`. The updater ships in the next tagged release (v0.2.0 — the version-jump call is the maintainer's); the first update *delivered through it* is the release after (v0.2.1).
 - NEVER run `scripts/publish-release.sh`, `gh release create`, or push `appcast.xml` changes during implementation — releasing is a human step after the plan completes.
 - New user-facing copy says **Pomvox** (never Murmur/Natter/Sparkle — the engine name is an implementation detail; error copy says "couldn't be verified", not "EdDSA failure").
 
@@ -1710,7 +1710,7 @@ git commit -m "docs: disclose the daily update check as a sanctioned network cal
 
 1. Back up the EdDSA private key offline + as the `SPARKLE_ED_PRIVATE_KEY` GH secret (Task 1 checkpoint).
 2. Run `scripts/verify-update.sh` + the spec's edge-case matrix on-device (Task 9 note). TCC re-grant once after the first Release-build install — known per-install behavior.
-3. Bump `MARKETING_VERSION` to `0.1.11` and `CURRENT_PROJECT_VERSION` to `9` in `Pomvox/project.yml`; tag and run `scripts/notarize-release.sh`, then `scripts/publish-release.sh v0.1.11`.
+3. Bump `MARKETING_VERSION` to `0.2.0` and `CURRENT_PROJECT_VERSION` to `9` in `Pomvox/project.yml`; tag and run `scripts/notarize-release.sh`, then `scripts/publish-release.sh v0.2.0`.
 4. Bump the Homebrew cask with `auto_updates true` + `:sparkle` livecheck (printed by publish-release.sh).
-5. v0.1.12 is the first release delivered *through* the updater — the real end-to-end proof.
+5. v0.2.1 is the first release delivered *through* the updater — the real end-to-end proof.
 6. Update the wiki (Spec/ADR status → shipped; lessons note) after the release.
