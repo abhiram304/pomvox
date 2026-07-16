@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.sparkle-project.org/xml/rss/1.0/modules/sparkle">
+  <channel>
+    <title>Pomvox</title>
+    <link>https://github.com/abhiram304/pomvox</link>
+    <description>Pomvox release feed</description>
+    <language>en</language>
+  </channel>
+</rss>
