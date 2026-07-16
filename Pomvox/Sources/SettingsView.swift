@@ -161,6 +161,9 @@ private struct GeneralPane: View {
                     SettingToggle(isOn: $model.values.hudSounds, label: "Sounds")
                 }
             }
+            if UpdaterModel.isEnabled {
+                UpdatesGroup()
+            }
         }
     }
 }
@@ -271,6 +274,70 @@ private struct LoginItemGroup: View {
         .onReceive(NotificationCenter.default.publisher(
             for: NSApplication.didBecomeActiveNotification)
         ) { _ in loginItem.refresh() }  // System Settings can revoke it behind us
+    }
+}
+
+// MARK: - updates (M8)
+
+private struct UpdatesGroup: View {
+    @EnvironmentObject var updater: UpdaterModel
+
+    var body: some View {
+        SettingsGroup("Updates") {
+            SettingRow(title: "Automatically check for updates",
+                       desc: "Once a day, Pomvox fetches a public version file from GitHub. "
+                           + "Nothing about you or your dictations is sent.") {
+                SettingToggle(isOn: Binding(
+                    get: { updater.automaticallyChecksForUpdates },
+                    set: { updater.automaticallyChecksForUpdates = $0 }))
+            }
+            RowDivider()
+            SettingRow(title: "Check for updates",
+                       desc: UpdaterModel.lastCheckedLabel(updater.lastCheckDate)) {
+                Button("Check Now") { updater.checkNow() }
+                    .disabled(updater.state == .checking)
+            }
+            if let status = statusLine {
+                RowDivider()
+                InfoRow(symbol: statusSymbol, text: status)
+            }
+            if case .error = updater.state {
+                // Spec error contract: a failed/unverifiable update always
+                // leaves a manual path open.
+                RowDivider()
+                SettingRow(title: "Download manually",
+                           desc: "Get the latest release from GitHub.") {
+                    Link("Releases", destination:
+                        URL(string: "https://github.com/abhiram304/pomvox/releases")!)
+                }
+            }
+            RowDivider()
+            InfoRow(symbol: "app.badge", text: Bundle.main.pomvoxVersionLabel)
+        }
+    }
+
+    /// Inline feedback for a manual check — never a popup.
+    private var statusLine: String? {
+        switch updater.state {
+        case .checking:            "Checking…"
+        case .upToDate:            "You're up to date."
+        case let .error(message):  message
+        default:                   nil
+        }
+    }
+
+    private var statusSymbol: String {
+        if case .error = updater.state { "exclamationmark.triangle.fill" }
+        else { "checkmark.circle" }
+    }
+}
+
+extension Bundle {
+    /// "Pomvox 0.1.11 (9)" — marketing version + monotonic build.
+    var pomvoxVersionLabel: String {
+        let v = infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let b = infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        return "Pomvox \(v) (\(b))"
     }
 }
 

@@ -111,4 +111,11 @@ final class UpdaterModelTests: XCTestCase {
         m.showUpdaterError(err) {}
         XCTAssertEqual(m.state, .error(message: "offline"))
     }
+
+    func testPomvoxVersionLabelHasVersionAndBuild() {
+        // Test bundle → falls back to its own plist values; shape is what matters.
+        let label = Bundle.main.pomvoxVersionLabel
+        XCTAssertTrue(label.hasPrefix("Pomvox "), label)
+        XCTAssertTrue(label.contains("("), label)
+    }
 }
