@@ -32,7 +32,14 @@
 set -euo pipefail
 
 say() { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
-die() { printf '\n\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
+# die() exits via `exit 1` (EXIT, not ERR), so ERR traps never see it — the
+# APPCAST_ROLLBACK sentinel makes die() itself undo an uncommitted splice
+# (R3: e.g. the enclosure poll timing out AFTER the appcast was rewritten).
+APPCAST_ROLLBACK=0
+die() {
+  [ "${APPCAST_ROLLBACK:-0}" = "1" ] && git checkout -- "$APPCAST" 2>/dev/null || true
+  printf '\n\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1
+}
 
 TAG="${1:-}"; [ -n "$TAG" ] || { echo "usage: $0 vX.Y.Z [--dry-run]" >&2; exit 2; }
 # Finding 6: a malformed tag propagates into the appcast's enclosure URL and
@@ -92,7 +99,9 @@ if [ "$DRY_RUN" != "--dry-run" ]; then
   # Finding 5: from here through the appcast commit, anything that dies
   # (network blip, gh failure, etc.) must not leave a modified-but-uncommitted
   # appcast.xml sitting in the working tree — roll it back and re-raise.
+  # ERR covers unchecked failures; APPCAST_ROLLBACK covers die() paths (R3).
   trap 'git checkout -- "$APPCAST" 2>/dev/null || true' ERR
+  APPCAST_ROLLBACK=1
 fi
 
 say "Building + validating the appcast item"
@@ -153,6 +162,7 @@ say "Committing the appcast LAST"
 git add "$APPCAST"
 git commit -m "release: appcast entry for $TAG"
 trap - ERR   # appcast is committed now — nothing left in the working tree to roll back
+APPCAST_ROLLBACK=0
 git push origin main
 
 say "Done — now bump the Homebrew cask (see header)."

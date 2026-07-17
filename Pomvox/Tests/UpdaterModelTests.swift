@@ -113,7 +113,7 @@ final class UpdaterModelTests: XCTestCase {
         m.checkNow()                                        // manual check…
         m.handleUpdateFound(version: "0.1.12", notesURL: nil) { _ in }
         m.later()                                           // …ends with Later
-        m.noteUpdateCycleFinished(succeeded: true)          // delegate: cycle over
+        m.noteUpdateCycleFinished(sparkleDate: Date())      // delegate: cycle over
         m.showUpdaterError(err) {}                          // later SCHEDULED failure
         XCTAssertEqual(m.state, .idle)                      // must stay silent
     }
@@ -132,19 +132,40 @@ final class UpdaterModelTests: XCTestCase {
         XCTAssertEqual(m.state, .error(message: "offline"))
     }
 
-    // Finding 10: lastCheckDate must only be stamped when a cycle actually
-    // succeeds — a failed cycle stamping "just checked" is misleading.
-    func testFailedUpdateCycleLeavesLastCheckDateNil() {
+    // R1 (re-review): cycle end mirrors Sparkle's OWN persisted check date —
+    // Sparkle reports the everyday "no update found" as a non-nil SUNoUpdateError,
+    // so an error==nil success test would leave "Last checked" frozen forever.
+    // A cycle where Sparkle recorded no date (never actually checked) stamps
+    // nothing.
+    func testCycleEndWithoutASparkleDateLeavesLastCheckDateNil() {
         let m = UpdaterModel()
         XCTAssertNil(m.lastCheckDate)
-        m.noteUpdateCycleFinished(succeeded: false)
+        m.noteUpdateCycleFinished(sparkleDate: nil)
         XCTAssertNil(m.lastCheckDate)
     }
 
-    func testSucceededUpdateCycleStampsLastCheckDate() {
+    func testCycleEndMirrorsSparkleOwnCheckDate() {
         let m = UpdaterModel()
-        m.noteUpdateCycleFinished(succeeded: true)
-        XCTAssertNotNil(m.lastCheckDate)
+        let stamped = Date(timeIntervalSinceNow: -60)
+        m.noteUpdateCycleFinished(sparkleDate: stamped)
+        XCTAssertEqual(m.lastCheckDate, stamped)
+    }
+
+    /// R2 (re-review): an armed resume must die with the cycle that failed to
+    /// find the update (e.g. the maintainer yanked the release) — otherwise a
+    /// FUTURE scheduled check's update-found auto-installs with zero clicks.
+    func testNotFoundClearsResumeFlagSoNextFoundWaitsForAClick() {
+        let m = UpdaterModel()
+        var replies: [UpdateChoice] = []
+        m.handleUpdateFound(version: "0.1.12", notesURL: nil) { replies.append($0) }
+        m.dismissUpdateInstallation()
+        m.install()                 // arms the resume flag (dead session)
+        m.showUpdateNotFoundWithError(
+            NSError(domain: "SUSparkleErrorDomain", code: 1001), acknowledgement: {})
+        replies.removeAll()
+        m.handleUpdateFound(version: "0.1.13", notesURL: nil) { replies.append($0) }
+        XCTAssertTrue(replies.isEmpty,
+                      "not-found must clear the armed resume — no zero-click installs")
     }
 
     func testUpToDateSurvivesSessionDismissal() {

@@ -176,14 +176,18 @@ final class UpdaterModel: NSObject, ObservableObject {
     /// Resets the manual-check flag unconditionally: a cycle that ends via
     /// update-found → Later never hits the error/not-found callbacks, and a
     /// sticky flag would misclassify the NEXT scheduled failure as
-    /// user-initiated. Finding 10: lastCheckDate is only stamped when the
-    /// cycle actually succeeded — stamping "just checked" on a failure is
-    /// misleading (showUpdateNotFoundWithError already stamps it separately).
-    func noteUpdateCycleFinished(succeeded: Bool, date: Date = Date()) {
-        if succeeded {
-            noteCheckCompleted(date: date)
+    /// user-initiated. R1: "last checked" mirrors Sparkle's OWN persisted
+    /// check date — Sparkle ends the everyday no-update cycle with a non-nil
+    /// SUNoUpdateError, so classifying by `error == nil` would freeze the
+    /// label forever; a cycle where Sparkle recorded no date stamps nothing.
+    /// R2: an armed resume dies with its cycle — it must never leak into a
+    /// future update-found (that would be a zero-click install).
+    func noteUpdateCycleFinished(sparkleDate: Date?) {
+        if let sparkleDate {
+            noteCheckCompleted(date: sparkleDate)
         }
         userInitiatedCheck = false
+        installOnNextFound = false
     }
 
     static func lastCheckedLabel(_ date: Date?, now: Date = Date()) -> String {
@@ -246,6 +250,9 @@ extension UpdaterModel: SPUUserDriver {
         apply(.noUpdateFound)
         noteCheckCompleted()
         userInitiatedCheck = false
+        // R2: the advertised update is gone (e.g. release yanked) — a resume
+        // armed against it must not auto-install a future, unseen version.
+        installOnNextFound = false
         acknowledgement()
     }
 
@@ -346,7 +353,10 @@ extension UpdaterModel: SPUUpdaterDelegate {
 
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck,
                  error: Error?) {
-        let succeeded = error == nil
-        DispatchQueue.main.async { self.noteUpdateCycleFinished(succeeded: succeeded) }
+        // Sparkle's lastUpdateCheckDate is the source of truth: it advances
+        // whenever a check actually ran, including the everyday no-update
+        // cycle that Sparkle reports as a non-nil SUNoUpdateError (R1).
+        let sparkleDate = updater.lastUpdateCheckDate
+        DispatchQueue.main.async { self.noteUpdateCycleFinished(sparkleDate: sparkleDate) }
     }
 }
