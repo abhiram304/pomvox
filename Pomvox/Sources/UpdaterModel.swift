@@ -25,6 +25,14 @@ final class UpdaterModel: NSObject, ObservableObject {
     private var userInitiatedCheck = false
     private var expectedLength: UInt64 = 0
     private var receivedLength: UInt64 = 0
+    /// The relaunch-gate poll Timer from `handleReadyToRelaunch`, kept so a
+    /// session-ending `dismissUpdateInstallation()` can invalidate it — else it
+    /// keeps polling a dead session and force-installs behind the user's back.
+    private var relaunchTimer: Timer?
+    /// Armed when `install()` is clicked against a dead Sparkle session (see
+    /// `dismissUpdateInstallation()`): the next `handleUpdateFound` auto-replies
+    /// `.install` instead of waiting for a second click.
+    private var installOnNextFound = false
 
     /// Release builds: always on. Debug builds: only with POMVOX_UPDATE_FEED
     /// set (state-machine debugging) — otherwise fully inert: no scheduled
@@ -37,8 +45,19 @@ final class UpdaterModel: NSObject, ObservableObject {
         #endif
     }
 
+    /// Test/rig-only escape hatch: POMVOX_UPDATE_FEED overrides the Info.plist
+    /// SUFeedURL, but ONLY when the URL parses and points at loopback
+    /// (localhost / 127.0.0.1 / ::1). Sparkle does not verify appcast-version-
+    /// vs-bundle-version, only decorate errors — so letting an arbitrary env
+    /// var redirect a Release build to any host would be a signed-downgrade
+    /// vector. Anything non-loopback, or unparsable, returns nil and Sparkle
+    /// falls back to the pinned production feed.
     static func feedOverride(env: [String: String] = ProcessInfo.processInfo.environment) -> String? {
-        env["POMVOX_UPDATE_FEED"]
+        guard let raw = env["POMVOX_UPDATE_FEED"],
+              let host = URL(string: raw)?.host,
+              ["localhost", "127.0.0.1", "::1"].contains(host)
+        else { return nil }
+        return raw
     }
 
     /// Maps straight onto Sparkle's persisted setting (SUEnableAutomaticChecks
@@ -69,15 +88,41 @@ final class UpdaterModel: NSObject, ObservableObject {
     }
 
     func checkNow() {
-        userInitiatedCheck = true
+        // Finding 8: don't arm the manual-check flag here — Sparkle may ignore
+        // this call outright (e.g. a check already in flight), and an armed
+        // flag with no corresponding cycle would misclassify the NEXT
+        // scheduled failure as user-initiated. showUserInitiatedUpdateCheck()
+        // arms it, and Sparkle calls that exactly when a user cycle starts.
         updater?.checkForUpdates()
     }
 
     // MARK: - user actions (Home banner / Settings)
 
-    func install() { respond(.install) }
-    func later()   { respond(.dismiss); apply(.dismissed) }
-    func skip()    { respond(.skip);    apply(.dismissed) }
+    func install() {
+        // Finding 1+7: dismissUpdateInstallation() can nil the reply while
+        // keeping an .updateAvailable banner up (the Sparkle session died,
+        // e.g. the user cancelled the admin-auth prompt). Clicking Update
+        // against that dead session must not no-op: kick a fresh check and
+        // auto-reply .install as soon as it reports the update again.
+        if updateReply == nil, case .updateAvailable = state {
+            installOnNextFound = true
+            updater?.checkForUpdates()
+            return
+        }
+        respond(.install)
+    }
+
+    func later() {
+        installOnNextFound = false
+        respond(.dismiss)
+        apply(.dismissed)
+    }
+
+    func skip() {
+        installOnNextFound = false
+        respond(.skip)
+        apply(.dismissed)
+    }
 
     private func respond(_ choice: UpdateChoice) {
         updateReply?(choice)
@@ -94,6 +139,13 @@ final class UpdaterModel: NSObject, ObservableObject {
                            reply: @escaping (UpdateChoice) -> Void) {
         updateReply = reply
         apply(.updateFound(version: version, releaseNotesURL: notesURL))
+        // Finding 1+7: a resume requested against a dead session (install()
+        // while updateReply was nil) completes here, on the fresh check's
+        // update-found — no second click needed.
+        if installOnNextFound {
+            installOnNextFound = false
+            respond(.install)
+        }
     }
 
     /// Sparkle is ready to swap bundles and relaunch. The user already clicked
@@ -105,10 +157,11 @@ final class UpdaterModel: NSObject, ObservableObject {
             reply(.install)
             return
         }
-        Timer.scheduledTimer(withTimeInterval: relaunchPollInterval, repeats: true) { [weak self] timer in
+        relaunchTimer = Timer.scheduledTimer(withTimeInterval: relaunchPollInterval, repeats: true) { [weak self] timer in
             guard let self else { timer.invalidate(); return }
             if !self.isDictationBusy() {
                 timer.invalidate()
+                self.relaunchTimer = nil
                 self.apply(.installStarted)
                 reply(.install)
             }
@@ -120,11 +173,16 @@ final class UpdaterModel: NSObject, ObservableObject {
     }
 
     /// End of a Sparkle update cycle (delegate seam; tests drive it directly).
-    /// Resets the manual-check flag: a cycle that ends via update-found →
-    /// Later never hits the error/not-found callbacks, and a sticky flag
-    /// would misclassify the NEXT scheduled failure as user-initiated.
-    func noteUpdateCycleFinished(date: Date = Date()) {
-        noteCheckCompleted(date: date)
+    /// Resets the manual-check flag unconditionally: a cycle that ends via
+    /// update-found → Later never hits the error/not-found callbacks, and a
+    /// sticky flag would misclassify the NEXT scheduled failure as
+    /// user-initiated. Finding 10: lastCheckDate is only stamped when the
+    /// cycle actually succeeded — stamping "just checked" on a failure is
+    /// misleading (showUpdateNotFoundWithError already stamps it separately).
+    func noteUpdateCycleFinished(succeeded: Bool, date: Date = Date()) {
+        if succeeded {
+            noteCheckCompleted(date: date)
+        }
         userInitiatedCheck = false
     }
 
@@ -202,6 +260,7 @@ extension UpdaterModel: SPUUserDriver {
             apply(.dismissed)
         }
         userInitiatedCheck = false
+        installOnNextFound = false   // a resume attempt that ends in error stays not-armed
         acknowledgement()
     }
 
@@ -248,15 +307,30 @@ extension UpdaterModel: SPUUserDriver {
     func showUpdateInFocus() {}
 
     func dismissUpdateInstallation() {
-        // End of a Sparkle session. Keep an unactioned banner, any error, and
-        // .upToDate visible — Sparkle fires this one main-queue turn after
+        // End of a Sparkle session. Keep any error and .upToDate visible —
+        // Sparkle fires this one main-queue turn after
         // showUpdateNotFoundWithError, so clearing .upToDate here would erase
         // "You're up to date." before Settings ever renders it. It only shows
         // next to the last-checked time and is overwritten by the next event
-        // anyway. Only .checking is transient enough to clear on session end.
+        // anyway.
+        //
+        // Finding 1+7: Sparkle calls ONLY this method (no error callback) when
+        // the user cancels the macOS admin-auth prompt mid-install. Every
+        // state between "checking" and "installing" renders no buttons of its
+        // own, so leaving them alone here would strand a spinner banner
+        // forever. .updateAvailable is the one exception: the banner (with
+        // its Update/Later/Skip buttons) stays up rather than silently
+        // dropping a known update, but the dead reply closure is nil'd so a
+        // stale Update click can't no-op (see install()'s resume path).
         switch state {
-        case .checking: apply(.dismissed)
-        default: break
+        case .checking, .downloading, .extracting, .readyToRelaunch, .installing:
+            relaunchTimer?.invalidate()
+            relaunchTimer = nil
+            apply(.dismissed)
+        case .updateAvailable:
+            updateReply = nil
+        case .error, .upToDate, .idle:
+            break
         }
     }
 }
@@ -272,6 +346,7 @@ extension UpdaterModel: SPUUpdaterDelegate {
 
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck,
                  error: Error?) {
-        DispatchQueue.main.async { self.noteUpdateCycleFinished() }
+        let succeeded = error == nil
+        DispatchQueue.main.async { self.noteUpdateCycleFinished(succeeded: succeeded) }
     }
 }

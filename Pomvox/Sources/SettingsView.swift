@@ -295,7 +295,7 @@ private struct UpdatesGroup: View {
             SettingRow(title: "Check for updates",
                        desc: UpdaterModel.lastCheckedLabel(updater.lastCheckDate)) {
                 Button("Check Now") { updater.checkNow() }
-                    .disabled(updater.state == .checking)
+                    .disabled(updater.state == .checking || updater.state.showsBanner)
             }
             if let status = statusLine {
                 RowDivider()
