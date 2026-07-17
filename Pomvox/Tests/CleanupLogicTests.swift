@@ -214,4 +214,94 @@ final class CleanupLogicTests: XCTestCase {
         let bullets = (example ?? "").split(separator: "\n").filter { $0.hasPrefix("- ") }.count
         XCTAssertGreaterThanOrEqual(bullets, 3)
     }
+
+    // MARK: - substituted / answered outputs (on-device regressions, 2026-07-16)
+
+    func testRejectAnsweredQuestion() {
+        // "Should I test manually one by one?" pasted as "Yes, test manually
+        // one by one." — the model answered the question instead of cleaning it.
+        XCTAssertNil(CleanupLogic.acceptOutput(
+            raw: "Should I test manually one by one?",
+            cleaned: "Yes, test manually one by one."))
+    }
+
+    func testAcceptQuestionCleanedAsQuestion() {
+        XCTAssertEqual(
+            CleanupLogic.acceptOutput(
+                raw: "um should I test manually one by one?",
+                cleaned: "Should I test manually one by one?"),
+            "Should I test manually one by one?")
+    }
+
+    func testAcceptQuestionMarkMovedButKept() {
+        // Cleanup may restructure punctuation as long as the question survives.
+        XCTAssertNotNil(CleanupLogic.acceptOutput(
+            raw: "is it done? the build done?", cleaned: "Is it done? The build done?"))
+    }
+
+    func testRejectShortRawSubstitution() {
+        // "Go ahead." pasted as "Okay." — a full rewrite sharing no words with
+        // what was spoken. Short raws skip the length floor, so without a
+        // word-overlap check they had no guard at all.
+        XCTAssertNil(CleanupLogic.acceptOutput(raw: "Go ahead.", cleaned: "Okay."))
+    }
+
+    func testAcceptShortRawSharingAWord() {
+        XCTAssertEqual(CleanupLogic.acceptOutput(raw: "go ahead", cleaned: "Go ahead."), "Go ahead.")
+    }
+
+    func testAcceptShortRawFillerRemoved() {
+        XCTAssertEqual(CleanupLogic.acceptOutput(raw: "um yes", cleaned: "Yes."), "Yes.")
+    }
+
+    func testFewShotIncludesQuestionPassthroughExample() {
+        let msgs = CleanupLogic.buildMessages(text: "x", style: "polish")
+        var pairs: [(String, String)] = []
+        var i = 1
+        while i < msgs.count - 1 {
+            pairs.append((msgs[i].content, msgs[i + 1].content))
+            i += 2
+        }
+        // at least one modelled answer keeps a spoken question a question
+        XCTAssertTrue(pairs.contains { $0.1.hasSuffix("?") })
+    }
+
+    func testFewShotListExamplesVaryHeader() {
+        // Two list examples with different headers, so the model derives the
+        // header from the input instead of parroting a single example's
+        // ("Things to pack:" showed up on a dictated shopping list on-device).
+        let msgs = CleanupLogic.buildMessages(text: "x", style: "polish")
+        var pairs: [(String, String)] = []
+        var i = 1
+        while i < msgs.count - 1 {
+            pairs.append((msgs[i].content, msgs[i + 1].content))
+            i += 2
+        }
+        let headers = Set(pairs.compactMap { pair -> String? in
+            let lines = pair.1.split(separator: "\n")
+            guard lines.contains(where: { $0.hasPrefix("- ") }) else { return nil }
+            return lines.first.map(String.init)
+        })
+        XCTAssertGreaterThanOrEqual(headers.count, 2)
+    }
+
+    func testRejectUnrequestedBullets() {
+        // With two list few-shots in the prompt the model started bulleting tiny
+        // non-list inputs ("Go ahead." -> "- Go ahead."). Bullets are only valid
+        // when the speaker asked for a list — and every trigger phrase the prompt
+        // names contains "list" or "bullet".
+        XCTAssertNil(CleanupLogic.acceptOutput(raw: "Go ahead.", cleaned: "- Go ahead."))
+        XCTAssertNil(CleanupLogic.acceptOutput(
+            raw: "we need mangoes and grapes", cleaned: "- Mangoes\n- Grapes"))
+    }
+
+    func testAcceptRequestedBullets() {
+        XCTAssertEqual(
+            CleanupLogic.acceptOutput(
+                raw: "make a list of groceries mangoes and grapes", cleaned: "- Mangoes\n- Grapes"),
+            "- Mangoes\n- Grapes")
+        XCTAssertNotNil(CleanupLogic.acceptOutput(
+            raw: "let's create a shopping list mangoes oranges avocados",
+            cleaned: "Shopping list:\n- Mangoes\n- Oranges\n- Avocados"))
+    }
 }
