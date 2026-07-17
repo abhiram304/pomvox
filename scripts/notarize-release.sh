@@ -67,12 +67,15 @@ say "Generating project"
 ( cd "$PROJ_DIR" && xcodegen generate >/dev/null )
 
 say "Building Release"
+# ARCHS=arm64: Pomvox is Apple-Silicon-only — a universal build dies in
+# CreateUniversalBinary on mlx's Cmlx target (no x86_64 slice).
 xcodebuild \
   -project "$PROJ_DIR/Pomvox.xcodeproj" \
   -scheme Pomvox \
   -configuration Release \
   -derivedDataPath "$DD" \
   -destination 'generic/platform=macOS' \
+  ARCHS=arm64 \
   clean build | tail -5
 
 [ -d "$APP" ] || die "Build did not produce $APP"
