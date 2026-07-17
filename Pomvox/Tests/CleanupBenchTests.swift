@@ -99,4 +99,44 @@ final class CleanupBenchTests: XCTestCase {
         XCTAssertEqual(out, utterance, "a timeout must paste the raw transcript, never lose it")
         await engine.unload()
     }
+
+    /// Regression (on-device history 2026-07-16: 16 of 60 dictations pasted raw,
+    /// every one after a >5 min idle gap): a dictation right after idle eviction
+    /// must get CLEANED text. Mirrors NativeEngine's ordering exactly — finish()
+    /// fires ensureCleanupLoaded (fire-and-forget prepare) and the utterance's
+    /// cleanup runs immediately, racing the reload. clean() must wait out the
+    /// in-flight load within the utterance deadline, and the prefilled prompt
+    /// prefixes must survive eviction so the wait is the ~1 s weight reload,
+    /// not a ~10 s re-prefill of both styles.
+    func testPostEvictionCleanWaitsForReload() async throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["POMVOX_LLM_BENCH"] == "1",
+            "set TEST_RUNNER_POMVOX_LLM_BENCH=1 to run the cleanup LLM acceptance")
+
+        let engine = CleanupEngine()
+        await engine.prepare(modelID: "mlx-community/Qwen3-4B-4bit")
+        let loaded = await engine.isLoaded
+        try XCTSkipUnless(loaded, "model failed to load — see the cleanup: NSLogs")
+
+        let text = Self.fixtures[0].text
+        let (warm, warmStatus) = await runCleanup(engine, text: text, style: "light", timeoutS: 30.0)
+        XCTAssertEqual(warmStatus, .ok)
+
+        await engine.unload()
+        // The reload is fire-and-forget, exactly like ensureCleanupLoaded…
+        let reload = Task { await engine.prepare(modelID: "mlx-community/Qwen3-4B-4bit") }
+        // …and this utterance's cleanup races it (12.5 s = the on-device config
+        // that still pasted raw; the default 5 s must fit once caches survive).
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let (out, status) = await runCleanup(engine, text: text, style: "light", timeoutS: 12.5)
+        let elapsed = CFAbsoluteTimeGetCurrent() - t0
+        _ = await reload.value
+        print(String(format: "bench post-evict clean: %.2fs status=%@", elapsed, status.rawValue))
+        XCTAssertEqual(status, .ok, "post-eviction dictation pasted raw (took \(elapsed)s)")
+        XCTAssertEqual(out, warm, "greedy decode with the retained prefix must reproduce the warm output")
+        XCTAssertLessThan(
+            elapsed, 10.0,
+            "the reload must reuse the retained prefix caches (~1 s weights), not re-prefill (~10 s)")
+        await engine.unload()
+    }
 }
