@@ -80,6 +80,26 @@ xcodebuild \
 
 [ -d "$APP" ] || die "Build did not produce $APP"
 
+# ── Re-sign embedded Sparkle (M8) ────────────────────────────────────────────
+# Xcode copies Sparkle's prebuilt nested executables (Autoupdate, Updater.app,
+# the two XPC services) with Sparkle's own signatures — no Developer ID, no
+# secure timestamp — and Apple's notary rejects every one of them. Re-sign
+# inside-out with our identity (preserving Sparkle's entitlements, which the
+# sandboxed Downloader.xpc needs), then reseal the framework and the app.
+SPARKLE_FW="$APP/Contents/Frameworks/Sparkle.framework"
+if [ -d "$SPARKLE_FW" ]; then
+  say "Re-signing embedded Sparkle (Developer ID + runtime + timestamp)"
+  resign() { codesign --force --sign "Developer ID Application" --options runtime \
+               --timestamp --preserve-metadata=entitlements "$1"; }
+  resign "$SPARKLE_FW/Versions/B/XPCServices/Downloader.xpc"
+  resign "$SPARKLE_FW/Versions/B/XPCServices/Installer.xpc"
+  resign "$SPARKLE_FW/Versions/B/Updater.app"
+  resign "$SPARKLE_FW/Versions/B/Autoupdate"
+  resign "$SPARKLE_FW"
+  codesign --force --sign "Developer ID Application" --options runtime --timestamp \
+    --entitlements "$PROJ_DIR/Pomvox.entitlements" "$APP"
+fi
+
 # ── Verify the signature before we waste a notary round-trip ─────────────────
 say "Verifying signature + hardened runtime"
 codesign --verify --deep --strict --verbose=2 "$APP"
@@ -93,8 +113,10 @@ say "Zipping for notarization"
 /usr/bin/ditto -c -k --keepParent "$APP" "$ZIP"
 
 say "Submitting to Apple notary (this can take a few minutes)"
-xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait \
-  || die "Notarization failed. Inspect the log:
+# notarytool --wait can exit 0 with status "Invalid" — gate on Accepted, not $?.
+NOTARY_OUT="$(xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait 2>&1 | tee /dev/stderr)" || true
+echo "$NOTARY_OUT" | grep -q "status: Accepted" \
+  || die "Notarization was not Accepted. Inspect the log:
      xcrun notarytool log <submission-id> --keychain-profile $NOTARY_PROFILE"
 
 # ── Staple + repackage the stapled app ───────────────────────────────────────
@@ -127,8 +149,9 @@ say "Signing the DMG (Developer ID)"
 codesign --force --timestamp --sign "Developer ID Application" "$DMG"
 
 say "Notarizing the DMG (another few minutes)"
-xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait \
-  || die "DMG notarization failed. Inspect the log:
+NOTARY_OUT="$(xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait 2>&1 | tee /dev/stderr)" || true
+echo "$NOTARY_OUT" | grep -q "status: Accepted" \
+  || die "DMG notarization was not Accepted. Inspect the log:
      xcrun notarytool log <submission-id> --keychain-profile $NOTARY_PROFILE"
 
 say "Stapling the DMG"
