@@ -38,4 +38,38 @@ enum CleanupResidency {
     static func checkIntervalS(idleEvictS: Double) -> Double {
         max(5.0, min(60.0, idleEvictS / 5.0))
     }
+
+    /// How long `clean()` waits for a reload to *begin* when none is marked
+    /// in-flight yet: the key-up fires the reload as a detached task, so the
+    /// utterance's cleanup can reach the engine actor before `prepare()` does.
+    /// Short, so a genuinely failed/absent load still falls back fast.
+    static let loadStartGraceS: Double = 0.25
+
+    /// Whether a per-utterance `clean()` should keep waiting for an in-flight
+    /// background reload instead of giving up and pasting raw.
+    ///
+    /// The post-eviction dictation races the fire-and-forget reload that its
+    /// own key-up triggered (`ensureCleanupLoaded`): bailing the moment the
+    /// container is nil pasted raw after every idle gap longer than
+    /// `idleEvictS` (on-device history 2026-07-16: 16 of 60 dictations).
+    /// Waiting is bounded by the utterance's own cleanup deadline, so the
+    /// never-lose-words fallback is unchanged — just not taken prematurely.
+    /// `entered` is when this clean() started: within `loadStartGraceS` of it,
+    /// wait even if no load is marked in-flight yet (see above).
+    static func shouldAwaitLoad(
+        loaded: Bool, loading: Bool, now: Double, deadline: Double, entered: Double
+    ) -> Bool {
+        guard !loaded, now < deadline else { return false }
+        return loading || now < entered + loadStartGraceS
+    }
+}
+
+/// Identity of the prompt-prefix KV caches: valid for exactly one (model,
+/// dictionary-hint) pair. The caches are pure K/V tensors (~100 MB) derived
+/// from the prompt bytes, so they survive idle eviction of the ~2.3 GB
+/// weights and stay valid across a reload of the SAME model — a mismatch on
+/// either field means the next `prepare()` must re-prefill.
+struct PrefixCacheKey: Equatable {
+    let modelID: String
+    let hint: String
 }
