@@ -7,9 +7,24 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
-## [0.2.0] — 2026-07-15
+## [0.2.0] — 2026-07-16
 
 ### Added
+
+- **In-app updates — one click instead of uninstall/reinstall.** Pomvox now
+  checks GitHub once a day (at launch + every 24 h) for new versions — a plain
+  anonymous fetch of a public `appcast.xml`; nothing about you is sent. When
+  an update exists, a quiet banner appears on Home (Update / Later / Skip
+  this version, with a release-notes link) — never a popup. Updates install
+  **only when you click Update**: the download is EdDSA-signature-verified and
+  Apple-notarization-checked *before extraction*, the app swaps itself in
+  place and relaunches (waiting out any in-flight dictation), and because the
+  update is signed by the same Developer ID, your microphone / Input
+  Monitoring / Accessibility grants survive — no re-granting. Settings ▸
+  General gains the "Automatically check for updates" toggle (on by default,
+  disclosed in the README), a visible "last checked" time, and **Check Now**.
+  Powered by Sparkle 2, fully headless. Installs of v0.1.10 and earlier need
+  one final manual download of this release; updates flow in-app from here on.
 
 - **Dictionary v2: a real editor for words and misheard-term fixups.** A new
   **Dictionary** page in the Hub replaces the old config-file-only workflow:
@@ -35,6 +50,14 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   words if cleanup is off or fails.
 
 ### Changed
+
+- **The default speech model is English-only again (`parakeet-tdt-0.6b-v2`).**
+  The multilingual v3 that had become the default transcribes English
+  noticeably less accurately; v2 is back as the shipped default and the
+  fallback for unrecognized `[stt] model` values. The multilingual v3 stays
+  one setting away (Settings ▸ Models). If you never set `stt.model`, the v2
+  weights (~1.2 GB) download on the next arm; an explicitly configured model
+  is left alone.
 
 - **Cleanup is now more conservative — it leans toward leaving your words as
   spoken.** The cleanup system prompt was rewritten around an explicit
