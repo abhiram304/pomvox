@@ -5,5 +5,15 @@
     <link>https://github.com/abhiram304/pomvox</link>
     <description>Pomvox release feed</description>
     <language>en</language>
+    <item>
+      <title>Version 0.2.0</title>
+      <pubDate>Fri, 17 Jul 2026 03:37:27 +0000</pubDate>
+      <sparkle:version>9</sparkle:version>
+      <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/abhiram304/pomvox/releases/tag/v0.2.0</sparkle:releaseNotesLink>
+      <enclosure url="https://github.com/abhiram304/pomvox/releases/download/v0.2.0/Pomvox.zip" length="14628983"
+                 type="application/octet-stream" sparkle:edSignature="1BA4tg3pGqRYJSiszhycXfxHglwVmvd0kU57fRpYG1iksoxpAGNt7QODC31vQBWV4lX5PWRgo+cj72lpn2LwCA=="/>
+    </item>
   </channel>
 </rss>
