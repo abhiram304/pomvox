@@ -7,11 +7,11 @@ import XCTest
 final class SttModelTests: XCTestCase {
 
     func testResolvesTheShippedDefaultRepoID() {
-        XCTAssertEqual(SttModel.parse("mlx-community/parakeet-tdt-0.6b-v3"), .parakeetV3)
+        XCTAssertEqual(SttModel.parse("mlx-community/parakeet-tdt-0.6b-v2"), .parakeetV2)
     }
 
-    func testResolvesTheV2RepoID() {
-        XCTAssertEqual(SttModel.parse("mlx-community/parakeet-tdt-0.6b-v2"), .parakeetV2)
+    func testResolvesTheMultilingualV3RepoID() {
+        XCTAssertEqual(SttModel.parse("mlx-community/parakeet-tdt-0.6b-v3"), .parakeetV3)
     }
 
     func testResolvesABareVersionName() {
@@ -33,7 +33,9 @@ final class SttModelTests: XCTestCase {
     func testResolveNeverFailsAndFallsBackToDefault() {
         XCTAssertEqual(SttModel.resolve(""), .default)
         XCTAssertEqual(SttModel.resolve("something-unknown"), .default)
-        XCTAssertEqual(SttModel.default, .parakeetV3)
+        // English-only v2 is the shipped default — the multilingual v3
+        // transcribes English less accurately (#92).
+        XCTAssertEqual(SttModel.default, .parakeetV2)
     }
 
     func testFluidVersionBridge() {

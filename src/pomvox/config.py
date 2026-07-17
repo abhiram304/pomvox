@@ -34,7 +34,7 @@ class HotkeyConfig:
 
 @dataclass(frozen=True)
 class SttConfig:
-    model: str = "mlx-community/parakeet-tdt-0.6b-v3"
+    model: str = "mlx-community/parakeet-tdt-0.6b-v2"
 
 
 @dataclass(frozen=True)

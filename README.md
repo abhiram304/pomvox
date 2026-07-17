@@ -102,7 +102,7 @@ open ~/Applications/Pomvox.app
    key to" → **Do Nothing**, otherwise macOS intercepts Fn before Pomvox sees
    it.
 3. **Enable the engine.** Settings → *Native engine* → on. It arms the hotkey,
-   loads the speech model (first run downloads parakeet-tdt-0.6b-v3, ~1.2 GB),
+   loads the speech model (first run downloads parakeet-tdt-0.6b-v2, ~1.2 GB),
    and is ready in a second or two.
 4. **(Optional) Launch at login.** Settings → General → *Launch at login*.
    Pomvox then comes up in the menu bar at login, already armed — zero clicks

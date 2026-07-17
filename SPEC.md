@@ -103,7 +103,8 @@ A never-steals-focus **HUD** shows recording state and the live draft; the
 **Native app (`Pomvox/`, the daily driver)** — Swift + SwiftUI, macOS 14+:
 
 - **STT:** [FluidAudio](https://github.com/FluidInference/FluidAudio) running
-  Parakeet TDT (`mlx-community/parakeet-tdt-0.6b-v3`) as CoreML on the Neural
+  Parakeet TDT (`mlx-community/parakeet-tdt-0.6b-v2`, English-only; the
+  multilingual `…-v3` is selectable via `[stt] model`) as CoreML on the Neural
   Engine.
 - **Cleanup LLM:** [mlx-swift](https://github.com/ml-explore/mlx-swift) running a
   small 4-bit instruct model (default Qwen3-4B-4bit) on the GPU. Model ids are

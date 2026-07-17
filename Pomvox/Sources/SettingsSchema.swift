@@ -43,8 +43,8 @@ enum SettingsSchema {
     // Curated suggestions only — the field stays free text so any MLX model id
     // works (open-source-first; never lock out an arbitrary id).
     static let sttModelPresets = [
-        "mlx-community/parakeet-tdt-0.6b-v3",
         "mlx-community/parakeet-tdt-0.6b-v2",
+        "mlx-community/parakeet-tdt-0.6b-v3",
     ]
     static let cleanupModelPresets = [
         "mlx-community/Qwen3-4B-4bit",

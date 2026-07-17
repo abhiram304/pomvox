@@ -68,7 +68,8 @@ they are not redistributed in this repository or the app bundle. Each model
 carries its own license on its Hugging Face model card — review the card for the
 specific model you configure. Defaults at the time of writing:
 
-- **Speech-to-text:** `parakeet-tdt-0.6b-v3` (NVIDIA Parakeet family), via FluidAudio.
+- **Speech-to-text:** `parakeet-tdt-0.6b-v2` (NVIDIA Parakeet family; the optional
+  multilingual `parakeet-tdt-0.6b-v3` is the same family/license), via FluidAudio.
 - **Cleanup LLM:** a small instruction-tuned model run locally via mlx-swift; see
   `config.example.toml` for the default and how to swap it.
 
