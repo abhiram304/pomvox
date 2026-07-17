@@ -6,6 +6,13 @@ import XCTest
 /// can't be unit-tested, so `Paster.deliver` takes them as injected closures +
 /// flag; this exercises the clipboard staging, restore-guard, and no-focus
 /// fallback against a real (named, off-general) pasteboard.
+///
+/// The restore is consumption-keyed (issue #82's recurrence): the transcript's
+/// string flavor is staged through a data provider, so `deliver` can tell
+/// whether the paste target has actually READ it. Tests drive the injected
+/// scheduler by hand: `schedule` records (delay, body) pairs, and reading the
+/// pasteboard from the test IS the consumption signal (same-process promises
+/// resolve synchronously).
 final class PasterTests: XCTestCase {
 
     private func freshPasteboard() -> NSPasteboard {
@@ -14,34 +21,47 @@ final class PasterTests: XCTestCase {
         return pb
     }
 
+    /// Captures scheduled restore steps so tests fire them deterministically.
+    private final class FakeScheduler {
+        var steps: [(delay: Double, body: () -> Void)] = []
+        func schedule(_ delay: Double, _ body: @escaping () -> Void) {
+            steps.append((delay, body))
+        }
+        /// Run the next pending step (as if its timer fired).
+        func fire() {
+            guard !steps.isEmpty else { return XCTFail("no scheduled step to fire") }
+            steps.removeFirst().body()
+        }
+    }
+
     func testFocusedFieldStagesTextThenRestoresPriorClipboard() {
         let pb = freshPasteboard()
-        pb.clearContents(); pb.setString("old", forType: .string)
+        pb.setString("old", forType: .string)
+        let scheduler = FakeScheduler()
 
         var synthesized = false
-        var restore: (() -> Void)?
         let outcome = Paster.deliver("dictated", to: pb, focusedAcceptsText: true,
                                      synthesizePaste: { synthesized = true },
-                                     scheduleRestore: { restore = $0 })
+                                     schedule: scheduler.schedule)
 
         XCTAssertEqual(outcome, .pasted)
         XCTAssertTrue(synthesized)
-        XCTAssertEqual(pb.string(forType: .string), "dictated")  // staged for the ⌘V
-        restore?()                                               // the delayed restore fires
+        XCTAssertEqual(pb.string(forType: .string), "dictated")  // staged for the ⌘V (and read now)
+        scheduler.fire()                                         // the checkpoint fires
         XCTAssertEqual(pb.string(forType: .string), "old")       // prior clipboard back
     }
 
     func testNoFocusLeavesTranscriptOnClipboardInsteadOfLosingIt() {
         let pb = freshPasteboard()
-        pb.clearContents(); pb.setString("old", forType: .string)
+        pb.setString("old", forType: .string)
+        let scheduler = FakeScheduler()
 
-        var restoreScheduled = false
         let outcome = Paster.deliver("dictated", to: pb, focusedAcceptsText: false,
                                      synthesizePaste: {},
-                                     scheduleRestore: { _ in restoreScheduled = true })
+                                     schedule: scheduler.schedule)
 
         XCTAssertEqual(outcome, .copiedToClipboard)
-        XCTAssertFalse(restoreScheduled)                         // no restore → keep it
+        XCTAssertTrue(scheduler.steps.isEmpty)                   // no restore → keep it
         XCTAssertEqual(pb.string(forType: .string), "dictated")  // recoverable, not lost
     }
 
@@ -52,18 +72,56 @@ final class PasterTests: XCTestCase {
     /// race — a *longer* delay stays safe (it only widens the recovery window).
     func testRestoreDelayIsGenerousEnoughToOutlastASlowPaste() {
         XCTAssertGreaterThanOrEqual(Paster.restoreDelay, 0.5)
+        XCTAssertGreaterThan(Paster.unreadRestoreDelay, Paster.restoreDelay)
     }
 
     func testRestoreYieldsToARealUserCopyDuringTheDelay() {
         let pb = freshPasteboard()
-        pb.clearContents(); pb.setString("old", forType: .string)
+        pb.setString("old", forType: .string)
+        let scheduler = FakeScheduler()
 
-        var restore: (() -> Void)?
         _ = Paster.deliver("dictated", to: pb, focusedAcceptsText: true,
-                           synthesizePaste: {}, scheduleRestore: { restore = $0 })
-        pb.clearContents(); pb.setString("user copied this", forType: .string)  // real copy lands
-        restore?()
+                           synthesizePaste: {}, schedule: scheduler.schedule)
+        XCTAssertEqual(pb.string(forType: .string), "dictated")  // consumed by the paste…
+        pb.clearContents(); pb.setString("user copied this", forType: .string)  // …then a real copy lands
+        scheduler.fire()
         XCTAssertEqual(pb.string(forType: .string), "user copied this")  // user copy wins
+    }
+
+    // MARK: - consumption-keyed restore (the fixed timer raced slow apps, #82)
+
+    func testUnreadTranscriptDefersRestoreToTheLongFallback() {
+        // The target app hasn't processed the ⌘V by the 0.5 s checkpoint (busy
+        // Electron, app mid-launch). Restoring now would make its eventual
+        // paste insert the PRIOR clipboard — the "pasted what I didn't say"
+        // bug. The checkpoint must reschedule to the long fallback instead.
+        let pb = freshPasteboard()
+        pb.setString("old", forType: .string)
+        let scheduler = FakeScheduler()
+
+        _ = Paster.deliver("dictated", to: pb, focusedAcceptsText: true,
+                           synthesizePaste: {}, schedule: scheduler.schedule)
+        XCTAssertEqual(scheduler.steps.first?.delay, Paster.restoreDelay)
+        scheduler.fire()                                          // checkpoint: nothing read yet
+        // Not restored — the slow app can still read the transcript…
+        XCTAssertEqual(pb.string(forType: .string), "dictated")
+        // …and a fallback step was scheduled to eventually give the clipboard back.
+        XCTAssertEqual(scheduler.steps.count, 1)
+        scheduler.fire()
+        XCTAssertEqual(pb.string(forType: .string), "old")
+    }
+
+    func testSlowReadBetweenCheckpointAndFallbackStillGetsTheTranscript() {
+        let pb = freshPasteboard()
+        pb.setString("old", forType: .string)
+        let scheduler = FakeScheduler()
+
+        _ = Paster.deliver("dictated", to: pb, focusedAcceptsText: true,
+                           synthesizePaste: {}, schedule: scheduler.schedule)
+        scheduler.fire()                                          // checkpoint: unread → defer
+        XCTAssertEqual(pb.string(forType: .string), "dictated")   // slow app reads at ~2 s
+        scheduler.fire()                                          // fallback restores afterwards
+        XCTAssertEqual(pb.string(forType: .string), "old")
     }
 
     // MARK: - full-fidelity restore (a dictation must not eat the clipboard)
@@ -75,14 +133,14 @@ final class PasterTests: XCTestCase {
         let pb = freshPasteboard()
         let png = Data([0x89, 0x50, 0x4E, 0x47])  // magic bytes stand in for a real image
         pb.setData(png, forType: .png)
+        let scheduler = FakeScheduler()
 
-        var restore: (() -> Void)?
         let outcome = Paster.deliver("dictated", to: pb, focusedAcceptsText: true,
-                                     synthesizePaste: {}, scheduleRestore: { restore = $0 })
+                                     synthesizePaste: {}, schedule: scheduler.schedule)
 
         XCTAssertEqual(outcome, .pasted)
         XCTAssertEqual(pb.string(forType: .string), "dictated")  // staged for the ⌘V
-        restore?()
+        scheduler.fire()
         XCTAssertEqual(pb.data(forType: .png), png)              // the image is back
         XCTAssertNil(pb.string(forType: .string))                // and only the image
     }
@@ -95,11 +153,12 @@ final class PasterTests: XCTestCase {
         item.setString("hello", forType: .string)
         item.setString("<b>hello</b>", forType: .html)
         pb.writeObjects([item])
+        let scheduler = FakeScheduler()
 
-        var restore: (() -> Void)?
         _ = Paster.deliver("dictated", to: pb, focusedAcceptsText: true,
-                           synthesizePaste: {}, scheduleRestore: { restore = $0 })
-        restore?()
+                           synthesizePaste: {}, schedule: scheduler.schedule)
+        XCTAssertEqual(pb.string(forType: .string), "dictated")
+        scheduler.fire()
         XCTAssertEqual(pb.string(forType: .string), "hello")
         XCTAssertEqual(pb.string(forType: .html), "<b>hello</b>")
     }
@@ -108,11 +167,12 @@ final class PasterTests: XCTestCase {
         // Nothing to restore: keep the transcript recoverable instead of
         // clearing the clipboard (the pre-existing empty-clipboard behavior).
         let pb = freshPasteboard()
+        let scheduler = FakeScheduler()
 
-        var restore: (() -> Void)?
         _ = Paster.deliver("dictated", to: pb, focusedAcceptsText: true,
-                           synthesizePaste: {}, scheduleRestore: { restore = $0 })
-        restore?()
+                           synthesizePaste: {}, schedule: scheduler.schedule)
+        XCTAssertEqual(pb.string(forType: .string), "dictated")
+        scheduler.fire()
         XCTAssertEqual(pb.string(forType: .string), "dictated")
     }
 }
