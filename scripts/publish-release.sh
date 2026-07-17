@@ -31,15 +31,18 @@
 #   - Never rotate the Developer ID cert and the EdDSA key in the same release.
 set -euo pipefail
 
+say() { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
+die() { printf '\n\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
+
 TAG="${1:-}"; [ -n "$TAG" ] || { echo "usage: $0 vX.Y.Z [--dry-run]" >&2; exit 2; }
+# Finding 6: a malformed tag propagates into the appcast's enclosure URL and
+# release-notes link — cheap to reject up front.
+[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "tag must look like vX.Y.Z"
 DRY_RUN="${2:-}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 ZIP="dist/Pomvox.zip"; DMG="dist/Pomvox.dmg"; APPCAST="appcast.xml"
 SHORT="${TAG#v}"
-
-say() { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
-die() { printf '\n\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
 if [ -n "$DRY_RUN" ] && [ "$DRY_RUN" != "--dry-run" ]; then
   die "unknown argument: $DRY_RUN (expected --dry-run)"
@@ -57,6 +60,18 @@ BUILD="$(sed -n 's/.*CURRENT_PROJECT_VERSION: "\([0-9]*\)".*/\1/p' Pomvox/projec
 [ -n "$BUILD" ] || die "could not read CURRENT_PROJECT_VERSION"
 PUBKEY="$(sed -n 's/.*SUPublicEDKey: \(.*\)/\1/p' Pomvox/project.yml | tr -d ' "')"
 [ -n "$PUBKEY" ] || die "could not read SUPublicEDKey from project.yml"
+
+# Finding 3: Sparkle does NOT verify appcast-version-vs-bundle-version — it
+# only decorates errors — so a stale dist/Pomvox.zip (e.g. forgot to re-run
+# notarize-release.sh after bumping project.yml) would ship a fleet-wide
+# update loop: every client re-downloads the "new" version forever. Real
+# path only — the --dry-run fixture zip isn't a real app bundle.
+if [ "$DRY_RUN" != "--dry-run" ]; then
+  ZVER="$(unzip -p "$ZIP" 'Pomvox.app/Contents/Info.plist' | plutil -extract CFBundleShortVersionString raw -o - -- - 2>/dev/null || true)"
+  ZBUILD="$(unzip -p "$ZIP" 'Pomvox.app/Contents/Info.plist' | plutil -extract CFBundleVersion raw -o - -- - 2>/dev/null || true)"
+  [ "$ZVER" = "$SHORT" ] && [ "$ZBUILD" = "$BUILD" ] \
+    || die "dist/Pomvox.zip is $ZVER ($ZBUILD), expected $SHORT ($BUILD) — stale dist? re-run notarize-release.sh"
+fi
 echo "  ✓ $TAG (marketing $SHORT, build $BUILD)"
 
 say "EdDSA-signing $ZIP"
@@ -73,6 +88,13 @@ SIG="$(printf '%s' "$SIGN_OUT" | sed -n 's/.*edSignature="\([^"]*\)".*/\1/p')"
 [ -n "$SIG" ] || die "sign_update produced no signature: $SIGN_OUT"
 echo "  ✓ signature: ${SIG:0:16}…"
 
+if [ "$DRY_RUN" != "--dry-run" ]; then
+  # Finding 5: from here through the appcast commit, anything that dies
+  # (network blip, gh failure, etc.) must not leave a modified-but-uncommitted
+  # appcast.xml sitting in the working tree — roll it back and re-raise.
+  trap 'git checkout -- "$APPCAST" 2>/dev/null || true' ERR
+fi
+
 say "Building + validating the appcast item"
 uv run --frozen python3 scripts/make_appcast.py --appcast "$APPCAST" --zip "$ZIP" \
   --tag "$TAG" --short-version "$SHORT" --build "$BUILD" --signature "$SIG" --write
@@ -80,7 +102,13 @@ git diff --stat -- "$APPCAST"
 
 if [ "$DRY_RUN" = "--dry-run" ]; then
   say "Dry run: verifying signature locally, then rolling back the appcast"
-  PUBKEY="$(cat "${SIGN_KEY_FILE}.pub" 2>/dev/null || echo "$PUBKEY")"
+  # Finding 11: SIGN_KEY_FILE is required above, but if its .pub sidecar is
+  # missing, silently falling back to the production SUPublicEDKey would
+  # verify against the WRONG key and could mask a real signing bug — die
+  # instead of guessing.
+  [ -f "${SIGN_KEY_FILE}.pub" ] \
+    || die "SIGN_KEY_FILE is set but ${SIGN_KEY_FILE}.pub is missing — can't verify the dry-run signature"
+  PUBKEY="$(cat "${SIGN_KEY_FILE}.pub")"
   # Roll back the appcast on EVERY dry-run outcome — the verify must not be
   # able to leave the tree dirty under set -e.
   if ! uv run --frozen python3 - "$ZIP" "$SIG" "$PUBKEY" <<'PY'
@@ -104,7 +132,9 @@ gh release create "$TAG" "$DMG" "$ZIP" --title "Pomvox $SHORT" --generate-notes
 say "Waiting for the enclosure to serve HTTP 200"
 URL="https://github.com/abhiram304/pomvox/releases/download/$TAG/Pomvox.zip"
 for i in $(seq 1 30); do
-  code="$(curl -sIL -o /dev/null -w '%{http_code}' "$URL")"
+  # Finding 5: a transient curl failure (DNS blip, connection reset) must not
+  # kill the whole script under set -e — treat it as "not ready yet" and retry.
+  code="$(curl -sIL -o /dev/null -w '%{http_code}' "$URL" || echo 000)"
   [ "$code" = "200" ] && break
   echo "  … $code, retry $i/30"; sleep 10
 done
@@ -122,6 +152,7 @@ PY
 say "Committing the appcast LAST"
 git add "$APPCAST"
 git commit -m "release: appcast entry for $TAG"
+trap - ERR   # appcast is committed now — nothing left in the working tree to roll back
 git push origin main
 
 say "Done — now bump the Homebrew cask (see header)."

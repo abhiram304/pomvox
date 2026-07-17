@@ -16,6 +16,7 @@ import sys
 from datetime import datetime, timezone
 from email.utils import format_datetime
 from xml.etree import ElementTree
+from xml.sax.saxutils import escape, quoteattr
 
 SPARKLE_NS = "http://www.sparkle-project.org/xml/rss/1.0/modules/sparkle"
 REPO = "abhiram304/pomvox"
@@ -28,16 +29,24 @@ def enclosure_url(tag: str, asset: str = "Pomvox.zip") -> str:
 def appcast_item(short_version: str, build: int, tag: str, length: int,
                  ed_signature: str, pub_date: datetime | None = None,
                  min_system: str = "14.0") -> str:
+    # Finding 6: every interpolated value that isn't a script-controlled
+    # constant (short_version, tag, min_system all ultimately come from CLI
+    # args a release script passes through) is escaped before it lands in the
+    # XML — `escape()` for element text, `quoteattr()` for attribute values
+    # (it supplies its own quote characters, switching quote style rather than
+    # letting an embedded quote break out of the attribute). For clean inputs
+    # this produces byte-identical output to the old bare interpolation.
     pub = format_datetime(pub_date or datetime.now(timezone.utc))
+    notes_link = escape(f"https://github.com/{REPO}/releases/tag/{tag}")
     return f"""    <item>
-      <title>Version {short_version}</title>
+      <title>Version {escape(short_version)}</title>
       <pubDate>{pub}</pubDate>
       <sparkle:version>{build}</sparkle:version>
-      <sparkle:shortVersionString>{short_version}</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>{min_system}</sparkle:minimumSystemVersion>
-      <sparkle:releaseNotesLink>https://github.com/{REPO}/releases/tag/{tag}</sparkle:releaseNotesLink>
-      <enclosure url="{enclosure_url(tag)}" length="{length}"
-                 type="application/octet-stream" sparkle:edSignature="{ed_signature}"/>
+      <sparkle:shortVersionString>{escape(short_version)}</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>{escape(min_system)}</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>{notes_link}</sparkle:releaseNotesLink>
+      <enclosure url={quoteattr(enclosure_url(tag))} length="{length}"
+                 type="application/octet-stream" sparkle:edSignature={quoteattr(ed_signature)}/>
     </item>"""
 
 

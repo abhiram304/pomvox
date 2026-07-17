@@ -14,7 +14,22 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import make_appcast as m
 
-EMPTY = (Path(__file__).resolve().parent.parent / "appcast.xml").read_text()
+# An inline literal, NOT read from the live repo-root appcast.xml: once a real
+# release ships an item (e.g. build 9), reading the live file here would make
+# make_item()'s default build collide with a real shipped one and break half
+# this suite. This is the empty-channel XML exactly as committed at the repo
+# root before any release ships (see test_committed_appcast_is_valid below,
+# which checks the real file separately).
+EMPTY = """<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.sparkle-project.org/xml/rss/1.0/modules/sparkle">
+  <channel>
+    <title>Pomvox</title>
+    <link>https://github.com/abhiram304/pomvox</link>
+    <description>Pomvox release feed</description>
+    <language>en</language>
+  </channel>
+</rss>
+"""
 
 
 def make_item(build=9, short="0.1.11", sig="c2ln"):
@@ -105,6 +120,44 @@ def test_cli_rejects_duplicate_build_cleanly(tmp_path):
     assert second.returncode == 1
     assert "appcast INVALID" in second.stderr
     assert "Traceback" not in second.stderr
+
+
+def test_malicious_tag_cannot_break_out_of_xml_attribute():
+    # A tag crafted to look like it closes the enclosure's url attribute and
+    # opens a new one (`v1.0.0" href="x`) must not corrupt the document
+    # structure. Pinned behavior: quoteattr() neutralizes it (switching to
+    # single-quote wrapping rather than raising) — the result stays
+    # well-formed XML and the malicious text is inert attribute content, not
+    # a second attribute.
+    from xml.etree import ElementTree
+    tag = 'v1.0.0" href="x'
+    item = m.appcast_item(short_version="1.0.0", build=97, tag=tag,
+                          length=1, ed_signature="sig")
+    out = m.insert_item(EMPTY, item)
+    ElementTree.fromstring(out)          # would raise ElementTree.ParseError if broken
+    assert m.validate(out) == []
+    assert ' href="x"' not in out        # no second attribute was created
+
+
+def test_tag_containing_markup_is_escaped_not_injected():
+    # A tag containing raw markup must be escaped, not interpreted, in the
+    # release-notes text node and the enclosure url attribute.
+    from xml.etree import ElementTree
+    tag = "v1.0.0<script>alert(1)</script>"
+    item = m.appcast_item(short_version="1.0.0", build=96, tag=tag,
+                          length=1, ed_signature="sig")
+    out = m.insert_item(EMPTY, item)
+    ElementTree.fromstring(out)          # would raise if the "<" broke parsing
+    assert m.validate(out) == []
+    assert "<script>" not in out
+    assert "&lt;script&gt;" in out
+
+
+def test_committed_appcast_is_valid():
+    # The real, live repo-root appcast.xml — separate from EMPTY above so a
+    # real release shipping items doesn't collide with this suite's fixtures.
+    repo_root = Path(__file__).resolve().parent.parent
+    assert m.validate((repo_root / "appcast.xml").read_text()) == []
 
 
 def test_verify_signature_roundtrip(tmp_path):
