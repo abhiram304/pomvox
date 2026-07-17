@@ -56,11 +56,13 @@ runnable reference and the cross-checked test spec (see
 ## Principles
 
 1. **Local-first.** No network calls in the hot path; your voice and transcripts
-   never leave the machine. Network is limited to the one-time model download
-   and — only if the user opts in — anonymous, content-free usage stats (off by
-   default, native app only). This is the product's reason to exist; that opt-in
-   telemetry is the one cloud feature, built the only acceptable way: explicit,
-   off by default, anonymous, no content, clearly labeled.
+   never leave the machine. Network is limited to the one-time model download,
+   a daily anonymous update check (on by default, off in one toggle, never on
+   the dictation path), and — only if the user opts in — anonymous,
+   content-free usage stats (off by default, native app only). This is the
+   product's reason to exist; that opt-in telemetry is the one cloud feature,
+   built the only acceptable way: explicit, off by default, anonymous, no
+   content, clearly labeled.
 2. **Latency is a feature.** Treat it like a real-time system — from hotkey
    release to inserted text should feel instant. Every stage is instrumented and
    logged per utterance.
@@ -206,5 +208,7 @@ pomvox/
 
 - iOS / Windows. macOS Apple Silicon only.
 - Speaker diarization, multi-speaker meeting transcription.
-- Any cloud sync or account system. (The sole network exception is opt-in,
-  anonymous, content-free usage stats — off by default; see Principle 1.)
+- Any cloud sync or account system. (The network exceptions are the daily
+  update check — on by default, one toggle off — and opt-in, anonymous,
+  content-free usage stats — off by default; see Principle 1.)
+- Auto-installing updates without a user click.

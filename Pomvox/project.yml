@@ -31,6 +31,11 @@ packages:
     url: https://github.com/DePasqualeOrg/swift-tokenizers.git
     minVersion: "0.5.0"
     maxVersion: "0.6.0"
+  # In-app updates (M8): Sparkle 2 headless — SPUUpdater + a custom user
+  # driver; all UI is native (see docs/superpowers/specs/2026-07-09-in-app-updates-design.md).
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle.git
+    from: "2.9.4"
 
 settings:
   base:
@@ -74,8 +79,9 @@ targets:
         PRODUCT_NAME: Pomvox
         PRODUCT_BUNDLE_IDENTIFIER: app.pomvox.hub
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        # Outbound network (model download + opt-in telemetry) and mic. Only
-        # enforced under the Release hardened runtime; inert in Debug. No sandbox.
+        # Outbound network (model download, update check, opt-in telemetry) and
+        # mic. Only enforced under the Release hardened runtime; inert in
+        # Debug. No sandbox.
         CODE_SIGN_ENTITLEMENTS: Pomvox.entitlements
         INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Abhi Ram Salammagari · MIT"
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.productivity"
@@ -98,6 +104,21 @@ targets:
       # pruning the version-pinned package reference.
       - package: swift-tokenizers
         product: Tokenizers
+      - package: Sparkle
+    info:
+      path: Info.plist
+      properties:
+        # Sparkle (M8). SUPublicEDKey pairs with the private key in the
+        # maintainer's Keychain; SUAutomaticallyUpdate NO = install only on
+        # user click; SUVerifyUpdateBeforeExtraction = refuse bad signatures
+        # before unpacking a byte.
+        SUFeedURL: https://raw.githubusercontent.com/abhiram304/pomvox/main/appcast.xml
+        SUPublicEDKey: EY7D5pzhZlKZgoC0ySSy8j1UmrzQ3NSz1zI9UfStWfI=
+        SUEnableAutomaticChecks: true
+        SUAutomaticallyUpdate: false
+        SUScheduledCheckInterval: 86400
+        SUVerifyUpdateBeforeExtraction: true
+        SUEnableJavaScript: false
 
   PomvoxTests:
     type: bundle.unit-test

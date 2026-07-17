@@ -71,8 +71,16 @@ Out of scope:
 ## A note on privacy
 
 Your voice and transcripts never leave your Mac by design. The only network
-calls Pomvox makes are the one-time model download from Hugging Face and, **if
-you choose to share them**, anonymous content-free usage stats. If you believe you've found a
-way that content *could* leave the device, that is exactly the kind of report I
+calls Pomvox makes are the one-time model download from Hugging Face, a
+once-a-day update check, and, **if you choose to share them**, anonymous
+content-free usage stats. Updates are fetched from GitHub over HTTPS, verified
+against a pinned EdDSA public key **before extraction**, code-sign-checked by
+Sparkle, and installed only on an explicit click. An update signed by a
+different Developer ID team or bundle ID will not install — and would forfeit
+the app's TCC grants if it somehow did. A test-only feed override
+(`POMVOX_UPDATE_FEED`) exists for local debugging and is restricted to
+loopback URLs (`localhost`/`127.0.0.1`/`::1`), so it can't redirect a build to
+an attacker-controlled feed. If you believe you've found a way
+that content *could* leave the device, that is exactly the kind of report I
 want to hear about — treat it as a security issue and use the private channels
 above.

@@ -1,8 +1,43 @@
 # In-App Updates — Design Spec
 
-**Date:** 2026-07-09
+**Date:** 2026-07-09 (re-validated 2026-07-15)
 **Status:** Approved (brainstorm complete; implementation plan to follow)
-**Baseline:** main @ v0.1.9 (`33797c4`)
+**Baseline:** main @ v0.1.9 (`33797c4`); re-validated against main @ `bff5c5f` (post-Dictionary-v2)
+
+## Re-validation (2026-07-15)
+
+Before implementation, every contested decision was re-weighed against current
+priorities (no bloat, privacy, simplest install UX). Outcome: **the design
+stands unchanged.** Specifics:
+
+- **Sparkle vs hand-rolled, weighed honestly both ways.** A minimal hand-rolled
+  updater (~400 lines: fetch static feed → compare → download zip → verify via
+  `codesign`/`spctl` + team-ID check → swap → relaunch) is feasible and could
+  even skip EdDSA by leaning on notarization checks alone. Rejected anyway:
+  the risk concentrates in the atomic-swap/relaunch path (rollback on partial
+  copy, translocation, quarantine xattrs, admin escalation, running-from-DMG,
+  download resume, downgrade refusal, macOS drift) — where a bug bricks the
+  install and can destroy the very TCC grants this feature exists to preserve.
+  Sparkle 2 headless costs one SPM dependency (~5 MB, no transitive deps);
+  "no bloat" is served better by no custom install machinery to maintain.
+- **Check policy re-settled with the user.** Three options laid out
+  (on-by-default / first-run tri-state choice alongside telemetry consent /
+  strict opt-in). **On-by-default confirmed** — an unpatched dictation app
+  holding mic + input-monitoring + accessibility grants is a bigger privacy
+  risk than a daily anonymous file GET (IP + User-Agent only; Sparkle's
+  system profiling stays off). Mitigations stand: Settings toggle, visible
+  **"last checked" time** (`updater.lastUpdateCheckDate`), "Check Now",
+  README/SECURITY disclosure, zero checks in Debug builds.
+- **TCC preservation confirmed — the reason this beats uninstall/reinstall.**
+  TCC grants are stored against the bundle ID plus a code-signing requirement
+  (`csreq`) — effectively `identifier "app.pomvox.hub"` + Developer ID leaf
+  from team `CT84AT52RS`. An update signed by the same team with the same
+  bundle ID still satisfies the stored requirement, so mic / input-monitoring
+  / accessibility grants survive the in-place swap. On-device contrapositive
+  (2× reproduced, 2026-07-13): swapping in a differently-signed local build
+  invalidates the mic TCC row. Hard constraints: never change bundle ID or
+  Developer ID team in an update; never rotate Developer ID and EdDSA
+  together.
 
 ## Problem
 
@@ -73,7 +108,9 @@ version.
    permanently (Sparkle-native).
 2. **Settings ▸ General** — "Automatically check for updates" toggle (default
    on; maps to `updater.automaticallyChecksForUpdates`), "Check Now" button,
-   current-version `InfoRow`, inline "You're up to date" / error feedback.
+   current-version `InfoRow`, a visible "Last checked" time
+   (`updater.lastUpdateCheckDate`, "Never" until the first check), inline
+   "You're up to date" / error feedback.
 3. Never a popup. Scheduled checks that find an update only light the banner.
 
 ### First run
@@ -163,7 +200,7 @@ All failures render as inline UI; never a popup.
 Run the extended release script against a **draft** GitHub release + branch
 appcast; point a local build's feed override at the branch raw URL; confirm a
 real over-the-wire update from the GitHub CDN. Then the first real release
-pair validates end-to-end: v0.1.10 ships the updater; v0.1.11 is the first
+pair validates end-to-end: v0.2.0 ships the updater; v0.2.1 is the first
 version delivered by it.
 
 ## Risks

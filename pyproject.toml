@@ -27,7 +27,7 @@ dependencies = [
 pomvox = "pomvox.__main__:main"
 
 [dependency-groups]
-dev = ["pytest"]
+dev = ["pytest", "pynacl"]
 
 [build-system]
 requires = ["hatchling"]
