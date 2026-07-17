@@ -65,4 +65,54 @@ final class PasterTests: XCTestCase {
         restore?()
         XCTAssertEqual(pb.string(forType: .string), "user copied this")  // user copy wins
     }
+
+    // MARK: - full-fidelity restore (a dictation must not eat the clipboard)
+
+    func testRestorePreservesANonTextClipboard() {
+        // A copied image (screenshot, file, …) must come back after a
+        // dictation. Only the plain string used to be saved, so any non-text
+        // clipboard was permanently replaced by the transcript.
+        let pb = freshPasteboard()
+        let png = Data([0x89, 0x50, 0x4E, 0x47])  // magic bytes stand in for a real image
+        pb.setData(png, forType: .png)
+
+        var restore: (() -> Void)?
+        let outcome = Paster.deliver("dictated", to: pb, focusedAcceptsText: true,
+                                     synthesizePaste: {}, scheduleRestore: { restore = $0 })
+
+        XCTAssertEqual(outcome, .pasted)
+        XCTAssertEqual(pb.string(forType: .string), "dictated")  // staged for the ⌘V
+        restore?()
+        XCTAssertEqual(pb.data(forType: .png), png)              // the image is back
+        XCTAssertNil(pb.string(forType: .string))                // and only the image
+    }
+
+    func testRestorePreservesEveryFlavorOfARichItem() {
+        // Rich text (a browser or Word copy) carries several flavors on one
+        // item; restoring just the plain string silently degrades it.
+        let pb = freshPasteboard()
+        let item = NSPasteboardItem()
+        item.setString("hello", forType: .string)
+        item.setString("<b>hello</b>", forType: .html)
+        pb.writeObjects([item])
+
+        var restore: (() -> Void)?
+        _ = Paster.deliver("dictated", to: pb, focusedAcceptsText: true,
+                           synthesizePaste: {}, scheduleRestore: { restore = $0 })
+        restore?()
+        XCTAssertEqual(pb.string(forType: .string), "hello")
+        XCTAssertEqual(pb.string(forType: .html), "<b>hello</b>")
+    }
+
+    func testEmptyPriorClipboardKeepsTranscriptAfterRestore() {
+        // Nothing to restore: keep the transcript recoverable instead of
+        // clearing the clipboard (the pre-existing empty-clipboard behavior).
+        let pb = freshPasteboard()
+
+        var restore: (() -> Void)?
+        _ = Paster.deliver("dictated", to: pb, focusedAcceptsText: true,
+                           synthesizePaste: {}, scheduleRestore: { restore = $0 })
+        restore?()
+        XCTAssertEqual(pb.string(forType: .string), "dictated")
+    }
 }

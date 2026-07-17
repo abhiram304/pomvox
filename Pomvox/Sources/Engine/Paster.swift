@@ -22,6 +22,11 @@ enum PasteOutcome: Equatable {
 /// "copied to clipboard" flash). The ⌘V is *always* synthesized regardless, so
 /// the focus probe can never break the normal paste in apps where AX focus
 /// reporting is unreliable.
+///
+/// Fidelity beyond the Python port: the restore snapshots every item and
+/// flavor (`ClipboardSnapshot`), not just the plain string — `insert.py`'s
+/// string-only save meant a copied image or file vanished after a dictation
+/// and rich text came back stripped to plain.
 enum Paster {
     static let keyV: CGKeyCode = 9
     /// nspasteboard.org convention: clipboard managers (Maccy, Paste, Alfred…)
@@ -41,8 +46,6 @@ enum Paster {
     static let restoreDelay: TimeInterval = 0.5
 
     /// Stage `text` on `pb` marked concealed; return the resulting changeCount.
-    /// The restore path deliberately does not re-mark the user's original
-    /// clipboard — it wasn't ours to conceal.
     @discardableResult
     static func stage(_ pb: NSPasteboard, _ text: String) -> Int {
         pb.declareTypes([.string, concealedType], owner: nil)
@@ -71,7 +74,7 @@ enum Paster {
     static func deliver(_ text: String, to pb: NSPasteboard, focusedAcceptsText: Bool,
                         synthesizePaste: () -> Void,
                         scheduleRestore: (@escaping () -> Void) -> Void) -> PasteOutcome {
-        let saved = pb.string(forType: .string)
+        let saved = snapshot(pb)
         let ourChange = stage(pb, text)
         synthesizePaste()
         guard focusedAcceptsText else {
@@ -80,12 +83,44 @@ enum Paster {
             return .copiedToClipboard
         }
         scheduleRestore {
-            if let saved, pb.changeCount == ourChange {
-                pb.clearContents()
-                pb.setString(saved, forType: .string)
+            if !saved.isEmpty, pb.changeCount == ourChange {
+                restore(saved, to: pb)
             }
         }
         return .pasted
+    }
+
+    /// One clipboard item's full contents, keyed by flavor. A dictation must
+    /// give back *whatever* was on the clipboard — an image, files, rich text —
+    /// not just a plain string: saving only `string(forType: .string)` meant a
+    /// copied screenshot was permanently replaced by the transcript, and a
+    /// rich-text copy silently degraded to plain text.
+    typealias ClipboardSnapshot = [[NSPasteboard.PasteboardType: Data]]
+
+    /// Capture every item and flavor currently on `pb`. Reading resolves any
+    /// lazily-promised flavors into memory — that's the point (the promising
+    /// app may be gone by restore time) and clipboard items are small compared
+    /// to the models this process already holds.
+    static func snapshot(_ pb: NSPasteboard) -> ClipboardSnapshot {
+        (pb.pasteboardItems ?? []).map { item in
+            var flavors: [NSPasteboard.PasteboardType: Data] = [:]
+            for type in item.types {
+                if let data = item.data(forType: type) { flavors[type] = data }
+            }
+            return flavors
+        }
+        .filter { !$0.isEmpty }
+    }
+
+    /// Write a snapshot back. The restore path deliberately does not re-mark
+    /// the user's original clipboard as concealed — it wasn't ours to conceal.
+    static func restore(_ saved: ClipboardSnapshot, to pb: NSPasteboard) {
+        pb.clearContents()
+        pb.writeObjects(saved.map { flavors in
+            let item = NSPasteboardItem()
+            for (type, data) in flavors { item.setData(data, forType: type) }
+            return item
+        })
     }
 
     /// Synthesize ⌘V. Flags set explicitly to ⌘ alone so a still-held Fn (the PTT
