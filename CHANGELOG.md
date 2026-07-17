@@ -9,6 +9,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Fixed
 
+- **Dictating no longer eats a copied image, file, or formatted text.** The
+  paste briefly borrows the clipboard for the transcript and then puts your
+  copy back — but the restore only saved plain text, so a copied screenshot
+  or file was permanently replaced by the transcript, and rich text came back
+  stripped of its formatting. The restore now snapshots and puts back every
+  item and flavor on the clipboard.
+
 - **Dictating after a break gets cleaned text again.** The cleanup model is
   evicted after 5 idle minutes to give back its ~2.3 GB of memory, but the
   next dictation only *started* the reload and pasted the raw transcript
