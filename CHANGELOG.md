@@ -9,6 +9,19 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Fixed
 
+- **Dictating after a break gets cleaned text again.** The cleanup model is
+  evicted after 5 idle minutes to give back its ~2.3 GB of memory, but the
+  next dictation only *started* the reload and pasted the raw transcript
+  without waiting for it — on one machine, 16 of 60 dictations (every single
+  one after a >5-minute pause) pasted raw this way, which also made spoken
+  list commands appear broken. Cleanup now waits out an in-flight reload
+  within the utterance's existing timeout, and the prompt's prefilled prefix
+  caches (~100 MB) survive eviction, so the wait is the ~1-second weight
+  reload instead of a ~10-second re-prefill: a post-break dictation cleans in
+  under 3 seconds, inside even the default 5-second budget. The
+  never-lose-words fallback is unchanged — it's just no longer taken
+  prematurely.
+
 - **Cleanup can no longer swap your words for its own.** On-device history
   showed the cleanup model occasionally *answering* a dictated question
   ("Should I test manually one by one?" pasted as "Yes, test manually one by

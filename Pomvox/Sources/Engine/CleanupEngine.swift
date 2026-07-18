@@ -56,6 +56,13 @@ actor CleanupEngine: CleanupCleaning {
     private var container: ModelContainer?
     private var preparing = false
     private var prefixCaches: [String: PrefixEntry] = [:]
+    /// What `prefixCaches` was built for (see `PrefixCacheKey`). The caches
+    /// are retained across idle eviction, so `prepare()` re-prefills only when
+    /// the model or the dictionary hint actually changed — a same-model reload
+    /// costs the ~1 s weight load, not the ~10 s two-style prefill.
+    private var prefixKey: PrefixCacheKey?
+    /// The id of the currently/last loaded model, for keying `prefixCaches`.
+    private var loadedModelID: String?
 
     /// Whether a hint-triggered prefix-cache rebuild is in flight. Coalesces
     /// overlapping updateTermsHint calls the way `preparing` coalesces
@@ -111,9 +118,13 @@ actor CleanupEngine: CleanupCleaning {
             await buildPrefixCaches()
             if container == nil || loadGeneration != generation {
                 // Unload or a fresh load interleaved: that path owns the
-                // caches now (unload cleared them; prepare rebuilds with the
-                // current hint). Drop our orphaned work.
-                if container == nil { prefixCaches = [:] }
+                // caches now (prepare re-prefills on a PrefixCacheKey
+                // mismatch). Drop our orphaned, possibly half-built work —
+                // key included, so retention can't mistake it for complete.
+                if container == nil {
+                    prefixCaches = [:]
+                    prefixKey = nil
+                }
                 return
             }
             builtFor = target
@@ -152,6 +163,7 @@ actor CleanupEngine: CleanupCleaning {
             loadMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000
             NSLog("cleanup: loaded %@ in %.1fs", modelID, loadMs / 1000)
             container = loaded
+            loadedModelID = modelID
             loadGeneration &+= 1
         } catch {
             NSLog("cleanup: model load FAILED: %@", String(describing: error))
@@ -163,8 +175,20 @@ actor CleanupEngine: CleanupCleaning {
         // is non-fatal (the model is loaded and usable), but it's timed and
         // folded into the returned span so the cold-start breakdown reflects
         // the full preparation cost.
+        //
+        // The prefill is skipped when the retained caches (they survive idle
+        // eviction) still match this model + hint — the common post-evict
+        // reload — so a dictation racing this prepare() can generate cached
+        // the moment the container lands. A partial cache (a style failed
+        // last time) still re-prefills.
         let t0 = CFAbsoluteTimeGetCurrent()
-        await buildPrefixCaches()
+        let current = PrefixCacheKey(modelID: modelID, hint: termsHint)
+        if prefixKey != current || prefixCaches.count < CleanupLogic.styles.count {
+            prefixCaches = [:]
+            await buildPrefixCaches()
+        } else {
+            NSLog("cleanup: reusing retained prefix caches (same model + hint)")
+        }
         do {
             _ = try await clean("um hello", style: "light", timeoutS: 120.0)
             NSLog("cleanup: warmup %.1fs", CFAbsoluteTimeGetCurrent() - t0)
@@ -175,13 +199,18 @@ actor CleanupEngine: CleanupCleaning {
         return .loaded(loadMs: loadMs, warmupMs: warmupMs)
     }
 
-    /// Drop the model and prefix caches (toggle-off); re-arm reloads.
+    /// Drop the model weights (toggle-off / idle eviction); re-arm or next use
+    /// reloads. The prefix caches are deliberately KEPT: they're ~100 MB of
+    /// prompt-derived K/V tensors (vs the ~2.3 GB weights), independent of the
+    /// container instance, and still valid for the same model + hint — which
+    /// is what makes the post-eviction reload fast enough for a racing
+    /// dictation's deadline. `prepare()` drops them itself when the
+    /// `PrefixCacheKey` no longer matches.
     func unload() {
         guard container != nil else { return }
         container = nil
-        prefixCaches = [:]
         Memory.clearCache()
-        NSLog("cleanup: unloaded")
+        NSLog("cleanup: unloaded (prefix caches retained)")
     }
 
     /// Idle-evict variant: unload only if no load has completed since the
@@ -247,12 +276,30 @@ actor CleanupEngine: CleanupCleaning {
                     style, String(describing: error))
             }
         }
+        prefixKey = PrefixCacheKey(modelID: loadedModelID ?? "", hint: hint)
     }
 
     /// Generate cleaned text, or `nil` on deadline / model not ready.
     func clean(_ text: String, style: String, timeoutS: Double) async throws -> String? {
+        let entered = CFAbsoluteTimeGetCurrent()
+        let deadline = entered + timeoutS
+        // A post-eviction dictation races the reload its own key-up fired
+        // (ensureCleanupLoaded is fire-and-forget): the container is nil for
+        // the ~1 s the weights take to come back, and bailing immediately
+        // pasted raw after every idle gap. Wait out an in-flight load within
+        // this utterance's own deadline (plus a short grace for a load that
+        // hasn't reached the actor yet); the actor suspends here, so the
+        // loading prepare() makes progress between polls.
+        while CleanupResidency.shouldAwaitLoad(
+            loaded: container != nil, loading: preparing,
+            now: CFAbsoluteTimeGetCurrent(), deadline: deadline, entered: entered)
+        {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
         guard let container else {
-            NSLog("cleanup: model not loaded yet, skipping")
+            NSLog(
+                "cleanup: model not loaded%@, skipping",
+                preparing ? " within the deadline" : " (no load in flight)")
             return nil
         }
         // The STT pass that just ran leaves the MLX buffer pool full of
@@ -260,7 +307,6 @@ actor CleanupEngine: CleanupCleaning {
         // in the Python engine (ARCHITECTURE.md). Dropping the pool is cheaper;
         // the next recording re-allocates off the stop-to-text critical path.
         Memory.clearCache()
-        let deadline = CFAbsoluteTimeGetCurrent() + timeoutS
         let cached = prefixCaches[style]
         let hint = termsHint
 
