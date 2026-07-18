@@ -79,6 +79,42 @@ final class CleanupResidencyTests: XCTestCase {
             loaded: false, loading: false, now: 0.1, deadline: 0.05, entered: 0))
     }
 
+    // MARK: - cold-launch prefix builds (rc.1: first dictation waited 12.9s, pasted raw)
+
+    func testPrefixBuildOrderPutsTheConfiguredStyleFirst() {
+        // rc.1 cold launch: light's ~5.7s prefill ran ahead of the user's
+        // polish dictation on the serial GPU queue — pure wasted deadline.
+        XCTAssertEqual(
+            CleanupResidency.styleBuildOrder(preferred: "polish", all: ["light", "polish"]),
+            ["polish", "light"])
+        XCTAssertEqual(
+            CleanupResidency.styleBuildOrder(preferred: "light", all: ["light", "polish"]),
+            ["light", "polish"])
+        // An unknown preferred style degrades to the given order.
+        XCTAssertEqual(
+            CleanupResidency.styleBuildOrder(preferred: "bogus", all: ["light", "polish"]),
+            ["light", "polish"])
+    }
+
+    func testAwaitsTheStylePrefixOnlyWhileWorthIt() {
+        // While a prepare() is in flight and this style's prefix hasn't been
+        // attempted, waiting is worth it — but only if enough deadline remains
+        // for the cached generation afterwards.
+        XCTAssertTrue(CleanupResidency.shouldAwaitStylePrefix(
+            cached: false, attempted: false, loading: true, now: 5, deadline: 12.5))
+        XCTAssertFalse(CleanupResidency.shouldAwaitStylePrefix(
+            cached: false, attempted: false, loading: true,
+            now: 12.5 - CleanupResidency.prefixWaitReserveS, deadline: 12.5))
+        // Cache ready, build already attempted (failed = run uncached), or no
+        // prepare in flight: generate now.
+        XCTAssertFalse(CleanupResidency.shouldAwaitStylePrefix(
+            cached: true, attempted: false, loading: true, now: 5, deadline: 12.5))
+        XCTAssertFalse(CleanupResidency.shouldAwaitStylePrefix(
+            cached: false, attempted: true, loading: true, now: 5, deadline: 12.5))
+        XCTAssertFalse(CleanupResidency.shouldAwaitStylePrefix(
+            cached: false, attempted: false, loading: false, now: 5, deadline: 12.5))
+    }
+
     // MARK: - prefix-cache retention across eviction
 
     func testPrefixCachesSurviveSameModelAndHint() {
