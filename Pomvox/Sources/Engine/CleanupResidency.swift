@@ -45,6 +45,31 @@ enum CleanupResidency {
     /// Short, so a genuinely failed/absent load still falls back fast.
     static let loadStartGraceS: Double = 0.25
 
+    /// Prefix-build order: the configured style first. On a cold launch the
+    /// first dictation races prepare() on the serial GPU queue — rc.1's first
+    /// dictation sat behind light's ~5.7 s prefill while configured for
+    /// polish, burned its 12.5 s deadline, and pasted raw.
+    static func styleBuildOrder(preferred: String, all: [String]) -> [String] {
+        guard all.contains(preferred) else { return all }
+        return [preferred] + all.filter { $0 != preferred }
+    }
+
+    /// Deadline headroom a cached generation still needs after a prefix wait.
+    static let prefixWaitReserveS: Double = 3.0
+
+    /// Whether `clean()` should wait for its style's prefix cache to finish
+    /// prefilling (during an in-flight prepare) instead of launching an
+    /// uncached generation that contends with that same prefill on the serial
+    /// GPU queue and blows the deadline. Waiting stops once the build was
+    /// attempted (failure = run uncached, the sanctioned fallback) or when the
+    /// remaining deadline is only enough for the generation itself.
+    static func shouldAwaitStylePrefix(
+        cached: Bool, attempted: Bool, loading: Bool, now: Double, deadline: Double
+    ) -> Bool {
+        guard !cached, !attempted, loading else { return false }
+        return now < deadline - prefixWaitReserveS
+    }
+
     /// Whether a per-utterance `clean()` should keep waiting for an in-flight
     /// background reload instead of giving up and pasting raw.
     ///

@@ -264,3 +264,88 @@ def test_accept_requested_bullets():
         "let's create a shopping list mangoes oranges avocados",
         "Shopping list:\n- Mangoes\n- Oranges\n- Avocados",
     ) is not None
+
+
+# --- assistant-mode breakout (rc.1 on-device regressions, 2026-07-17) --------
+
+
+def test_reject_echoed_input_with_commentary():
+    # rc.1: dictating ABOUT the cleanup rules made the model paste the input
+    # back wrapped in analysis ("The text you provided is: ... ### Analysis").
+    # On a long raw the 2x+20 length bound cannot catch this (generation is
+    # capped at ~2x the input, so echo+commentary always fits under it); a
+    # legit cleanup never contains the raw verbatim PLUS substantial extra.
+    raw = (
+        "The above are the text that I just put in. In one case, I saw the a "
+        "being there, as and ums are supposed to be removed, and then uh there "
+        "is one more thing. The list, it is not being actually displayed as a "
+        "list, like one, two, three. This is with the R C build, by the way."
+    )
+    out = 'The text you provided is:\n\n"' + raw + '"\n\nFiller words are removed only when they are disfluencies.'
+    assert len(out) <= 2 * len(raw) + 20  # the length bound provably can't catch it
+    assert accept_output(raw, out) is None
+
+
+def test_accept_passthrough_and_tiny_punctuation_additions():
+    # out == raw stays fine, and adding a few chars (a period, casing) is a
+    # legit minimal cleanup, not an echo-with-commentary.
+    raw = "this is with the R C build by the way"
+    assert accept_output(raw, raw) == raw
+    assert accept_output("is it done", "Is it done.") == "Is it done."
+
+
+def test_reject_markdown_headers():
+    # Cleanup output is plain prose (or a list); markdown headers only appear
+    # when the model has broken out into assistant mode.
+    assert accept_output(
+        "tell me why the list is not showing up here today",
+        "### Analysis:\nThe list did not trigger.",
+    ) is None
+
+
+def test_reject_numbered_bullets_without_list_request():
+    # The numbered variant of the unrequested-bullets guard.
+    assert accept_output(
+        "we need mangoes and also grapes for the week", "1. Mangoes\n2. Grapes"
+    ) is None
+
+
+def test_accept_numbered_list_on_request():
+    assert (
+        accept_output(
+            "here's a list of to dos one get groceries two go to walmart",
+            "To dos:\n1. Get groceries\n2. Go to Walmart",
+        )
+        is not None
+    )
+
+
+# --- list coverage (rc.1: announcements + numbered enumerations) -------------
+
+
+def test_list_rule_covers_numbered_enumerations():
+    rules = build_messages("x", "polish")[0]["content"].lower()
+    assert "1." in rules or "numbered" in rules
+
+
+def test_few_shot_includes_numbered_list_example():
+    msgs = build_messages("x", "polish")
+    pairs = [(msgs[i]["content"], msgs[i + 1]["content"]) for i in range(1, len(msgs) - 1, 2)]
+    assert any(
+        any(line.startswith("1. ") for line in cleaned.splitlines()) for _, cleaned in pairs
+    )
+
+
+def test_few_shot_includes_announcement_list_example():
+    # "we have a shopping list and I'll get..." is an announcement, not an
+    # imperative — rc.1 echoed it verbatim instead of formatting.
+    msgs = build_messages("x", "polish")
+    pairs = [(msgs[i]["content"], msgs[i + 1]["content"]) for i in range(1, len(msgs) - 1, 2)]
+    assert any("we have a shopping list" in raw for raw, _ in pairs)
+
+
+def test_rules_say_never_discuss_the_rules():
+    # rc.1: dictations that TALK ABOUT transcripts/rules flipped the model
+    # into answering. The prompt must pin them as ordinary content.
+    rules = build_messages("x", "polish")[0]["content"].lower()
+    assert "never reply" in rules or "never respond" in rules

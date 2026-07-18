@@ -304,4 +304,81 @@ final class CleanupLogicTests: XCTestCase {
             raw: "let's create a shopping list mangoes oranges avocados",
             cleaned: "Shopping list:\n- Mangoes\n- Oranges\n- Avocados"))
     }
+
+    // MARK: - assistant-mode breakout (rc.1 on-device regressions, 2026-07-17)
+
+    func testRejectEchoedInputWithCommentary() {
+        // rc.1: dictating ABOUT the cleanup rules made the model paste the
+        // input back wrapped in analysis. On a long raw the 2x+20 length bound
+        // cannot catch this (generation is capped at ~2x the input, so
+        // echo+commentary always fits under it); a legit cleanup never
+        // contains the raw verbatim PLUS substantial extra.
+        let raw = "The above are the text that I just put in. In one case, I saw the a "
+            + "being there, as and ums are supposed to be removed, and then uh there "
+            + "is one more thing. The list, it is not being actually displayed as a "
+            + "list, like one, two, three. This is with the R C build, by the way."
+        let out = "The text you provided is:\n\n\"" + raw + "\"\n\n"
+            + "Filler words are removed only when they are disfluencies."
+        XCTAssertLessThanOrEqual(out.count, 2 * raw.count + 20)  // length bound provably blind
+        XCTAssertNil(CleanupLogic.acceptOutput(raw: raw, cleaned: out))
+    }
+
+    func testAcceptPassthroughAndTinyPunctuationAdditions() {
+        let raw = "this is with the R C build by the way"
+        XCTAssertEqual(CleanupLogic.acceptOutput(raw: raw, cleaned: raw), raw)
+        XCTAssertEqual(CleanupLogic.acceptOutput(raw: "is it done", cleaned: "Is it done."), "Is it done.")
+    }
+
+    func testRejectMarkdownHeaders() {
+        XCTAssertNil(CleanupLogic.acceptOutput(
+            raw: "tell me why the list is not showing up here today",
+            cleaned: "### Analysis:\nThe list did not trigger."))
+    }
+
+    func testRejectNumberedBulletsWithoutListRequest() {
+        XCTAssertNil(CleanupLogic.acceptOutput(
+            raw: "we need mangoes and also grapes for the week", cleaned: "1. Mangoes\n2. Grapes"))
+    }
+
+    func testAcceptNumberedListOnRequest() {
+        XCTAssertNotNil(CleanupLogic.acceptOutput(
+            raw: "here's a list of to dos one get groceries two go to walmart",
+            cleaned: "To dos:\n1. Get groceries\n2. Go to Walmart"))
+    }
+
+    // MARK: - list coverage (rc.1: announcements + numbered enumerations)
+
+    func testListRuleCoversNumberedEnumerations() {
+        let rules = CleanupLogic.buildMessages(text: "x", style: "polish")[0].content.lowercased()
+        XCTAssertTrue(rules.contains("1.") || rules.contains("numbered"))
+    }
+
+    func testFewShotIncludesNumberedListExample() {
+        let msgs = CleanupLogic.buildMessages(text: "x", style: "polish")
+        var pairs: [(String, String)] = []
+        var i = 1
+        while i < msgs.count - 1 {
+            pairs.append((msgs[i].content, msgs[i + 1].content))
+            i += 2
+        }
+        XCTAssertTrue(pairs.contains { pair in
+            pair.1.split(separator: "\n").contains { $0.hasPrefix("1. ") }
+        })
+    }
+
+    func testFewShotIncludesAnnouncementListExample() {
+        let msgs = CleanupLogic.buildMessages(text: "x", style: "polish")
+        var pairs: [(String, String)] = []
+        var i = 1
+        while i < msgs.count - 1 {
+            pairs.append((msgs[i].content, msgs[i + 1].content))
+            i += 2
+        }
+        XCTAssertTrue(pairs.contains { $0.0.contains("we have a shopping list") })
+    }
+
+    func testRulesSayNeverDiscussTheRules() {
+        let rules = CleanupLogic.buildMessages(text: "x", style: "polish")[0].content.lowercased()
+        XCTAssertTrue(rules.contains("never reply") || rules.contains("never respond"))
+    }
 }

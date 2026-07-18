@@ -63,6 +63,18 @@ actor CleanupEngine: CleanupCleaning {
     private var prefixKey: PrefixCacheKey?
     /// The id of the currently/last loaded model, for keying `prefixCaches`.
     private var loadedModelID: String?
+    /// The configured cleanup style — its prefix builds FIRST so a dictation
+    /// racing a cold-launch prepare() waits behind one useful prefill.
+    private var preferredStyle = CleanupLogic.styles[0]
+    /// Styles whose prefix build finished this residency (success OR failure).
+    /// `clean()` stops waiting for a style once its build was attempted — a
+    /// failed build means uncached generation, the sanctioned fallback.
+    private var prefixAttempted: Set<String> = []
+    /// Dictations currently inside `clean()`. Non-preferred prefix builds
+    /// yield the serial GPU queue while this is non-zero — otherwise a
+    /// cold-launch dictation's generation queues behind a prefill for a style
+    /// it doesn't use (rc.1: first chunk at 15.9 s, deadline 12.5 s).
+    private var pendingCleans = 0
 
     /// Whether a hint-triggered prefix-cache rebuild is in flight. Coalesces
     /// overlapping updateTermsHint calls the way `preparing` coalesces
@@ -91,6 +103,10 @@ actor CleanupEngine: CleanupCleaning {
     /// Set the dictionary prompt hint. Must precede `prepare()`/`buildPrefixCaches`
     /// so the hint rides inside the prefilled prefix.
     func setTermsHint(_ hint: String) { termsHint = hint }
+
+    /// Set the configured style (see `preferredStyle`). Like the terms hint,
+    /// set it before `prepare()` so the build order helps the first dictation.
+    func setPreferredStyle(_ style: String) { preferredStyle = style }
 
     /// Hot-apply a dictionary words edit: swap the hint and, if the model is
     /// resident, rebuild the per-style prefix caches so the change takes
@@ -124,6 +140,7 @@ actor CleanupEngine: CleanupCleaning {
                 if container == nil {
                     prefixCaches = [:]
                     prefixKey = nil
+                    prefixAttempted = []
                 }
                 return
             }
@@ -183,17 +200,30 @@ actor CleanupEngine: CleanupCleaning {
         // last time) still re-prefills.
         let t0 = CFAbsoluteTimeGetCurrent()
         let current = PrefixCacheKey(modelID: modelID, hint: termsHint)
-        if prefixKey != current || prefixCaches.count < CleanupLogic.styles.count {
+        let order = CleanupResidency.styleBuildOrder(
+            preferred: preferredStyle, all: CleanupLogic.styles)
+        let rebuild = prefixKey != current || prefixCaches.count < CleanupLogic.styles.count
+        if rebuild {
             prefixCaches = [:]
-            await buildPrefixCaches()
+            prefixAttempted = []
+            // The configured style first, WITHOUT yielding — the racing first
+            // dictation is waiting on exactly this prefill.
+            await buildPrefixCaches(Array(order.prefix(1)), yieldToCleans: false)
         } else {
+            prefixAttempted = Set(CleanupLogic.styles)
             NSLog("cleanup: reusing retained prefix caches (same model + hint)")
         }
         do {
-            _ = try await clean("um hello", style: "light", timeoutS: 120.0)
+            _ = try await clean("um hello", style: preferredStyle, timeoutS: 120.0)
             NSLog("cleanup: warmup %.1fs", CFAbsoluteTimeGetCurrent() - t0)
         } catch {
             NSLog("cleanup: warmup failed: %@", String(describing: error))
+        }
+        if rebuild {
+            // Remaining styles build after warmup and YIELD to any dictation
+            // mid-clean, so a real generation never queues behind a prefill
+            // for a style it doesn't use.
+            await buildPrefixCaches(Array(order.dropFirst()), yieldToCleans: true)
         }
         let warmupMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000
         return .loaded(loadMs: loadMs, warmupMs: warmupMs)
@@ -232,10 +262,17 @@ actor CleanupEngine: CleanupCleaning {
     /// some messages position-dependently (e.g. Qwen3 injects an empty
     /// <think> block into the final assistant turn only). A failure here is
     /// non-fatal: the style just runs uncached (M0's sanctioned fallback).
-    private func buildPrefixCaches() async {
-        guard let container else { return }
+    private func buildPrefixCaches(
+        _ styles: [String] = CleanupLogic.styles, yieldToCleans: Bool = false
+    ) async {
         let hint = termsHint
-        for style in CleanupLogic.styles {
+        for style in styles {
+            if yieldToCleans {
+                while pendingCleans > 0 {
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+            }
+            guard let container = self.container else { return }
             do {
                 let entry: PrefixEntry = try await container.perform { context in
                     let a = try await Self.renderTokens(
@@ -275,12 +312,15 @@ actor CleanupEngine: CleanupCleaning {
                     "cleanup: prefix cache failed for style=%@ (%@) — running uncached",
                     style, String(describing: error))
             }
+            prefixAttempted.insert(style)
         }
         prefixKey = PrefixCacheKey(modelID: loadedModelID ?? "", hint: hint)
     }
 
     /// Generate cleaned text, or `nil` on deadline / model not ready.
     func clean(_ text: String, style: String, timeoutS: Double) async throws -> String? {
+        pendingCleans += 1
+        defer { pendingCleans -= 1 }
         let entered = CFAbsoluteTimeGetCurrent()
         let deadline = entered + timeoutS
         // A post-eviction dictation races the reload its own key-up fired
@@ -301,6 +341,20 @@ actor CleanupEngine: CleanupCleaning {
                 "cleanup: model not loaded%@, skipping",
                 preparing ? " within the deadline" : " (no load in flight)")
             return nil
+        }
+        // Cold launch: this style's prefix may still be prefilling on the same
+        // serial GPU queue. An uncached generation would queue BEHIND that
+        // prefill and then re-prefill the whole prompt itself — rc.1's first
+        // dictation burned 12.9s that way and pasted raw. Waiting for the
+        // cache (while the deadline still leaves room to generate) turns that
+        // into prefill-once-then-cached-gen.
+        while CleanupResidency.shouldAwaitStylePrefix(
+            cached: prefixCaches[style] != nil,
+            attempted: prefixAttempted.contains(style),
+            loading: preparing,
+            now: CFAbsoluteTimeGetCurrent(), deadline: deadline)
+        {
+            try await Task.sleep(nanoseconds: 50_000_000)
         }
         // The STT pass that just ran leaves the MLX buffer pool full of
         // Parakeet-shaped buffers, which slowed the first generation by ~0.5s
@@ -343,6 +397,16 @@ actor CleanupEngine: CleanupCleaning {
                         return nil
                     }
                 case .info(let info):
+                    // A legit cleanup is at most ~input-sized; hitting the
+                    // 2x-input cap means a runaway (echo, analysis, invention)
+                    // that was truncated — rc.1 pasted one mid-sentence. Raw
+                    // is always the better paste.
+                    if info.generationTokenCount >= maxTokens {
+                        NSLog(
+                            "cleanup: hit the %d-token cap — runaway output, falling back to raw",
+                            maxTokens)
+                        return nil
+                    }
                     NSLog(
                         "cleanup: gen %.2fs prefill=%dtok@%.0ftps decode=%dtok@%.1ftps cached=%@",
                         CFAbsoluteTimeGetCurrent() - tGen,
