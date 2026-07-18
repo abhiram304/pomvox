@@ -7,6 +7,20 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Fixed
+
+- **Cleanup can no longer swap your words for its own.** On-device history
+  showed the cleanup model occasionally *answering* a dictated question
+  ("Should I test manually one by one?" pasted as "Yes, test manually one by
+  one.") or substituting a short phrase wholesale ("Go ahead." pasted as
+  "Okay."). New output guards reject any cleanup that turns a spoken question
+  into a non-question, shares no words with a short utterance, or bullets text
+  that never asked for a list — rejected cleanups fall back to the raw
+  transcript, so nothing is ever lost. New few-shot examples also teach the
+  model to leave questions and short phrases as spoken, and to derive a
+  dictated list's header from what was said instead of parroting the prompt's
+  example ("Things to pack:" no longer shows up on your shopping list).
+
 ## [0.2.0] — 2026-07-16
 
 ### Added

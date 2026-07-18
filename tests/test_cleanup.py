@@ -185,3 +185,82 @@ def test_few_shot_includes_list_example():
     # the modelled answer is a real bulleted list, one "- " item per line
     lines = example.splitlines()
     assert sum(1 for line in lines if line.startswith("- ")) >= 3
+
+
+# --- substituted / answered outputs (on-device regressions, 2026-07-16) ------
+
+
+def test_reject_answered_question():
+    # "Should I test manually one by one?" pasted as "Yes, test manually one
+    # by one." — the model answered the question instead of cleaning it.
+    assert accept_output(
+        "Should I test manually one by one?", "Yes, test manually one by one."
+    ) is None
+
+
+def test_accept_question_cleaned_as_question():
+    assert (
+        accept_output("um should I test manually one by one?", "Should I test manually one by one?")
+        == "Should I test manually one by one?"
+    )
+
+
+def test_accept_question_mark_moved_but_kept():
+    # Cleanup may restructure punctuation as long as the question survives.
+    assert accept_output("is it done? the build done?", "Is it done? The build done?") is not None
+
+
+def test_reject_short_raw_substitution():
+    # "Go ahead." pasted as "Okay." — a full rewrite sharing no words with
+    # what was spoken. Short raws skip the length floor, so without a word-
+    # overlap check they had no guard at all.
+    assert accept_output("Go ahead.", "Okay.") is None
+
+
+def test_accept_short_raw_sharing_a_word():
+    assert accept_output("go ahead", "Go ahead.") == "Go ahead."
+
+
+def test_accept_short_raw_filler_removed():
+    assert accept_output("um yes", "Yes.") == "Yes."
+
+
+def test_few_shot_includes_question_passthrough_example():
+    msgs = build_messages("x", "polish")
+    pairs = [(msgs[i]["content"], msgs[i + 1]["content"]) for i in range(1, len(msgs) - 1, 2)]
+    # at least one modelled answer keeps a spoken question a question
+    assert any(cleaned.rstrip().endswith("?") for _, cleaned in pairs)
+
+
+def test_few_shot_list_examples_vary_header():
+    # Two list examples with different headers, so the model derives the
+    # header from the input instead of parroting a single example's
+    # ("Things to pack:" showed up on a dictated shopping list on-device).
+    msgs = build_messages("x", "polish")
+    pairs = [(msgs[i]["content"], msgs[i + 1]["content"]) for i in range(1, len(msgs) - 1, 2)]
+    headers = {
+        cleaned.splitlines()[0]
+        for _, cleaned in pairs
+        if any(line.startswith("- ") for line in cleaned.splitlines())
+    }
+    assert len(headers) >= 2
+
+
+def test_reject_unrequested_bullets():
+    # With two list few-shots in the prompt the model started bulleting tiny
+    # non-list inputs ("Go ahead." -> "- Go ahead."). Bullets are only valid
+    # when the speaker asked for a list — and every trigger phrase the prompt
+    # names contains "list" or "bullet".
+    assert accept_output("Go ahead.", "- Go ahead.") is None
+    assert accept_output("we need mangoes and grapes", "- Mangoes\n- Grapes") is None
+
+
+def test_accept_requested_bullets():
+    assert (
+        accept_output("make a list of groceries mangoes and grapes", "- Mangoes\n- Grapes")
+        == "- Mangoes\n- Grapes"
+    )
+    assert accept_output(
+        "let's create a shopping list mangoes oranges avocados",
+        "Shopping list:\n- Mangoes\n- Oranges\n- Avocados",
+    ) is not None

@@ -92,6 +92,18 @@ enum CleanupLogic {
             "let's make a list of things to pack shirts socks toothbrush and a charger",
             "Things to pack:\n- Shirts\n- Socks\n- Toothbrush\n- Charger"
         ),
+        (
+            "okay make a shopping list we need bananas oranges and uh grapes",
+            "Shopping list:\n- Bananas\n- Oranges\n- Grapes"
+        ),
+        (
+            "um should I test manually one by one",
+            "Should I test manually one by one?"
+        ),
+        (
+            "go ahead",
+            "Go ahead."
+        ),
     ]
 
     // Output sanity guards (acceptOutput).
@@ -148,7 +160,40 @@ enum CleanupLogic {
         if rolePrefixes.contains(where: lowered.hasPrefix) { return nil }
         if out.count > 2 * raw.count + 20 { return nil }
         if raw.count > shortRaw, Double(out.count) < 0.3 * Double(raw.count) { return nil }
+        // On-device regressions (2026-07-16): the model sometimes ANSWERS a spoken
+        // question ("Should I test manually one by one?" -> "Yes, test manually
+        // one by one.") or substitutes a short phrase wholesale ("Go ahead." ->
+        // "Okay."). Both are meaning changes the length bounds can't see: a spoken
+        // question must stay a question, and a short raw (which skips the length
+        // floor above) must share at least one word with its cleanup.
+        if raw.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?"),
+            !out.contains("?")
+        {
+            return nil
+        }
+        if raw.count <= shortRaw {
+            let rawWords = words(raw)
+            if !rawWords.isEmpty, rawWords.isDisjoint(with: words(out)) { return nil }
+        }
+        // Bullets only on request: with the list few-shots in the prompt the model
+        // occasionally bullets ordinary speech ("Go ahead." -> "- Go ahead.").
+        // Every list trigger phrase the prompt names contains "list" or "bullet",
+        // so bulleted output without one in the raw is a reformat, not a cleanup.
+        if out.split(separator: "\n").contains(where: { $0.hasPrefix("- ") }) {
+            let loweredRaw = raw.lowercased()
+            if !loweredRaw.contains("list"), !loweredRaw.contains("bullet") { return nil }
+        }
         return out
+    }
+
+    /// Lowercased alphanumeric words, Python's `re.findall(r"[a-z0-9]+", s.lower())`.
+    /// ASCII-only classes on both sides — identical on the ASCII transcripts
+    /// Parakeet emits (same caveat as the `count` comparisons above).
+    private static func words(_ s: String) -> Set<String> {
+        Set(
+            s.lowercased()
+                .split(whereSeparator: { !($0.isASCII && ($0.isLetter || $0.isNumber)) })
+                .map(String.init))
     }
 }
 
