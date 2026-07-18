@@ -139,4 +139,33 @@ final class CleanupBenchTests: XCTestCase {
             "the reload must reuse the retained prefix caches (~1 s weights), not re-prefill (~10 s)")
         await engine.unload()
     }
+
+    /// Cold LAUNCH (rc.1 regression, distinct from post-eviction): a fresh
+    /// process has no retained prefix caches, so the first dictation races the
+    /// full prepare() — load + per-style prefill — on the serial GPU queue.
+    /// rc.1 burned 12.9 s behind the wrong style's prefill and pasted raw.
+    /// With the configured style built first and clean() waiting for exactly
+    /// that prefix, the first dictation must fit the on-device 12.5 s budget.
+    func testColdLaunchFirstDictationFitsTheBudget() async throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["POMVOX_LLM_BENCH"] == "1",
+            "set TEST_RUNNER_POMVOX_LLM_BENCH=1 to run the cleanup LLM acceptance")
+
+        let engine = CleanupEngine()
+        await engine.setPreferredStyle("polish")   // the app's default config
+        // Fire-and-forget, exactly like ensureCleanupLoaded on a fresh launch…
+        let load = Task { await engine.prepare(modelID: "mlx-community/Qwen3-4B-4bit") }
+        // …and the first dictation races the whole cold prepare.
+        let text = Self.fixtures[0].text
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let (out, status) = await runCleanup(engine, text: text, style: "polish", timeoutS: 12.5)
+        let elapsed = CFAbsoluteTimeGetCurrent() - t0
+        _ = await load.value
+        let loaded = await engine.isLoaded
+        try XCTSkipUnless(loaded, "model failed to load — see the cleanup: NSLogs")
+        print(String(format: "bench cold-launch clean: %.2fs status=%@", elapsed, status.rawValue))
+        XCTAssertEqual(status, .ok, "cold-launch first dictation pasted raw (took \(elapsed)s)")
+        XCTAssertFalse(out.isEmpty)
+        await engine.unload()
+    }
 }

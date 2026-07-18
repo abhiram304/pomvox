@@ -9,6 +9,24 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Fixed
 
+- **Spoken lists now actually format — including numbered ones.** Saying
+  "here's a list of to dos, one… two… three…" now comes out as a numbered
+  list (`1.` `2.` `3.`), and announcing a list ("we have a shopping list and
+  I'll get…") formats it as bullets — both previously pasted as run-on prose.
+  Plain speech without a list cue still never gets bulleted.
+- **Dictating *about* Pomvox can no longer confuse the cleanup into
+  answering.** A dictation that talked about transcripts, rules, and lists
+  flipped the model into assistant mode — it pasted the text back wrapped in
+  an "Analysis" instead of cleaning it. New guards reject any output that
+  echoes the input with commentary, contains markdown headers, or runs away
+  past the generation cap; all of them fall back to your exact words.
+- **The first dictation right after launching now gets cleaned too.** On a
+  cold launch the first dictation waited ~13 seconds behind prompt prefills
+  for the wrong style and then pasted raw. The engine now prefills the style
+  you actually use first, and background prefills yield the GPU to a
+  dictation in progress — the first post-launch dictation cleans in ~10
+  seconds, inside the on-device budget.
+
 - **Dictating no longer eats a copied image, file, or formatted text.** The
   paste briefly borrows the clipboard for the transcript and then puts your
   copy back — but the restore only saved plain text, so a copied screenshot

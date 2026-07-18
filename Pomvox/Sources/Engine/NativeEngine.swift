@@ -403,6 +403,7 @@ final class NativeEngine: ObservableObject {
         guard cleanupEnabled, isArmed, cleanupLoadTask == nil else { return }
         let modelID = cleanupModelID
         let hint = cleanupHint
+        let style = cleanupStyle
         let markWarmed = markWarmedOnSuccess
         let polishGate = LineGate()
         cleanupLoadTask = Task { [cleanup, weak self] in
@@ -420,6 +421,11 @@ final class NativeEngine: ObservableObject {
                 return
             }
             await cleanup.setTermsHint(hint)
+            // Build the configured style's prompt prefix first: a dictation
+            // racing this load waits behind ONE useful prefill, not both
+            // (rc.1's cold-launch first dictation burned its whole deadline
+            // behind the other style's build and pasted raw).
+            await cleanup.setPreferredStyle(style)
             await MainActor.run {
                 self?.polishLoad = ModelLoad.line(.polish, fraction: nil, downloading: false)
             }
