@@ -26,6 +26,16 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   you actually use first, and background prefills yield the GPU to a
   dictation in progress — the first post-launch dictation cleans in ~10
   seconds, inside the on-device budget.
+- **Pasting into a slow app can no longer insert your previous copy instead
+  of the dictation.** The transcript briefly sits on the clipboard for the
+  synthesized ⌘V, and the old clipboard used to come back on a fixed 0.5-second
+  timer — an app that was still busy when the timer fired (mid-launch,
+  heavy Electron window) would paste the *restored previous clipboard* rather
+  than what you said. The restore is now keyed to consumption: Pomvox can tell
+  when the paste has actually read the transcript, restores on the usual
+  timeline when it has, and otherwise holds the transcript for up to 3 seconds
+  before giving the clipboard back. It never restores earlier than before, and
+  a real copy you make in between still wins.
 
 - **Dictating no longer eats a copied image, file, or formatted text.** The
   paste briefly borrows the clipboard for the transcript and then puts your

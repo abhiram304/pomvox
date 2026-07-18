@@ -33,17 +33,25 @@ enum Paster {
     /// that honor it skip items carrying this type, so dictations don't pile up
     /// in clipboard history.
     static let concealedType = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
-    /// How long to leave the staged transcript on the clipboard before restoring
-    /// the user's prior contents. The synthesized ⌘V is asynchronous — the target
-    /// app reads the clipboard only when it processes the keystroke on its own
-    /// main thread — so this delay must comfortably outlast that handling. At the
-    /// old 0.15 s a busy or slow-to-focus app (launching, Electron, system under
-    /// load) could still be mid-paste when the restore fired, so it read the
-    /// *restored* prior clipboard and pasted the previously-copied text instead of
-    /// the transcript. It's off the critical key-up→paste path (the paste is
-    /// already posted), and the changeCount guard still lets a real user copy win,
-    /// so a longer wait is safe and only widens the recovery window.
+    /// The restore checkpoint after the ⌘V posts. The synthesized ⌘V is
+    /// asynchronous — the target app reads the clipboard only when it processes
+    /// the keystroke on its own main thread — and a fixed timer here raced slow
+    /// apps twice (0.15 s originally, then 0.5 s in #82): if the restore fired
+    /// first, the app pasted the *restored prior clipboard* instead of the
+    /// transcript. The transcript's string is therefore staged through a data
+    /// provider, so at this checkpoint `deliver` KNOWS whether the paste target
+    /// has read it: read → restore now (same timing as before); unread → hold
+    /// the transcript until `unreadRestoreDelay`. Keep this at ≥ 0.5 s so a
+    /// clipboard manager's early read can never make the restore fire sooner
+    /// than it used to.
     static let restoreDelay: TimeInterval = 0.5
+
+    /// When the transcript was never read by the checkpoint (an app that's
+    /// mid-launch or seconds-busy — the #82 failure mode), how long after the
+    /// ⌘V to give the clipboard back regardless. Bounded so the user's copy
+    /// always returns even if no paste ever landed; the changeCount guard
+    /// still lets a real user copy win.
+    static let unreadRestoreDelay: TimeInterval = 3.0
 
     /// Stage `text` on `pb` marked concealed; return the resulting changeCount.
     @discardableResult
@@ -55,36 +63,80 @@ enum Paster {
     }
 
     /// Paste `text` at the cursor via a synthesized ⌘V. If an editable field is
-    /// focused the previous clipboard is restored after a short delay (unless a
-    /// real user copy lands first); otherwise the transcript is left on the
-    /// clipboard so it isn't lost. Returns what happened.
+    /// focused the previous clipboard is restored once the paste has consumed
+    /// the transcript (unless a real user copy lands first); otherwise the
+    /// transcript is left on the clipboard so it isn't lost. Returns what
+    /// happened.
     @discardableResult
     static func paste(_ text: String) -> PasteOutcome {
         deliver(text, to: .general, focusedAcceptsText: focusedElementAcceptsText(),
                 synthesizePaste: { synthesizeCommandV() },
-                scheduleRestore: { body in
-                    DispatchQueue.main.asyncAfter(deadline: .now() + restoreDelay, execute: body)
+                schedule: { delay, body in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: body)
                 })
     }
 
+    /// Lazily provides the transcript's string flavor and records whether it
+    /// was ever read. That first read IS the paste target consuming the
+    /// transcript — the signal that keys the clipboard restore. Thread-safe:
+    /// AppKit may resolve promises off the main thread.
+    private final class TranscriptProvider: NSObject, NSPasteboardItemDataProvider, @unchecked Sendable {
+        private let text: String
+        private let lock = NSLock()
+        private var read = false
+        init(text: String) { self.text = text }
+        var wasRead: Bool {
+            lock.lock(); defer { lock.unlock() }
+            return read
+        }
+        func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem,
+                        provideDataForType type: NSPasteboard.PasteboardType) {
+            lock.lock(); read = true; lock.unlock()
+            item.setString(text, forType: type)
+        }
+    }
+
     /// Testable core: stages the text, runs the (injected) ⌘V, and decides the
-    /// clipboard outcome. `scheduleRestore` is invoked only when restoring is
-    /// wanted; the restore body is changeCount-guarded so a real user copy wins.
+    /// clipboard outcome. `schedule` is `(delay, body)` — invoked only when
+    /// restoring is wanted; every restore is changeCount-guarded so a real
+    /// user copy wins.
     @discardableResult
     static func deliver(_ text: String, to pb: NSPasteboard, focusedAcceptsText: Bool,
                         synthesizePaste: () -> Void,
-                        scheduleRestore: (@escaping () -> Void) -> Void) -> PasteOutcome {
-        let saved = snapshot(pb)
-        let ourChange = stage(pb, text)
-        synthesizePaste()
+                        schedule: @escaping (Double, @escaping () -> Void) -> Void) -> PasteOutcome {
         guard focusedAcceptsText else {
-            // No editable field — keep the (concealed) transcript on the clipboard
-            // so it's recoverable rather than silently lost.
+            // No editable field — stage eagerly (nothing will restore, so the
+            // data must not depend on this call's provider staying relevant)
+            // and keep the (concealed) transcript on the clipboard so it's
+            // recoverable rather than silently lost.
+            stage(pb, text)
+            synthesizePaste()
             return .copiedToClipboard
         }
-        scheduleRestore {
+        let saved = snapshot(pb)
+        pb.clearContents()
+        let item = NSPasteboardItem()
+        let provider = TranscriptProvider(text: text)
+        item.setDataProvider(provider, forTypes: [.string])
+        item.setString("1", forType: concealedType)
+        pb.writeObjects([item])
+        let ourChange = pb.changeCount
+        synthesizePaste()
+        let restoreIfUnchanged = {
             if !saved.isEmpty, pb.changeCount == ourChange {
                 restore(saved, to: pb)
+            }
+        }
+        schedule(restoreDelay) {
+            if provider.wasRead {
+                // Consumed — restore on the same timeline as always.
+                restoreIfUnchanged()
+            } else {
+                // The target app hasn't processed the ⌘V yet (mid-launch,
+                // busy Electron — the #82 failure mode). Restoring now would
+                // make its eventual paste insert the PRIOR clipboard, so hold
+                // the transcript, then give the clipboard back regardless.
+                schedule(unreadRestoreDelay - restoreDelay, restoreIfUnchanged)
             }
         }
         return .pasted
